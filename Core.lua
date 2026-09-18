@@ -7,6 +7,7 @@
 -- /hfwm bg NAME     – map background: default | ocean | hybrid
 -- /hfwm options     – open the options panel
 -- /hfwm alpha 0-1   – set overlay opacity
+-- /hfwm cave        – the cave map window (on|off|show|hide|reset|alpha N)
 -- /hfwm debug       – print diagnostic info for current map
 -------------------------------------------------------------------------------
 local addonName, ns = ...
@@ -42,15 +43,9 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         Config.overlayFrame:SetFrameLevel(canvas:GetFrameLevel() + 500)
         Config.overlayFrame:EnableMouse(false)
 
-        -- Cave overlay frame: separate, slightly transparent layer above
-        -- the main HFWM overlay. Hidden by default; CaveRenderer shows it
-        -- when the player enters a cave / micro dungeon / dungeon instance.
-        Config.caveOverlayFrame = CreateFrame(
-            "Frame", "HFWMForeverCaveOverlay", canvas)
-        Config.caveOverlayFrame:SetAllPoints(canvas)
-        Config.caveOverlayFrame:SetFrameLevel(canvas:GetFrameLevel() + 600)
-        Config.caveOverlayFrame:EnableMouse(false)
-        Config.caveOverlayFrame:Hide()
+        -- The cave map window is built lazily by CaveRenderer the first time
+        -- a cave is entered, and is parented to WorldMapFrame rather than to
+        -- the canvas so that it does not pan or zoom with the map under it.
 
         hooksecurefunc(WorldMapFrame, "OnMapChanged", function()
             Config.lastMapID = nil
@@ -76,10 +71,10 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             Renderer:ScheduleRefresh()
         end)
 
-        Config.caveOverlayFrame:SetScript("OnSizeChanged", function()
-            if Config.caveOverlayActive and Config.caveCurrentFloorMapID then
-                CaveRenderer:ShowCave(Config.caveCurrentFloorMapID)
-            end
+        -- The cave window is sized as a fraction of the map frame, so it has
+        -- to be re-laid-out when the map is maximised or restored.
+        WorldMapFrame:HookScript("OnSizeChanged", function()
+            CaveRenderer:Relayout()
         end)
 
         Cave:Start()

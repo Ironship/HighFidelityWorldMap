@@ -172,7 +172,8 @@ knocked out a moment later.
 
 `/hfwm options` opens the settings panel — registered into the client's own AddOns options list
 where the API for that exists, and openable as a standalone movable window either way. It carries
-the enable toggle, the overlay opacity slider, and the map background dropdown.
+the enable toggle, the overlay opacity slider, the map background dropdown, and the cave map
+toggle with its own opacity slider.
 
 ### Map background
 
@@ -275,6 +276,93 @@ Two implementation notes, both non-obvious:
 - **The background only applies where the addon draws its own tiles.** On a map with no bundled
   BLPs the tiles are the client's own opaque art, so `Renderer` behaves exactly as it did before:
   detail layer hidden, no backdrop, frame backing left alone even under Transparent.
+
+### Cave map
+
+Walk into a cave, a mine, a vault or a cellar and the world map carries on showing the zone above,
+which has nothing to say about where you now are — the client gives these places their own UiMapID
+but no way to navigate to one from the map. **Cave map** puts them in a small panel over the top of
+the map instead: the area's name in a titlebar, a close button, the cave's art at its own aspect
+ratio, your own position as an arrow, and a notched vertical depth slider down the right-hand side
+when the place has more than one floor.
+
+Off by default, because it draws a panel over the map unprompted and that is not a thing to do to
+somebody without being asked. `/hfwm cave` toggles it; `on`, `off`, `show`, `hide`, `reset` and
+`alpha N` are all accepted, and the panel has a checkbox and an opacity slider of its own. Opacity
+is floored at 20% — a cave map faded to nothing is indistinguishable from the feature being broken,
+and there is a close button for the case where it genuinely is not wanted.
+
+Nothing is built until the first cave is entered, so an install that never turns it on pays nothing
+for it.
+
+**What it is parented to is the whole design.** `WorldMapFrame`, not
+`WorldMapFrame.ScrollContainer.Child` — the canvas. On the canvas it would pan and zoom with the
+terrain under it, which is wrong for a window; on the map frame it holds still, and it hides and
+shows with the map for free rather than needing a visibility hook. It takes the map's *own* strata
+rather than a fixed one, so it rides along when the client moves the map between strata for
+windowed and maximised, with a large frame-level offset to clear the map's children. Dragging it is
+allowed, and `StartMoving` re-anchors a frame to the screen rather than to its parent — so the
+saved position records *which* anchor it used and restores against the same one, or a dragged window
+teleports on the next login.
+
+Size is a fraction of the map frame, so it looks the same whether the map is windowed or maximised
+on a 4K display, with a legibility floor of 200px and a ceiling that only bites on an ultrawide.
+The shape comes from the cave art's own proportions, not the canvas's.
+
+#### When each piece appears
+
+This is the part that is easy to get subtly wrong, so each trigger is stated rather than implied.
+
+- **The window opens** when the map the player is standing on is a `Dungeon` or `Micro` map *and*
+  the world map is showing somewhere else. `Orphan` maps are excluded on purpose: having no parent
+  in the map hierarchy is a statement about map plumbing rather than about being indoors, and the
+  few that exist on this build are transport and scenario scaffolding.
+- **"Somewhere else" is compared by map group, not by map ID.** A dungeon's floors are separate
+  UiMapIDs, but a world map showing any one of them draws the client's own floor selector — so a
+  second set of floor controls on top would duplicate a control that is already right there. Both
+  the exact-match and the sibling-floor cases therefore keep the window shut.
+- **Where the player is comes from two APIs, not one.** `C_Map.GetBestMapForUnit` resolves the
+  player's *position* to a map, and a micro dungeon has its own coordinate space that the position
+  only lands in once you are properly inside — on the threshold it still says "the zone".
+  `C_Minimap.GetUiMapID` reports the map the *minimap* has swapped its art to, which is the client
+  stating that it now considers you inside, driven by the map's bounds rather than by a position
+  lookup, and on the way in it is usually first. Neither is reliably ahead, so an interior answer
+  from either is taken, with the position lookup winning the tie. Trusting position alone leaves the
+  window a beat behind the minimap the player is already looking at. `IsOutdoors()` is deliberately
+  *not* consulted — it is true in a great many interiors with no map of their own, every inn and
+  every tower, and false in some caves, so as a gate it would both fire spuriously and miss.
+- **The art layer is always layer 1.** `C_Map.GetMapArtLayers` can return several, and the extra
+  ones are *zoom detail* levels — the same map extent re-cut at higher tile resolution, each
+  carrying the canvas scale range it applies to, which the world map swaps between as it zooms.
+  This panel does not zoom, so a detail layer would cost several times the textures to draw the
+  same picture at a size that cannot show the difference. `Renderer.lua`'s `IsSubmerged()` swap to
+  layer 2 is a *different* mechanism — Vashj'ir's paired surface and underwater art, Cataclysm-only
+  and so `Config.VASHJIR_MAPS` is empty here — and keying the cave window off it only ever picked a
+  detail layer by accident. The layer is chosen in one function so the shape of the box and the
+  tiles that go in it can never come from different layers, which is what stretched the art when
+  the two were cut to different proportions.
+- **The depth slider appears only above one floor**, built from `C_Map.GetMapGroupID` and
+  `GetMapGroupMembersInfo` and sorted by `relativeHeightIndex` descending, so the top notch is the
+  top floor. Notches are textures *under* the thumb, not clickable frames over it: the thumb always
+  snaps to a notch, so a hit-frame would sit on top of the thumb and swallow the mousedown that
+  starts a drag. Floors are chosen by dragging the thumb, clicking the track, or the mouse wheel
+  anywhere over the window, and the slider's tooltip lists every floor with the active one marked.
+- **The player arrow draws only on the floor the player is physically on.** An arrow on every floor
+  while you browse the slider would be a lie. It also hides on a `(0, 0)` position, which is the
+  API's way of saying it has no fix in that map's space.
+- **A floor you picked stays picked** while you are still in the same place — floor follow-along is
+  the default, but browsing the level below you is the whole reason the slider is there, so the
+  half-second poll does not yank you back. Selecting the floor you are actually standing on hands
+  control back to the poll.
+- **A cave you closed stays closed until you leave it.** Re-opening on the next poll would make the
+  close button useless. The suppression is keyed on the map group, so walking between floors of a
+  dungeon you dismissed does not bring it back, and walking out and back in is a clean slate.
+  `/hfwm cave show` overrides it.
+
+Cave and dungeon art is not in the bundled tile set — the pipeline stitches outdoor zones — so in
+practice every FDID lookup misses and the client's own art is drawn. The lookup is done anyway, so
+that a future art pass covering interiors needs no change in `CaveRenderer`. When a cave has no art
+at all the footer says so rather than showing an empty box.
 
 ## How this fork differs from retail
 

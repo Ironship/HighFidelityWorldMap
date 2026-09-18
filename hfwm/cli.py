@@ -1,12 +1,21 @@
 """CLI and orchestrator for ``generateHFWM.py`` (Forever build).
 
-Four phases:
+Five phases:
 
   1. Zone database  — build-pinned DB2 exports + WDT MAID chunks
   2. Tile download  — every unique minimap tile FDID, cached on disk
   3. Zone processing — stitch, crop, fit the art layer, encode BLP2
      3b. the same again with every art pass off, into ``Original/``
   4. FDIDMap.lua    — FileDataID -> bundled texture path
+  5. CaveData.lua   — the interior map table this build's UiMap lacks
+
+Phase 5 is the odd one out: it ships no art of its own.  Blizzard's
+interior tiles are already in the client, but this build's ``UiMap``
+lists outdoor zones only, so nothing in Lua can reach them.  The pass
+rebuilds the missing map rows offline — see :mod:`hfwm.microdungeon` for
+what is borrowed from retail and what is validated against the pinned
+build — and bakes them into ``CaveData.lua``.  It touches the network
+independently of phases 1–3, so ``--caves-only`` runs it alone.
 
 Phase 3b (``--original``, on by default) is what backs the in-game
 "Original" background.  It has to be a real second dump: the art passes
@@ -35,6 +44,7 @@ from urllib.error import HTTPError, URLError
 
 from .constants import (
     BASE_ART_TILE_CACHE,
+    CAVE_DATA_FILE,
     GAME_BUILD,
     GAME_PRODUCT,
     MAID_FIELD_MAPTEXTURE,
@@ -43,11 +53,13 @@ from .constants import (
     ORIGINAL_SUBDIR,
     WORLDMAP_DIR,
 )
+from .cave_data import generate_cave_data
 from .db2 import fetch_zone_db
 from .effects import ART_PASSES, banner_lines, resolve, stamp
 from .fdid_map import generate_fdid_map
 from .fmt import format_size, format_time
 from .http import download_casc_cached
+from .microdungeon import build_cave_table
 from .zone import process_zone_job
 
 
@@ -259,6 +271,38 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip FDIDMap.lua generation",
     )
+    caves = parser.add_argument_group(
+        "cave map",
+        "CaveData.lua — the interior (cave / dungeon) map table this "
+        "build's UiMap does not carry. Art-free: it only points at "
+        "FileDataIDs already in the client.",
+    )
+    caves.add_argument(
+        "--caves",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help=(
+            "Generate CaveData.lua so the addon's cave window has "
+            "something to draw (default: on)"
+        ),
+    )
+    caves.add_argument(
+        "--caves-only",
+        action="store_true",
+        help=(
+            "Run the cave pass alone and exit — no zone DB, no tile "
+            "downloads, no BLPs. The fast way to rebuild just the "
+            "interior table."
+        ),
+    )
+    caves.add_argument(
+        "--refresh-caves",
+        action="store_true",
+        help=(
+            "Force re-download of the donor DB2 tables and re-probe every "
+            "interior's art against the pinned build"
+        ),
+    )
     parser.add_argument(
         "--original",
         default=True,
@@ -374,6 +418,44 @@ def run_original_pass(
 
 
 # ---------------------------------------------------------------------------
+# Phase 5: CaveData.lua
+# ---------------------------------------------------------------------------
+
+def run_cave_pass(force_refresh: bool = False) -> bool:
+    """Build the interior map table and write ``CaveData.lua``.
+
+    Returns whether the file was written.  A failure here is reported and
+    swallowed rather than fatal: the cave window is one optional feature,
+    and there is no reason a wago.tools hiccup should cost a caller the
+    zone art they just spent twenty minutes generating.
+    """
+    try:
+        places = build_cave_table(force_refresh=force_refresh)
+    except (URLError, HTTPError, OSError) as exc:
+        print(f"  Warning: the cave pass could not reach its sources: "
+              f"{exc}", flush=True)
+        print("  CaveData.lua left as it was; the cave window will use "
+              "whatever is already shipped.", flush=True)
+        return False
+
+    if not places:
+        # Not an error in itself — a build whose UiMap does carry interior
+        # rows needs no baked table, because C_Map can answer directly.
+        print("  No interiors survived validation against this build; "
+              "CaveData.lua not written.", flush=True)
+        return False
+
+    summary = generate_cave_data(places)
+    slider = summary["multi"]
+    print(
+        f"  {slider} of them have more than one floor, so the depth "
+        f"slider has notches to show.",
+        flush=True,
+    )
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -383,6 +465,13 @@ def main() -> None:
     if args.list_art_passes:
         _print_art_passes()
         return
+
+    if args.caves_only:
+        print("--- Cave map table only ---", flush=True)
+        print(f"Build:     {GAME_BUILD}", flush=True)
+        print(f"Output:    {CAVE_DATA_FILE}", flush=True)
+        print(flush=True)
+        sys.exit(0 if run_cave_pass(args.refresh_caves) else 1)
 
     output_dir = os.path.abspath(args.output_dir)
 
@@ -476,6 +565,9 @@ def main() -> None:
                 f"{len(z['regions'])} region(s)  {src:4d} src tiles  "
                 f"[{z['area_name']}]",
             )
+        if args.caves:
+            print(f"\n  Would also rebuild {CAVE_DATA_FILE.name} "
+                  f"(--no-caves to skip, --caves-only to run just that).")
         print("\n(dry run — nothing downloaded or written)")
         return
 
@@ -671,32 +763,41 @@ def main() -> None:
               f"in-game Original background.", flush=True)
 
     # --- Phase 4: FDIDMap.lua -----------------------------------------
-    if args.skip_fdid_map:
-        return
-    print("\n--- Phase 4: Generating FDIDMap.lua ---", flush=True)
-    try:
-        # Scan the raw tree whenever one is on disk, not only when this run
-        # wrote it: a rebuild with --no-original should not silently strip a
-        # background whose art is still installed.
-        summary = generate_fdid_map(
-            output_dir, zone_db, stamp(passes),
-            original=want_original or os.path.isdir(original_dir),
-        )
-    except OSError as exc:
-        print(f"  Warning: FDIDMap.lua generation failed: {exc}", flush=True)
-        return
+    if not args.skip_fdid_map:
+        print("\n--- Phase 4: Generating FDIDMap.lua ---", flush=True)
+        summary = None
+        try:
+            # Scan the raw tree whenever one is on disk, not only when this
+            # run wrote it: a rebuild with --no-original should not silently
+            # strip a background whose art is still installed.
+            summary = generate_fdid_map(
+                output_dir, zone_db, stamp(passes),
+                original=want_original or os.path.isdir(original_dir),
+            )
+        except OSError as exc:
+            print(f"  Warning: FDIDMap.lua generation failed: {exc}",
+                  flush=True)
 
-    if summary["entries"] != total_out_tiles:
-        print(
-            f"  NOTE: {summary['entries']} map entries vs "
-            f"{total_out_tiles} BLPs written — "
-            f"{summary['missing']} expected files were absent.",
-            flush=True,
-        )
-    if summary["original_entries"]:
-        print(
-            f"  In-game Original background available: "
-            f"{summary['original_entries']} raw textures across "
-            f"{summary['original_zones']} zones.",
-            flush=True,
-        )
+        if summary and summary["entries"] != total_out_tiles:
+            print(
+                f"  NOTE: {summary['entries']} map entries vs "
+                f"{total_out_tiles} BLPs written — "
+                f"{summary['missing']} expected files were absent.",
+                flush=True,
+            )
+        if summary and summary["original_entries"]:
+            print(
+                f"  In-game Original background available: "
+                f"{summary['original_entries']} raw textures across "
+                f"{summary['original_zones']} zones.",
+                flush=True,
+            )
+
+    # --- Phase 5: CaveData.lua ----------------------------------------
+    # Last, and deliberately after phase 4's early exits: it shares
+    # nothing with the phases above — no zone DB, no tile cache, no art
+    # passes — so a cave-table failure must not cost anyone the zone art
+    # this run just spent its time producing.
+    if args.caves:
+        print("\n--- Phase 5: Generating CaveData.lua ---", flush=True)
+        run_cave_pass(args.refresh_caves)

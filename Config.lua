@@ -9,9 +9,33 @@ local Config = ns.Config
 Config.DEFAULTS = {
     enabled       = true,
     alpha         = 1.0,
-    caveEnabled   = false,  -- cave overlay is opt-in; /hfwm cave on
     mapBackground = "ocean",  -- see Config.BACKGROUNDS below
+
+    -- Cave map: the window that opens over the world map when the player is
+    -- inside a cave / micro dungeon the map above has nothing to say about.
+    -- Enabled by default: the whole point of this addon is a map that keeps
+    -- working underground, and a feature nobody knows exists (short of
+    -- reading Options or `/hfwm cave on`) may as well be missing. Anyone who
+    -- doesn't want the extra panel can turn it off from Options or with
+    -- `/hfwm cave off`.
+    caveEnabled = true,
+    caveAlpha   = 0.95,
 }
+-- The db also carries `caveWindowPoint` — { point, relPoint, x, y, toMap } —
+-- written by CaveRenderer when the window is dragged. It is deliberately not
+-- in DEFAULTS: absent means "wherever the window opens by default", and a nil
+-- entry in a defaults table would not survive the pairs() copy in InitDB
+-- anyway. /hfwm cave reset clears it.
+
+--- Cave window opacity, clamped, with a floor: a cave map faded to nothing is
+--- indistinguishable from the feature being broken, and the window has a
+--- close button for the case where it is genuinely not wanted.
+---@return number
+function Config:CaveAlpha()
+    local a = self.db and self.db.caveAlpha or self.DEFAULTS.caveAlpha
+    if type(a) ~= "number" then a = self.DEFAULTS.caveAlpha end
+    return math.max(0.2, math.min(1, a))
+end
 
 -------------------------------------------------------------------------------
 -- Map background
@@ -186,14 +210,16 @@ Config.lastLayerIdx    = nil
 Config.lastSubmerged   = nil
 Config.tracing         = false
 
--- Cave overlay state
-Config.caveOverlayFrame    = nil   -- separate Frame parented to map canvas
-Config.caveOverlayActive   = false
-Config.caveCurrentFloorMapID = nil
-Config.caveAllFloors       = nil   -- [{mapID, name, relativeHeightIndex}, ...]
-Config.caveDisplayedMapID  = nil   -- the world-map UiMapID currently displayed (for change detection)
-Config.lastPlayerMapID     = nil   -- C_Map.GetBestMapForUnit("player") cache for change detection
-Config.caveAlpha           = 0.92  -- transparency of the whole cave overlay frame
+-- Cave map runtime state (the window itself is built by CaveRenderer)
+Config.caveOverlayFrame      = nil   -- the cave window frame
+Config.caveContentFrame      = nil   -- clipping frame the cave tiles live in
+Config.caveOverlayActive     = false
+Config.caveCurrentFloorMapID = nil   -- floor on screen right now
+Config.caveAllFloors         = nil   -- [{mapID, name, relativeHeightIndex}, ...]
+Config.caveFloorPinned       = false -- user drove the depth slider; stop following them
+Config.caveSuppressedKey     = nil   -- map group the user closed; don't reopen it
+Config.caveDisplayedMapID    = nil   -- world-map UiMapID displayed (change detection)
+Config.lastPlayerMapID       = nil   -- GetBestMapForUnit cache (change detection)
 
 -- Cache lookup-table sizes for diagnostics
 do

@@ -19,19 +19,66 @@ function Commands:Handle(msg)
         db.enabled = false
     elseif cmd == "cave" then
         local sub = args[2] or ""
-        if sub == "on" or sub == "enable" then
+
+        -- "show" is the way back from the close button: the window suppresses
+        -- itself per cave when dismissed, and without this the only way to
+        -- get it back would be to walk out and back in.
+        if sub == "show" or sub == "open" then
+            if not db.caveEnabled then
+                P("Cave map is off — |cff999999/hfwm cave on|r first.")
+            elseif not ns.Cave:ForceShow() then
+                P("Nothing to show: you are not in a cave, or the world map "
+                    .. "is already showing the one you are in.")
+            end
+            return
+        elseif sub == "hide" or sub == "close" then
+            ns.Cave:SuppressCurrent()
+            ns.CaveRenderer:HideCave()
+            P("Cave map hidden for this area "
+                .. "(|cff999999/hfwm cave show|r brings it back).")
+            return
+        elseif sub == "reset" then
+            -- The window remembers where it was dragged to, which is exactly
+            -- the setting that can put it somewhere unreachable.
+            db.caveWindowPoint = nil
+            ns.CaveRenderer:HideCave()
+            ns.Cave:Unsuppress()
+            ns.Cave:UpdateState()
+            P("Cave map position reset.")
+            return
+        elseif sub == "alpha" then
+            local val = tonumber(args[3])
+            if not val then
+                P("Usage: /hfwm cave alpha 0.2-1.0")
+                return
+            end
+            db.caveAlpha = math.max(0.2, math.min(1, val))
+            ns.CaveRenderer:ApplyAlpha()
+            P(("Cave map opacity: %.0f%%"):format(db.caveAlpha * 100))
+            if ns.Options.panel then ns.Options:Refresh() end
+            return
+        elseif sub == "on" or sub == "enable" then
             db.caveEnabled = true
         elseif sub == "off" or sub == "disable" then
             db.caveEnabled = false
         else
             db.caveEnabled = not db.caveEnabled
         end
+
         if db.caveEnabled then
-            P("|cff00ff00Cave overlay enabled|r")
+            P("|cff00ff00Cave map enabled|r — opens over the world map when "
+                .. "you are somewhere it cannot show.")
+            -- On a client with no interior maps the line above is a promise
+            -- that will never be kept, so qualify it immediately rather than
+            -- leaving the user waiting for a window.
+            ns.Cave:WarnIfUnsupported()
+            ns.Cave:Unsuppress()
+            ns.Cave:UpdateState()
         else
-            P("|cffff4444Cave overlay disabled|r")
+            P("|cffff4444Cave map disabled|r")
             ns.CaveRenderer:HideCave()
         end
+        if ns.Options.panel then ns.Options:Refresh() end
         return
     elseif cmd == "bg" or cmd == "background" then
         local want = args[2] or ""
@@ -166,7 +213,8 @@ function Commands:Handle(msg)
         print("  /hfwm bg [NAME]     - map background: "
             .. table.concat(keys, " | ") .. " (no name cycles)")
         print("  /hfwm alpha N       - set opacity (0-1)")
-        print("  /hfwm cave [on|off] - toggle cave/dungeon overlay (opt-in)")
+        print("  /hfwm cave [on|off] - toggle the cave map (opt-in)")
+        print("                        show/hide, reset (position), alpha N")
         print("  /hfwm baseart       - Blizzard's detail layer, and whether "
             .. "the search finds it")
         print("  /hfwm framebg       - map-frame backing Transparent hides")
@@ -238,12 +286,66 @@ function Commands:Debug()
     print(("  bestMap(player): %s (%s)"):format(
         tostring(bestMapID),
         bestInfo and bestInfo.name or "?"))
+    -- Where the cave feature is getting its interiors from. On this build the
+    -- client's UiMap has none, so this should read "baked" — if it says
+    -- "client" while the window refuses to open, CaveData.lua is the thing to
+    -- look at, not C_Map.
+    local tableDesc = "not loaded"
+    if ns.CaveTable:IsLoaded() then
+        local tableBuild = ns.CaveTable:GetBuild()
+        -- GetBuildInfo returns version, build, ... — "1.60.1" and "69913" —
+        -- and the generator stamps the table with the two joined. A mismatch
+        -- is not fatal (the art rarely moves between patches) but it is the
+        -- first thing to suspect if tiles come out wrong, so say so.
+        local version, build = GetBuildInfo()
+        local clientBuild = version and build
+            and (version .. "." .. build) or nil
+        local stale = (tableBuild and clientBuild and tableBuild ~= clientBuild)
+        tableDesc = ("%d places, build %s%s"):format(
+            ns.CaveTable:CountPlaces(), tostring(tableBuild),
+            stale and (" <-- client is " .. clientBuild) or "")
+    end
+    print(("  cave source: %s  (shipped table: %s)"):format(
+        ns.Cave:SourceName(), tableDesc))
+    -- Which map the cave feature actually believed, and what it is called:
+    -- mapType is the trigger, so this is the first line to read when the
+    -- window will not open. Resolved through the same source, because a baked
+    -- floor ID means nothing to C_Map.
+    local resolved     = ns.Cave:GetCurrentFloorMapID()
+    local bakedFloor   = resolved and ns.CaveTable:GetFloor(resolved)
+    local resolvedInfo = resolved and (bakedFloor
+        and ns.CaveTable:GetMapInfo(resolved)
+        or C_Map.GetMapInfo(resolved))
+    print(("  resolved floor: %s (%s)  mapType=%s  from=%s"):format(
+        tostring(resolved),
+        resolvedInfo and resolvedInfo.name or "?",
+        resolvedInfo and tostring(resolvedInfo.mapType) or "?",
+        bakedFloor and ("shipped table: " .. bakedFloor.place.name)
+            or (resolved == bestMapID and "position" or "minimap")))
+    -- Zero interior maps used to explain every "nothing happens" report at a
+    -- stroke. It no longer does on its own: zero is the expected reading on
+    -- this build, and the shipped table is what covers for it. Zero *and* no
+    -- shipped table is the broken combination.
+    local interiors = ns.Cave:CountInteriorMaps()
+    print(("  interior maps in this client's map tree: %s%s"):format(
+        interiors == nil and "unknown (no API)" or tostring(interiors),
+        (interiors == 0 and not ns.CaveTable:IsLoaded())
+            and "  <-- and no shipped table, so the window cannot open"
+            or ""))
     print(("  minimapZone: %s  subZone: %s"):format(
         tostring(GetMinimapZoneText()), tostring(GetSubZoneText())))
     local hybridMinimap = C_Minimap and C_Minimap.ShouldUseHybridMinimap
         and C_Minimap.ShouldUseHybridMinimap()
     print(("  submerged: %s  outdoors: %s  hybridMinimap: %s"):format(
         tostring(IsSubmerged()), tostring(IsOutdoors()), tostring(hybridMinimap)))
+    -- Step-by-step replay of the baked lookup itself. "resolved floor" above
+    -- only says it fell back to C_Map — this says which check let go:
+    -- instance routing, the outdoors gate, the name index, or the rectangle.
+    if ns.CaveTable:IsLoaded() then
+        for _, line in ipairs(ns.CaveTable:DebugTrace()) do
+            print(line)
+        end
+    end
 
     if minimapMapID then
         local groupID = C_Map.GetMapGroupID(minimapMapID)
@@ -347,23 +449,39 @@ function Commands:Debug()
         print("  overlayFrame: NIL")
     end
 
-    -- Cave overlay diagnostics
-    print(("  caveOverlayActive: %s  currentFloor: %s  floors: %d"):format(
-        tostring(Config.caveOverlayActive),
+    -- Cave map diagnostics
+    local inCave, caveMapID = ns.Cave:IsPlayerInCave()
+    print(("  cave: enabled=%s  inCave=%s  caveMapID=%s  active=%s"):format(
+        tostring(Config.db and Config.db.caveEnabled),
+        tostring(inCave), tostring(caveMapID),
+        tostring(Config.caveOverlayActive)))
+    print(("        currentFloor=%s  floors=%d  pinned=%s  suppressed=%s"):format(
         tostring(Config.caveCurrentFloorMapID),
-        Config.caveAllFloors and #Config.caveAllFloors or 0))
+        Config.caveAllFloors and #Config.caveAllFloors or 0,
+        tostring(Config.caveFloorPinned),
+        tostring(Config.caveSuppressedKey)))
+    if Config.caveCurrentFloorMapID then
+        print(("        title=%s"):format(
+            ns.Cave:GetAreaTitle(Config.caveCurrentFloorMapID)))
+    end
     if Config.caveOverlayFrame then
         local cw, ch = Config.caveOverlayFrame:GetSize()
-        print(("  caveOverlayFrame: %.0f x %.0f  alpha=%.2f  level=%d  shown=%s  tiles=%d"):format(
+        local point, _, relPoint, px, py = Config.caveOverlayFrame:GetPoint()
+        print(("        window: %.0f x %.0f  alpha=%.2f  level=%d  shown=%s  tiles=%d"):format(
             cw, ch, Config.caveOverlayFrame:GetAlpha(),
             Config.caveOverlayFrame:GetFrameLevel(),
             tostring(Config.caveOverlayFrame:IsShown()),
-            ns.CaveRenderer.ActiveTileCount and ns.CaveRenderer:ActiveTileCount() or -1))
+            ns.CaveRenderer:ActiveTileCount()))
+        print(("        anchor: %s -> %s  (%.0f, %.0f)"):format(
+            tostring(point), tostring(relPoint), px or 0, py or 0))
+    else
+        print("        window: not built yet (no cave entered this session)")
     end
     if Config.caveAllFloors then
         for i, f in ipairs(Config.caveAllFloors) do
-            local marker = (f.mapID == Config.caveCurrentFloorMapID) and " <-- ACTIVE" or ""
-            print(("    floor %d: mapID=%d  heightIdx=%d  name=%s%s"):format(
+            local marker = (f.mapID == Config.caveCurrentFloorMapID)
+                and " <-- ACTIVE" or ""
+            print(("        level %d: mapID=%d  heightIdx=%d  name=%s%s"):format(
                 i, f.mapID, f.relativeHeightIndex, f.name or "?", marker))
         end
     end

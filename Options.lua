@@ -1,6 +1,7 @@
 -------------------------------------------------------------------------------
 -- HFWM-Forever Options
--- The options panel: enable toggle, map-background dropdown, opacity slider.
+-- The options panel: enable toggle, map-background dropdown, opacity slider,
+-- and the cave-map section (on/off plus its own opacity).
 --
 -- Registered into the client's own AddOns options list where an API for that
 -- exists, and openable as a standalone window either way (/hfwm options).
@@ -334,7 +335,7 @@ function Options:BuildPanel()
 
     local panel = CreateFrame("Frame")
     panel.name = PANEL_TITLE
-    panel:SetSize(560, 300)
+    panel:SetSize(560, 450)
     panel:Hide()
 
     local title = Label(panel, PANEL_TITLE, "GameFontNormalLarge")
@@ -407,6 +408,81 @@ function Options:BuildPanel()
         ns.Renderer:ForceRefresh()
     end)
 
+    -- Cave map
+    --
+    -- Its own heading rather than another line of checkboxes at the top: it
+    -- is a separate window with its own behaviour, not a variation on how the
+    -- world map is drawn, and grouping it with the background options would
+    -- suggest otherwise.
+    local caveHeading = Label(panel, "Cave map", "GameFontNormal")
+    caveHeading:SetPoint("TOPLEFT", slider, "BOTTOMLEFT", 0, -30)
+
+    local caveCheck = CreateFrameTry("CheckButton", "HFWMForeverCaveCheck",
+        panel, "InterfaceOptionsCheckButtonTemplate", "UICheckButtonTemplate")
+    caveCheck:SetPoint("TOPLEFT", caveHeading, "BOTTOMLEFT", -4, -6)
+    caveCheck:SetSize(26, 26)
+    local caveCheckText = caveCheck.Text or caveCheck.text
+        or SubElement(caveCheck, "Text", "Text")
+    if caveCheckText then
+        caveCheckText:SetText("Show a cave map when I'm indoors")
+    else
+        caveCheckText = Label(panel, "Show a cave map when I'm indoors",
+            "GameFontHighlight")
+        caveCheckText:SetPoint("LEFT", caveCheck, "RIGHT", 2, 0)
+    end
+    caveCheck:SetScript("OnClick", function(btn)
+        Config.db.caveEnabled = btn:GetChecked() and true or false
+        if Config.db.caveEnabled then
+            -- Same qualification as /hfwm cave on: on a client with no
+            -- interior maps the checkbox going green would otherwise be the
+            -- only feedback the user ever gets.
+            ns.Cave:WarnIfUnsupported()
+            ns.Cave:Unsuppress()
+            ns.Cave:UpdateState()
+        else
+            ns.CaveRenderer:HideCave()
+        end
+        Options:Refresh()
+    end)
+
+    local caveDesc = Label(panel,
+        "|cff999999Caves, mines and dungeon interiors have their own map, "
+        .. "which the zone map above them cannot show. With this on, walking "
+        .. "into one opens a small window over the world map — draggable, "
+        .. "closable, with a depth slider for multi-level dungeons.|r",
+        "GameFontHighlightSmall")
+    caveDesc:SetPoint("TOPLEFT", caveCheck, "BOTTOMLEFT", 6, -2)
+    caveDesc:SetWidth(500)
+    caveDesc:SetJustifyH("LEFT")
+
+    local caveSlider = CreateFrameTry("Slider", "HFWMForeverCaveAlphaSlider",
+        panel, "OptionsSliderTemplate", "UISliderTemplate")
+    caveSlider:SetPoint("TOPLEFT", caveDesc, "BOTTOMLEFT", -6, -28)
+    caveSlider:SetWidth(220)
+    caveSlider:SetOrientation("HORIZONTAL")
+    caveSlider:SetMinMaxValues(0.2, 1)
+    caveSlider:SetValueStep(0.05)
+    if caveSlider.SetObeyStepOnDrag then caveSlider:SetObeyStepOnDrag(true) end
+
+    local caveLow  = SubElement(caveSlider, "Low", "Low")
+    local caveHigh = SubElement(caveSlider, "High", "High")
+    local caveSliderText = SubElement(caveSlider, "Text", "Text")
+    if caveLow then caveLow:SetText("20%") end
+    if caveHigh then caveHigh:SetText("100%") end
+    if not caveSliderText then
+        caveSliderText = Label(panel, "", "GameFontNormal")
+        caveSliderText:SetPoint("BOTTOM", caveSlider, "TOP", 0, 2)
+    end
+    caveSlider.textLabel = caveSliderText
+
+    caveSlider:SetScript("OnValueChanged", function(self, value)
+        if self._syncing then return end
+        Config.db.caveAlpha = math.max(0.2, math.min(1, value))
+        self.textLabel:SetText(
+            ("Cave map opacity: %d%%"):format(Config.db.caveAlpha * 100))
+        ns.CaveRenderer:ApplyAlpha()
+    end)
+
     -- Built from the same list as the dropdown, so it never advertises a
     -- background this install cannot draw.
     local keys = {}
@@ -415,14 +491,16 @@ function Options:BuildPanel()
     end
     local hint = Label(panel,
         "|cff999999Also available from chat: /hfwm bg "
-            .. table.concat(keys, "|") .. "|r",
+            .. table.concat(keys, "|") .. "  |  /hfwm cave on|off|r",
         "GameFontHighlightSmall")
-    hint:SetPoint("TOPLEFT", slider, "BOTTOMLEFT", 0, -34)
+    hint:SetPoint("TOPLEFT", caveSlider, "BOTTOMLEFT", 0, -28)
 
-    panel.enable    = enable
-    panel.dropdown  = dropdown
-    panel.bgDesc    = bgDesc
-    panel.slider    = slider
+    panel.enable     = enable
+    panel.dropdown   = dropdown
+    panel.bgDesc     = bgDesc
+    panel.slider     = slider
+    panel.caveCheck  = caveCheck
+    panel.caveSlider = caveSlider
 
     -- An open list outlives the panel it belongs to: the legacy menu and the
     -- new one both parent themselves high up so they are not clipped, so
@@ -437,6 +515,10 @@ function Options:BuildPanel()
     panel.default   = function()
         for k, v in pairs(Config.DEFAULTS) do Config.db[k] = v end
         ns.Renderer:ForceRefresh()
+        -- Reconcile rather than hide outright: "default" for the cave map is
+        -- off, but that is a fact about DEFAULTS, not something to hard-code
+        -- a second time here.
+        ns.Cave:UpdateState()
         Options:Refresh()
     end
 
@@ -460,6 +542,25 @@ function Options:Refresh()
     panel.slider._syncing = false
     panel.slider.textLabel:SetText(
         ("Opacity: %d%%"):format((Config.db.alpha or 1) * 100))
+
+    panel.caveCheck:SetChecked(Config.db.caveEnabled and true or false)
+
+    local caveAlpha = Config:CaveAlpha()
+    panel.caveSlider._syncing = true
+    panel.caveSlider:SetValue(caveAlpha)
+    panel.caveSlider._syncing = false
+    panel.caveSlider.textLabel:SetText(
+        ("Cave map opacity: %d%%"):format(caveAlpha * 100))
+    -- The opacity of a window you have turned off is not a live setting.
+    -- Enable/Disable rather than SetEnabled: the former has been on Slider
+    -- since vanilla, the latter is a mixin method of uncertain vintage here.
+    if Config.db.caveEnabled then
+        panel.caveSlider:Enable()
+        panel.caveSlider:SetAlpha(1)
+    else
+        panel.caveSlider:Disable()
+        panel.caveSlider:SetAlpha(0.4)
+    end
 end
 
 -------------------------------------------------------------------------------
@@ -472,7 +573,7 @@ function Options:BuildWindow()
     if self.window then return self.window end
 
     local win = CreateFrame("Frame", "HFWMForeverOptionsWindow", UIParent)
-    win:SetSize(580, 330)
+    win:SetSize(580, 480)
     win:SetPoint("CENTER")
     win:SetFrameStrata("DIALOG")
     win:SetToplevel(true)

@@ -65,7 +65,17 @@ ORIGINAL_SUBDIR = "Original"
 # URLs
 # ---------------------------------------------------------------------------
 WAGO_DB2_FMT = "https://wago.tools/db2/{table}/csv?build={build}"
+WAGO_DB2_LATEST_FMT = "https://wago.tools/db2/{table}/csv"
 WAGO_CASC_FMT = "https://wago.tools/api/casc/{}"
+
+# The same CASC endpoint, pinned.  ``/api/casc/{fdid}`` on its own serves
+# whichever build was ingested most recently, so a file that only exists
+# on retail answers 200 there and would be baked into a table claiming to
+# describe this build.  With ``?build=`` it 404s instead, which is what
+# makes the art-presence probe in hfwm/microdungeon.py mean anything.
+WAGO_CASC_PINNED_FMT = (
+    "https://wago.tools/api/casc/{fdid}?build=" + GAME_BUILD
+)
 
 USER_AGENT = f"HighFidelityWorldMapForever/1.0 (build {GAME_BUILD})"
 
@@ -73,6 +83,15 @@ USER_AGENT = f"HighFidelityWorldMapForever/1.0 (build {GAME_BUILD})"
 def db2_url(table: str) -> str:
     """Return the build-pinned CSV export URL for a DB2 *table*."""
     return WAGO_DB2_FMT.format(table=table, build=GAME_BUILD)
+
+
+def donor_db2_url(table: str) -> str:
+    """Return the *unpinned* (latest retail) CSV export URL for *table*.
+
+    Only the interior pass uses this, and only for map plumbing that this
+    build's own tables do not carry.  Never use it for art.
+    """
+    return WAGO_DB2_LATEST_FMT.format(table=table)
 
 
 # Tables this pipeline consumes.
@@ -85,6 +104,56 @@ DB2_TABLES = (
     "UiMapArtStyleLayer",
     "UiMapArtTile",
 )
+
+# ---------------------------------------------------------------------------
+# Interior (cave / dungeon) map table — see hfwm/microdungeon.py
+# ---------------------------------------------------------------------------
+# This build ships Blizzard's interior map art (Interface\WorldMap\
+# MicroDungeon\... and the instance art beside it) but its ``UiMap`` table
+# lists outdoor zones only: 60 rows, 1 World + 4 Continent + 55 Zone, and
+# not a single Dungeon or Micro.  So ``C_Map.GetBestMapForUnit`` can never
+# name a cave, ``C_Map.GetMapArtLayers`` can never describe one, and the
+# art sits in the client unreachable from Lua.
+#
+# The rows that would point at it do exist — on retail, where ``UiMap``
+# carries 257 Micro and 897 Dungeon entries.  This pass borrows the
+# *plumbing* from retail (which floors a place has, which tiles draw
+# them, which area the player has to be standing in) while taking the
+# *art* from the pinned build, then bakes the result into CaveData.lua so
+# the addon can drive its own cave window with no C_Map interior support
+# at all.
+#
+# Every borrowed row is validated against the pinned build before it is
+# emitted: the tile FileDataIDs must resolve on this build, the
+# assignment's MapID must exist in this build's ``Map``, and the names
+# must exist in this build's ``AreaTable``.  Anything retail has that
+# this build does not is dropped rather than guessed at.
+DONOR_DB2_TABLES = (
+    "UiMap",
+    "UiMapAssignment",
+    "UiMapXMapArt",
+    "UiMapArt",
+    "UiMapArtStyleLayer",
+    "UiMapArtTile",
+    "UiMapGroupMember",
+)
+
+# Build-pinned tables the interior pass needs on top of DB2_TABLES.
+INTERIOR_BUILD_DB2_TABLES = ("AreaTable",)
+
+DONOR_DB2_CACHE_DIR = CACHE_ROOT / "donor-db2"
+INTERIOR_PRESENCE_CACHE = CACHE_ROOT / "interior_presence.json"
+CAVE_DATA_FILE = SCRIPT_DIR / "CaveData.lua"
+
+# Enum.UiMapType values.  Dungeon and Micro are the two interior kinds.
+UI_MAP_TYPE_ZONE = 3
+UI_MAP_TYPE_DUNGEON = 4
+UI_MAP_TYPE_MICRO = 5
+
+# How many art-presence probes to run at once.  One small HTTP GET per
+# candidate interior against the pinned CASC endpoint; 16 keeps the whole
+# sweep under a minute without hammering wago.tools.
+INTERIOR_PROBE_WORKERS = 16
 
 # ---------------------------------------------------------------------------
 # BLP2 encoding
@@ -170,6 +239,14 @@ EXPECTED_ART_LAYER_DIMS = {
 # ---------------------------------------------------------------------------
 MINIMAP_DB_CACHE_TTL_DAYS = 30
 DB2_CACHE_TTL_DAYS = 30
+
+# The donor tables track retail, which patches far more often than this
+# beta does, but nothing the interior pass reads out of them (floor
+# order, area names, tile FDIDs for vanilla content) has changed in
+# years.  A long TTL keeps a ~13 MB UiMapArtTile download off every run;
+# --refresh-caves forces it when that assumption needs testing.
+DONOR_DB2_CACHE_TTL_DAYS = 30
+INTERIOR_PRESENCE_CACHE_TTL_DAYS = 30
 
 # ---------------------------------------------------------------------------
 # Network defaults

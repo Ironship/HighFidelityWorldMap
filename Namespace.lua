@@ -17,6 +17,7 @@ ns.Renderer    = {}
 ns.Commands    = {}
 ns.Options     = {}
 ns.Cave        = {}
+ns.CaveTable   = {}
 ns.CaveRenderer = {}
 
 -- Convenience printer (accessible everywhere via ns.P)

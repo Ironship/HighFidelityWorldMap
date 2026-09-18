@@ -1,0 +1,535 @@
+-------------------------------------------------------------------------------
+-- HFWM-Forever CaveTable
+--
+-- Presents the generated CaveData.lua through the same questions C_Map would
+-- answer about an interior, so Cave.lua can drive the window off either one.
+--
+-- Why this file has to exist at all: this build ships Blizzard's own interior
+-- map art — Fargodeep Mine has two floors of it sitting in the client right
+-- now — but its UiMap table lists outdoor zones only. 60 rows, no Dungeon and
+-- no Micro. So C_Map.GetBestMapForUnit can never name a cave, GetMapArtLayers
+-- can never describe one, and the art is unreachable from Lua even though the
+-- engine happily draws it on the minimap. What is missing is the *plumbing*,
+-- not the pictures, and that is what hfwm/microdungeon.py rebuilds offline and
+-- bakes into HFWMF_CAVE_DATA.
+--
+-- The three questions this has to answer that C_Map answers for free:
+--
+--   Where is the player?   C_Map resolves a world position to a map ID. With
+--       no interior maps there is nothing to resolve to, so the lookup runs
+--       the other way: the baked AreaTable IDs are turned into names through
+--       C_Map.GetAreaInfo at load, and the names are matched against what the
+--       client says the player's area is called. Both sides therefore come
+--       from the client's own locale data and the match holds in any
+--       language, despite the table being built from enUS exports.
+--   Which floor?           Dungeon floors share one AreaID (all four
+--       Gnomeregan floors are area 721), so the name says only *where*. The
+--       floor comes from the world-space rectangles instead, where they
+--       discriminate — see FloorForPosition.
+--   What art?              Straight out of the table: FileDataIDs the client
+--       already has, in the row-major order GetMapArtLayerTextures uses.
+--
+-- Floor identity is a synthetic ID minted here rather than the retail UiMapID
+-- the table carries. The retail numbering is kept on each floor for tracing,
+-- but it is retail's — this client renumbered the world (Elwynn Forest is
+-- 1429 here and 37 there) — so handing it to anything that might pass it to
+-- C_Map would be inviting a lookup against the wrong map.
+-------------------------------------------------------------------------------
+local addonName, ns = ...
+local CaveTable = ns.CaveTable
+local Config    = ns.Config
+
+-- Synthetic floor IDs start here. Well clear of any UiMapID a client could
+-- mint (retail's highest is in the low thousands) and positive, so a baked
+-- floor ID prints, sorts and compares like the map ID it stands in for
+-- everywhere the existing code already handles one.
+local FLOOR_ID_BASE = 4000000
+
+-- Enum.UiMapType values, so GetMapInfo can answer mapType like C_Map does.
+local UI_MAP_TYPE = (Enum and Enum.UiMapType) or {}
+local MAP_TYPE_BY_KIND = {
+    micro   = UI_MAP_TYPE.Micro   or 5,
+    dungeon = UI_MAP_TYPE.Dungeon or 4,
+}
+
+-------------------------------------------------------------------------------
+-- Indices, built once at login
+-------------------------------------------------------------------------------
+local loaded = false
+local places = {}        -- [i] = place, with .floors[j].id filled in
+local floorByID = {}     -- [floorID] = { place = place, floor = floor }
+local placesByName = {}  -- [lowercased localised area name] = { place, ... }
+local placeByInstance = {} -- [Map.ID] = place, dungeons only
+
+--- Fold a place into the name index under every name it could be recognised
+--- by: the place's own areas and each floor's.
+local function IndexNames(place)
+    local seen = {}
+    local function add(areaID)
+        if not areaID or seen[areaID] then return end
+        seen[areaID] = true
+        -- The localised name for this build's own AreaTable row. nil means
+        -- the client does not know the area, which the generator is supposed
+        -- to have made impossible — every baked ID was matched against this
+        -- build's AreaTable — so it is simply skipped rather than guessed at.
+        local name = C_Map.GetAreaInfo and C_Map.GetAreaInfo(areaID)
+        if not name or name == "" then return end
+        local key = name:lower()
+        local list = placesByName[key]
+        if not list then
+            list = {}
+            placesByName[key] = list
+        end
+        for _, p in ipairs(list) do
+            if p == place then return end
+        end
+        list[#list + 1] = place
+    end
+
+    for _, areaID in ipairs(place.areaIDs or {}) do add(areaID) end
+    for _, floor in ipairs(place.floors) do
+        for _, areaID in ipairs(floor.areaIDs or {}) do add(areaID) end
+    end
+end
+
+--- Read HFWMF_CAVE_DATA into the indices above. Safe to call more than once;
+--- the second call rebuilds, which is what makes it useful from /hfwm debug
+--- after a table swap.
+function CaveTable:Load()
+    loaded = false
+    places, floorByID, placesByName, placeByInstance = {}, {}, {}, {}
+
+    local data = HFWMF_CAVE_DATA
+    if type(data) ~= "table" or type(data.places) ~= "table" then
+        return false
+    end
+
+    local nextID = FLOOR_ID_BASE
+    for i, src in ipairs(data.places) do
+        if type(src.floors) == "table" and #src.floors > 0 then
+            local place = {
+                index   = i,
+                name    = src.name,
+                kind    = src.kind,
+                mapID   = src.mapID,
+                areaIDs = src.areaIDs or {},
+                bounds  = src.bounds,
+                floors  = {},
+                -- Suppression is keyed on this, so it has to be stable across
+                -- a session and distinct from any C_Map group key. The place's
+                -- position in the shipped table is both.
+                groupKey = "b" .. i,
+            }
+            for j, floor in ipairs(src.floors) do
+                nextID = nextID + 1
+                place.floors[j] = {
+                    id       = nextID,
+                    place    = place,
+                    depth    = j,          -- 1 = shallowest, as generated
+                    name     = floor.name,
+                    uiMapID  = floor.uiMapID,   -- retail's, for tracing only
+                    areaIDs  = floor.areaIDs or {},
+                    bounds   = floor.bounds,
+                    layerW   = floor.layerW,
+                    layerH   = floor.layerH,
+                    tileW    = floor.tileW,
+                    tileH    = floor.tileH,
+                    cols     = floor.cols,
+                    rows     = floor.rows,
+                    tiles    = floor.tiles,
+                }
+                floorByID[nextID] = place.floors[j]
+            end
+            places[#places + 1] = place
+            IndexNames(place)
+            -- Instance map IDs are unique per dungeon and are exactly what
+            -- GetInstanceInfo hands back, so inside a dungeon the lookup can
+            -- skip the names entirely. Micro dungeons share the continent's
+            -- Map.ID between all of them, so they are deliberately left out.
+            if place.kind == "dungeon" and place.mapID then
+                placeByInstance[place.mapID] = place
+            end
+        end
+    end
+
+    loaded = #places > 0
+    return loaded
+end
+
+function CaveTable:IsLoaded() return loaded end
+function CaveTable:CountPlaces() return #places end
+function CaveTable:GetBuild()
+    return HFWMF_CAVE_DATA and HFWMF_CAVE_DATA.build or nil
+end
+
+--- The floor record behind a synthetic floor ID, or nil for anything else —
+--- which is how every caller tells a baked ID from a real UiMapID.
+---@param floorID number|nil
+function CaveTable:GetFloor(floorID)
+    return floorID and floorByID[floorID] or nil
+end
+
+-------------------------------------------------------------------------------
+-- Locating the player
+-------------------------------------------------------------------------------
+
+--- The Map.ID (instance / continent) the player is on, and whether it is an
+--- instance. GetInstanceInfo's 8th return is the instance map ID, and it is 0
+--- or the continent's ID out in the world, which is precisely what the table's
+--- `mapID` holds for a micro dungeon.
+---@return number|nil mapID, boolean inInstance
+local function CurrentMapID()
+    if not GetInstanceInfo then return nil, false end
+    local ok, _, instanceType, _, _, _, _, _, instanceMapID =
+        pcall(GetInstanceInfo)
+    if not ok then return nil, false end
+    return instanceMapID, (instanceType ~= nil and instanceType ~= "none")
+end
+
+--- Player world position as the baked rectangles measure it.
+---
+--- UnitPosition returns y, x, z, instanceID — Y first, which is easy to get
+--- backwards and produces a pin that is plausibly wrong rather than obviously
+--- wrong, so it is unpacked in one place only.
+---@return number|nil worldX, number|nil worldY
+local function PlayerWorldXY()
+    if not UnitPosition then return nil end
+    local ok, y, x = pcall(UnitPosition, "player")
+    if not ok or not x or not y then return nil end
+    return x, y
+end
+
+--- Does this world-space rectangle contain (worldX, worldY)?
+---
+--- bounds reads as { minY, maxY, minX, maxX }, not the { minX, maxX, minY,
+--- maxY } CaveData.lua's header claims. Confirmed from two live /hfwm debug
+--- captures at Fargodeep Mine, one on the hillside above it and one inside
+--- the shaft: the player's real worldY (from UnitPosition, itself correct —
+--- see PlayerWorldXY) landed inside bounds[1..2] and real worldX inside
+--- bounds[3..4], the opposite of documented. That is why FindPlayerFloor
+--- used to return nil for every micro dungeon regardless of the outdoors
+--- gate or name match — this check was failing for every place, always.
+--- The generator (hfwm/db2.py's Region_0..5 -> world-axis mapping, around
+--- line 34) has the transposition at its root and is worth fixing there so
+--- a future regenerate doesn't reintroduce this; until then, this reads the
+--- table as it actually is.
+local function Contains(bounds, worldX, worldY)
+    if not bounds then return false end
+    return worldY >= bounds[1] and worldY <= bounds[2]
+        and worldX >= bounds[3] and worldX <= bounds[4]
+end
+
+local function RectArea(bounds)
+    return (bounds[2] - bounds[1]) * (bounds[4] - bounds[3])
+end
+
+--- Which floor of *place* the player is most likely standing on.
+---
+--- The rectangles are the only discriminator there is: the source rows carry
+--- no usable Z bounds — they are -10000 and 1000000 on every interior row —
+--- so two floors stacked in the same shaft have overlapping, sometimes
+--- identical, footprints. Where they do differ this gets the floor right, and
+--- Gnomeregan's four levels are a good case: the Hall of Gears and the Launch
+--- Bay barely overlap.
+---
+--- Where they do not differ it returns the shallowest, and the depth slider is
+--- how the player says otherwise. That is not a consolation prize — it is the
+--- reason the slider is the feature's main control rather than a nicety.
+---@param place table
+---@return table floor
+local function FloorForPosition(place)
+    local first = place.floors[1]
+    if #place.floors == 1 then return first end
+
+    local worldX, worldY = PlayerWorldXY()
+    if not worldX then return first end
+
+    local best, bestArea
+    for _, floor in ipairs(place.floors) do
+        if Contains(floor.bounds, worldX, worldY) then
+            local area = RectArea(floor.bounds)
+            -- Smallest containing rectangle wins: a floor whose footprint is
+            -- the whole cave says less about where the player is than one cut
+            -- tightly around a single chamber.
+            if not bestArea or area < bestArea then
+                best, bestArea = floor, area
+            end
+        end
+    end
+    return best or first
+end
+
+--- Every name the client currently offers for where the player is, most
+--- specific first. The subzone is the one that names a mine; the zone is what
+--- names a dungeon, because inside one the "zone" *is* the dungeon.
+local function PlayerAreaNames()
+    local out = {}
+    for _, fn in ipairs({ GetSubZoneText, GetZoneText, GetMinimapZoneText }) do
+        if fn then
+            local ok, name = pcall(fn)
+            if ok and name and name ~= "" then out[#out + 1] = name end
+        end
+    end
+    return out
+end
+
+--- The baked floor the player is standing on, or nil.
+---
+--- Two routes in, and the instance one is both simpler and stronger:
+---
+---   In a dungeon the instance map ID identifies the place outright. It is
+---   the same number the table was built from and nothing else can produce
+---   it, so no name matching is involved at all.
+---
+---   Out in the world it has to be the area name, and a name alone is not
+---   enough: area 57 is "Fargodeep Mine" whether the player is down the shaft
+---   or on the hillside above it, and the rectangle cannot tell those apart
+---   either because there are no Z bounds to compare. IsOutdoors() is what
+---   separates them — a mine is a WMO and the client knows it is inside one.
+---
+---   This used to carry a per-place exemption from the outdoors check for
+---   Fargodeep Mine, on the theory that it was a terrain-cut mine with no
+---   enclosing WMO. Two live /hfwm debug captures disproved that: outdoors
+---   read true on the hillside and false in the shaft, exactly as it should.
+---   The real fault was Contains() reading every place's bounds transposed
+---   (see its comment), which made the rectangle test fail everywhere,
+---   independent of this gate — so the gate was never the problem, for
+---   Fargodeep or anything else, and stays unconditional.
+---@return number|nil floorID
+function CaveTable:FindPlayerFloor()
+    if not loaded then return nil end
+
+    local mapID, inInstance = CurrentMapID()
+
+    if inInstance then
+        local place = mapID and placeByInstance[mapID]
+        if place then return FloorForPosition(place).id end
+        -- An instance with no baked table entry: nothing to draw, and
+        -- falling through to the name match would only find an unrelated
+        -- micro dungeon that happens to share a room name.
+        return nil
+    end
+
+    if IsOutdoors and IsOutdoors() then return nil end
+
+    local worldX, worldY = PlayerWorldXY()
+
+    local best, bestArea
+    for _, name in ipairs(PlayerAreaNames()) do
+        for _, place in ipairs(placesByName[name:lower()] or {}) do
+            -- Micro dungeons only out here. A dungeon's rows are in instance
+            -- space, so its rectangle would be compared against world
+            -- coordinates and could match anywhere.
+            if place.kind == "micro"
+               and (mapID == nil or place.mapID == mapID) then
+                if not worldX or not place.bounds then
+                    -- No position or no rectangle: the name and being indoors
+                    -- are all there is, so take it.
+                    return FloorForPosition(place).id
+                end
+                if Contains(place.bounds, worldX, worldY) then
+                    local area = RectArea(place.bounds)
+                    if not bestArea or area < bestArea then
+                        best, bestArea = place, area
+                    end
+                end
+            end
+        end
+        -- The subzone naming a place is a better answer than the zone naming
+        -- one, so stop at the first name that resolved rather than letting a
+        -- broader name overwrite it.
+        if best then break end
+    end
+
+    return best and FloorForPosition(best).id or nil
+end
+
+--- Line-by-line replay of FindPlayerFloor's decision, for /hfwm debug.
+---
+--- This exists because "resolved floor fell back to C_Map" turned out not to
+--- say *which* of FindPlayerFloor's checks was the one that let go: instance
+--- routing, the outdoors gate, the name index, and the bounding rectangle all
+--- return the same nil from the outside. Each step here is copied rather than
+--- factored out into something FindPlayerFloor also calls, so a bug in the
+--- trace can never make FindPlayerFloor itself agree with a wrong answer.
+---@return string[] lines
+function CaveTable:DebugTrace()
+    local lines = {}
+    local add = function(s) lines[#lines + 1] = s end
+
+    if not loaded then
+        add("  findFloor: cave table not loaded")
+        return lines
+    end
+
+    local mapID, inInstance = CurrentMapID()
+    add(("  findFloor: mapID(instance/continent)=%s  inInstance=%s"):format(
+        tostring(mapID), tostring(inInstance)))
+
+    if inInstance then
+        local place = mapID and placeByInstance[mapID]
+        add(("  findFloor: instance route -> place=%s"):format(
+            place and place.name or "none (nil floor)"))
+        return lines
+    end
+
+    local outdoors = (IsOutdoors and IsOutdoors()) and true or false
+    add(("  findFloor: outdoors=%s"):format(tostring(outdoors)))
+    if outdoors then
+        add("  findFloor: outdoors gate -> nil (matches FindPlayerFloor's "
+            .. "unconditional early return)")
+        return lines
+    end
+
+    local worldX, worldY = PlayerWorldXY()
+    add(("  findFloor: worldX=%s  worldY=%s"):format(
+        tostring(worldX), tostring(worldY)))
+
+    local names = PlayerAreaNames()
+    add("  findFloor: names tried, in order: "
+        .. (names[1] and table.concat(names, " | ") or "(none)"))
+
+    for _, name in ipairs(names) do
+        local key  = name:lower()
+        local list = placesByName[key]
+        add(("  findFloor: name=%q indexed=%s candidates=%d"):format(
+            name, tostring(list ~= nil), list and #list or 0))
+        for _, place in ipairs(list or {}) do
+            local kindOK = place.kind == "micro"
+            local mapOK  = (mapID == nil or place.mapID == mapID)
+            add(("    place=%s kind=%s mapOK=%s(place.mapID=%s)")
+                :format(place.name, place.kind, tostring(mapOK),
+                    tostring(place.mapID)))
+            if kindOK and mapOK then
+                if not worldX or not place.bounds then
+                    add("      -> no position/bounds: takes this place")
+                else
+                    local b = place.bounds
+                    add(("      -> place.bounds={%.1f,%.1f,%.1f,%.1f} contains(%.1f,%.1f)=%s")
+                        :format(b[1], b[2], b[3], b[4], worldX, worldY,
+                            tostring(Contains(b, worldX, worldY))))
+                end
+            end
+        end
+    end
+
+    return lines
+end
+
+-------------------------------------------------------------------------------
+-- The C_Map-shaped accessors Cave.lua drives the window through
+-------------------------------------------------------------------------------
+
+--- Like C_Map.GetMapInfo: name, type and parent for a floor.
+function CaveTable:GetMapInfo(floorID)
+    local floor = self:GetFloor(floorID)
+    if not floor then return nil end
+    return {
+        mapID       = floorID,
+        name        = floor.name,
+        mapType     = MAP_TYPE_BY_KIND[floor.place.kind],
+        parentMapID = 0,
+    }
+end
+
+--- The suppression / identity key for the place a floor belongs to, so that
+--- closing the window on one floor of a dungeon keeps it closed on the rest.
+function CaveTable:GetGroupKey(floorID)
+    local floor = self:GetFloor(floorID)
+    return floor and floor.place.groupKey or nil
+end
+
+--- Are these two floor IDs floors of the same place?
+function CaveTable:SamePlace(a, b)
+    local fa, fb = self:GetFloor(a), self:GetFloor(b)
+    if not fa or not fb then return false end
+    return fa.place == fb.place
+end
+
+--- The place's name, which is the window's titlebar. Distinct from the floor
+--- name on purpose: the floors of Gnomeregan are called things like "Launch
+--- Bay", so a title taken from the floor would never say "Gnomeregan".
+function CaveTable:GetPlaceName(floorID)
+    local floor = self:GetFloor(floorID)
+    return floor and floor.place.name or nil
+end
+
+--- Like Cave:BuildFloorList: every floor of the place, topmost first.
+---@return table[] floors  [{ mapID, name, relativeHeightIndex }, ...]
+function CaveTable:BuildFloorList(floorID)
+    local floor = self:GetFloor(floorID)
+    if not floor then return nil end
+    local out = {}
+    local all = floor.place.floors
+    -- The table is generated shallowest-first and the window wants topmost
+    -- first, which is the same order; relativeHeightIndex is emitted
+    -- descending to match what C_Map hands back for a real map group.
+    for i, f in ipairs(all) do
+        out[i] = {
+            mapID = f.id,
+            name  = f.name or ("Level " .. i),
+            relativeHeightIndex = #all - i,
+        }
+    end
+    return out
+end
+
+--- Like C_Map.GetMapArtLayers, minus the zoom-detail layers: the baked table
+--- only carries the full-extent base layer, which is the only one a fixed
+--- window can use anyway.
+function CaveTable:GetArtLayer(floorID)
+    local floor = self:GetFloor(floorID)
+    if not floor then return nil, nil end
+    return 1, {
+        layerWidth  = floor.layerW,
+        layerHeight = floor.layerH,
+        tileWidth   = floor.tileW,
+        tileHeight  = floor.tileH,
+    }
+end
+
+--- Like C_Map.GetMapArtLayerTextures: row-major FileDataIDs.
+function CaveTable:GetArtTextures(floorID)
+    local floor = self:GetFloor(floorID)
+    return floor and floor.tiles or nil
+end
+
+--- Like C_Map.GetPlayerMapPosition, as plain normalised x, y.
+---
+--- The axis mapping is the one hfwm/db2.py documents for UiMapAssignment and
+--- every known zone confirms: the top of the map is max world X, the left is
+--- max world Y. So map x runs down from max Y and map y runs down from max X,
+--- which is why neither numerator looks like the other. bounds itself reads
+--- as { minY, maxY, minX, maxX } — see Contains's comment — so it is indexed
+--- to match that, not the { minX, maxX, minY, maxY } it is documented as.
+---@return number|nil x, number|nil y  0..1 from the art's top-left
+function CaveTable:GetPlayerPosition(floorID)
+    local floor = self:GetFloor(floorID)
+    if not floor then return nil end
+    -- The floor's own rectangle where it has one, the place's otherwise: a
+    -- pin placed against the wrong extent is worse than no pin.
+    local bounds = floor.bounds or floor.place.bounds
+    if not bounds then return nil end
+
+    local worldX, worldY = PlayerWorldXY()
+    if not worldX then return nil end
+    if not Contains(bounds, worldX, worldY) then return nil end
+
+    local spanY = bounds[2] - bounds[1]
+    local spanX = bounds[4] - bounds[3]
+    if spanX <= 0 or spanY <= 0 then return nil end
+
+    return (bounds[2] - worldY) / spanY, (bounds[4] - worldX) / spanX
+end
+
+--- One line per place, for /hfwm debug.
+function CaveTable:DebugLines(limit)
+    local out = {}
+    for i = 1, math.min(limit or #places, #places) do
+        local place = places[i]
+        out[i] = ("%-28s %-7s map=%-5s floors=%d areas=%s"):format(
+            place.name, place.kind, tostring(place.mapID), #place.floors,
+            table.concat(place.areaIDs, ","))
+    end
+    return out
+end
