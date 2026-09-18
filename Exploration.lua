@@ -2,12 +2,49 @@
 -- HFWM-Forever Exploration
 -- Hide / show exploration overlay ("fog of war cleared" textures).
 -- Searches pin pools and data providers directly on WorldMapFrame.
+--
+-- Mouse state is saved and restored rather than forced.  Exploration pins
+-- are pure art stretched over the whole canvas and Blizzard leaves them
+-- mouse-disabled; calling EnableMouse(true) on them turns the overlay into
+-- an invisible sheet that eats every click on the map, so zone clicks,
+-- drag-panning and pin tooltips all stop working.  Pins are pooled, so a
+-- forced-on flag also survives release and comes back on the next acquire.
 -------------------------------------------------------------------------------
 local addonName, ns = ...
 local Exploration = ns.Exploration
 local Config      = ns.Config
 
 local hookedDPs = {}
+
+--- Run *fn* over every exploration pin, optionally including pooled-but-
+--- inactive ones (their state carries over when they are re-acquired).
+local function ForEachPin(fn, includeInactive)
+    if not WorldMapFrame.pinPools then return end
+    for templateName, pinPool in next, WorldMapFrame.pinPools do
+        if templateName:lower():find("exploration") then
+            for pin in pinPool:EnumerateActive() do fn(pin) end
+            if includeInactive and pinPool.EnumerateInactive then
+                for pin in pinPool:EnumerateInactive() do fn(pin) end
+            end
+        end
+    end
+end
+
+--- Disable mouse input, remembering whether it was on to begin with.
+local function SuppressMouse(pin)
+    if pin._hfwmMouseWasEnabled == nil then
+        pin._hfwmMouseWasEnabled = pin:IsMouseEnabled() and true or false
+    end
+    pin:EnableMouse(false)
+end
+
+--- Put mouse input back exactly how Blizzard had it.
+local function RestoreMouse(pin)
+    if pin._hfwmMouseWasEnabled ~= nil then
+        pin:EnableMouse(pin._hfwmMouseWasEnabled)
+        pin._hfwmMouseWasEnabled = nil
+    end
+end
 
 local function IsExplorationDP(dp)
     if dp.overlayTexturePool then return true end
@@ -32,19 +69,13 @@ end
 function Exploration:HidePins()
     HookDPs()
 
-    if WorldMapFrame.pinPools then
-        for templateName, pinPool in next, WorldMapFrame.pinPools do
-            if templateName:find("Exploration") or templateName:find("exploration") then
-                for pin in pinPool:EnumerateActive() do
-                    pin:SetAlpha(0)
-                    pin:EnableMouse(false)
-                    for _, region in ipairs({pin:GetRegions()}) do
-                        region:SetAlpha(0)
-                    end
-                end
-            end
+    ForEachPin(function(pin)
+        pin:SetAlpha(0)
+        SuppressMouse(pin)
+        for _, region in ipairs({pin:GetRegions()}) do
+            region:SetAlpha(0)
         end
-    end
+    end)
 
     if WorldMapFrame.dataProviders then
         for dp in next, WorldMapFrame.dataProviders do
@@ -62,21 +93,17 @@ function Exploration:SetVisible(visible)
     HookDPs()
 
     if visible then
-        if WorldMapFrame.pinPools then
-            for templateName, pinPool in next, WorldMapFrame.pinPools do
-                if templateName:find("Exploration") or templateName:find("exploration") then
-                    for pin in pinPool:EnumerateActive() do
-                        pin:SetAlpha(1)
-                        pin:EnableMouse(true)
-                        pin:Show()
-                        for _, region in ipairs({pin:GetRegions()}) do
-                            region:SetAlpha(1)
-                            region:Show()
-                        end
-                    end
-                end
+        -- Includes inactive pins: RemoveAllData() released them while the
+        -- overlay was up, and the refresh below hands the same frames back.
+        ForEachPin(function(pin)
+            pin:SetAlpha(1)
+            RestoreMouse(pin)
+            pin:Show()
+            for _, region in ipairs({pin:GetRegions()}) do
+                region:SetAlpha(1)
+                region:Show()
             end
-        end
+        end, true)
         if WorldMapFrame.dataProviders then
             for dp in next, WorldMapFrame.dataProviders do
                 if dp.overlayTexturePool then
@@ -96,6 +123,10 @@ function Exploration:SetVisible(visible)
                 end
             end
         end
+
+        -- Second pass, in case a pool without EnumerateInactive handed back
+        -- a pin we could not reach above.  No-op once flags are cleared.
+        ForEachPin(RestoreMouse, true)
     else
         if WorldMapFrame.dataProviders then
             for dp in next, WorldMapFrame.dataProviders do
