@@ -120,6 +120,51 @@ def unify_tile(img, ocean_rgb: tuple[int, int, int]) -> tuple[object, float]:
     return img, frac
 
 
+def erase_tile(img, keep_rgb: bool = True) -> tuple[object, float]:
+    """Make every ocean-fill pixel of *img* fully transparent.
+
+    The other thing you can do with the sea once you can find it: instead
+    of picking a colour for it, punch it out and let whatever is
+    underneath show through.  That is how the ``base-art`` pass gets
+    Blizzard's own hand-painted ocean back.
+
+    Only the alpha is cleared.  The sea's original colour is left sitting
+    in the RGB channels underneath, where alpha blending will never show
+    it directly, because it is the better neighbour for the LANCZOS
+    downscale to the region's stitch resolution, which interpolates
+    colour and alpha independently.  A coast pixel ends up
+    part-transparent either way; the question is only what colour it
+    carries.  Zeroing the RGB makes that colour part-black, and blending
+    part-black at partial alpha is the classic dark halo.  Leaving the
+    real sea colour there means the fringe blends land into sea, which is
+    what it is.
+
+    This used to carry a second justification — that the addon could show
+    the raw stitch by drawing the same tile with
+    ``SetBlendMode("DISABLE")``, which would ignore the alpha channel and
+    put the erased pixels back on screen.  The files are indeed bit-exact
+    to a raw stitch, but this client honours alpha whatever the blend
+    mode, so that never worked in game.  The raw look is a genuinely
+    separate dump now (``--original``), and this function's only remaining
+    claim is the downscale one above.
+
+    Pass ``keep_rgb=False`` for the old zeroing behaviour.
+    """
+    import numpy as np
+    from PIL import Image
+
+    arr = np.array(img)
+    mask = ocean_mask(arr[:, :, :3])
+    frac = float(mask.mean())
+    if frac:
+        if keep_rgb:
+            arr[:, :, 3][mask] = 0
+        else:
+            arr[mask] = (0, 0, 0, 0)
+        img = Image.fromarray(arr)
+    return img, frac
+
+
 # ---------------------------------------------------------------------------
 # Empty-cell pass
 # ---------------------------------------------------------------------------

@@ -22,13 +22,30 @@ comes back short and the paste rect is shrunk to match (see
 short crop is what puts the art out from under the client's zone
 highlights.
 
-No inpainting.  The one thing that is not left raw is the sea: the
-stitch delivers it as several different flat fills meeting along tile
-boundaries, so :mod:`hfwm.ocean` collapses them onto a single colour and
-extends that colour into the empty cells beyond the terrain grid.  Only
-gaps that actually border open water are filled — everything else still
-stays black, because the goal is still a stitched-minimap world map,
-warts and all.  ``--no-ocean-fill`` turns the pass off entirely.
+Nothing here invents terrain.  What the raw stitch does not cover is
+decided by the enabled **art passes** (see :mod:`hfwm.effects`, which is
+also where the rule that every one of them must be toggleable lives).
+Three exist, and they are alternatives:
+
+* ``alpha-sea`` (default) — make the sea and every uncovered cell
+  *transparent* and leave it that way.  No backdrop is chosen here at all;
+  the addon draws one behind the tiles at runtime, so the same BLPs serve
+  every background its options panel offers.
+* ``ocean`` — the stitch delivers the sea as several different flat fills
+  meeting along tile boundaries, so :mod:`hfwm.ocean` collapses them onto
+  one colour and extends it into empty cells that border open water.
+  Everything else stays black.  Baked in, and worth it only for that
+  cell classification, which a flat runtime backdrop cannot reproduce.
+* ``base-art`` — composite the transparent layer over the zone's original
+  hand-painted art, so Blizzard's ocean, coastline and parchment border
+  are baked in under the satellite terrain.
+
+The first two share their sea handling: ``alpha-sea`` and ``base-art``
+both erase it, and differ only in whether anything is put underneath
+before the BLPs are written.
+
+With no passes enabled the output is the raw stitch, gaps and seams and
+all.
 """
 
 from __future__ import annotations
@@ -45,7 +62,8 @@ from .constants import (
     TILE_WORLD_SIZE,
 )
 from .coordinates import compute_crop_box
-from .ocean import classify_missing_cells, unify_tile
+from .ocean import classify_missing_cells, erase_tile, unify_tile
+from .resample import resize_rgba
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +118,7 @@ def _stitch_region(
     tile_cache: dict[int, Path],
     dst_w: int,
     dst_h: int,
+    sea_mode: str | None = None,
     ocean_rgb: tuple[int, int, int] | None = None,
 ):
     """Stitch one region's minimap tiles and crop to its world bounds.
@@ -109,12 +128,25 @@ def _stitch_region(
     rectangle the crop actually covers — the caller must paste into that
     fraction of the destination rect rather than stretching to fill it.
 
-    When *ocean_rgb* is set, every ocean-fill pixel is recoloured to it
-    and empty cells that open onto real water are filled with it (see
-    :mod:`hfwm.ocean`).  The recolour happens at each tile's native
-    resolution, before the downscale to ``tp`` — afterwards the downscale
-    has already blended dark open ocean into light coastal water across
-    every coast tile, and no exact-colour match can undo that.
+    *sea_mode* selects what happens to the sea, and comes from whichever
+    art pass is enabled:
+
+    ``None``
+        Nothing.  The raw stitch, uncovered cells black.
+    ``"unify"``
+        Every ocean-fill pixel is recoloured to *ocean_rgb*, and empty
+        cells that open onto real water are filled with it too.
+    ``"erase"``
+        Every ocean-fill pixel becomes transparent, and the canvas starts
+        transparent so uncovered cells are holes rather than black.  No
+        cell classification is needed: with a backdrop to fall through to,
+        showing it is the right answer for *every* gap, not just the ones
+        that border water.
+
+    Either way the work happens at each tile's native resolution, before
+    the downscale to ``tp``.  Afterwards the downscale has already blended
+    dark open ocean into light coastal water across every coast tile, and
+    no exact-colour match can undo that.
     """
     from PIL import Image
 
@@ -124,7 +156,10 @@ def _stitch_region(
     scols = col_max - col_min + 1
     srows = row_max - row_min + 1
 
-    stitch = Image.new("RGBA", (scols * tp, srows * tp), (0, 0, 0, 255))
+    # Transparent base only when something is going to show through it;
+    # otherwise the historical opaque black, so a raw run is unchanged.
+    base = (0, 0, 0, 0) if sea_mode == "erase" else (0, 0, 0, 255)
+    stitch = Image.new("RGBA", (scols * tp, srows * tp), base)
 
     loaded = 0
     upscaled = 0
@@ -151,8 +186,10 @@ def _stitch_region(
             tile.close()
             too_small += 1
             continue
-        if ocean_rgb is not None:
+        if sea_mode == "unify":
             tile, ocean_fracs[(r, c)] = unify_tile(tile, ocean_rgb)
+        elif sea_mode == "erase":
+            tile, ocean_fracs[(r, c)] = erase_tile(tile)
         if (w, h) != (tp, tp):
             # gotchas.md 1.2: some legitimate minimap tiles ship at 256px.
             # Upscale rather than drop them, so a zone never ends up with
@@ -160,7 +197,9 @@ def _stitch_region(
             # the region's effective stitch resolution.)
             if w < tp or h < tp:
                 upscaled += 1
-            tile = tile.resize((tp, tp), Image.LANCZOS)
+            # resize_rgba, not Image.resize: an erased sea keeps its colour
+            # under alpha 0 and Pillow's premultiplied path would zero it.
+            tile = resize_rgba(tile, (tp, tp), Image.LANCZOS)
 
         stitch.paste(tile, ((c - col_min) * tp, (r - row_min) * tp))
         tile.close()
@@ -187,7 +226,7 @@ def _stitch_region(
     # Only the ones that actually border open water: an interior map like
     # Alterac Valley bakes its own grey void into its tiles, and painting
     # the gap around it blue just relocates the seam.
-    if ocean_rgb is not None:
+    if sea_mode == "unify":
         filled = classify_missing_cells(
             ocean_fracs, row_min, row_max, col_min, col_max,
         )
@@ -201,6 +240,14 @@ def _stitch_region(
             )
         stats["ocean_cells"] = len(filled)
         stats["has_ocean"] = bool(filled) or any(
+            f >= OCEAN_TILE_FRACTION for f in ocean_fracs.values()
+        )
+    elif sea_mode == "erase":
+        # Nothing to paint — the empty cells are already holes.  Count them
+        # so the run still reports how much of the grid the backdrop is
+        # carrying.
+        stats["ocean_cells"] = stats["cells"] - loaded
+        stats["has_ocean"] = any(
             f >= OCEAN_TILE_FRACTION for f in ocean_fracs.values()
         )
 
@@ -228,6 +275,59 @@ def _stitch_region(
 
 
 # ---------------------------------------------------------------------------
+# Base-art backdrop
+# ---------------------------------------------------------------------------
+
+def _base_art_canvas(
+    zone_info: dict,
+    base_art_cache: dict[int, Path],
+    out_w: int,
+    out_h: int,
+):
+    """Reassemble the zone's original hand-painted art as a backdrop.
+
+    ``zone_info["tile_fdids"]`` is already in the row-major order the
+    output grid uses — it is the same list the addon remaps — so the
+    client's own art layer rebuilds by pasting tile *i* at
+    ``(i % cols, i // cols)``, exactly where our tile *i* will go.
+
+    Returns ``(image, missing_count)``, or ``(None, n)`` if not a single
+    tile was available.  The result is forced opaque: Blizzard's tiles
+    carry alpha of their own, and any transparency left in the backdrop
+    would punch a hole straight through the finished BLP.
+    """
+    from PIL import Image
+
+    cols = zone_info["cols"]
+    tile_w, tile_h = zone_info["tile_w"], zone_info["tile_h"]
+
+    canvas = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 255))
+    got = 0
+    missing = 0
+    for i, fdid in enumerate(zone_info["tile_fdids"]):
+        path = base_art_cache.get(fdid)
+        if not path:
+            missing += 1
+            continue
+        try:
+            with Image.open(path) as src:
+                art = src.convert("RGBA")
+        except Exception:
+            missing += 1
+            continue
+        if art.size != (tile_w, tile_h):
+            art = art.resize((tile_w, tile_h), Image.LANCZOS)
+        canvas.alpha_composite(art, ((i % cols) * tile_w, (i // cols) * tile_h))
+        art.close()
+        got += 1
+
+    if not got:
+        canvas.close()
+        return None, missing
+    return canvas, missing
+
+
+# ---------------------------------------------------------------------------
 # Zone processing
 # ---------------------------------------------------------------------------
 
@@ -235,13 +335,30 @@ def process_zone(
     zone_info: dict,
     tile_cache: dict[int, Path],
     output_dir: str,
-    ocean_rgb: tuple[int, int, int] | None = None,
+    passes: dict[str, dict] | None = None,
+    base_art_cache: dict[int, Path] | None = None,
 ) -> dict:
-    """Build every BLP tile for one zone."""
+    """Build every BLP tile for one zone.
+
+    *passes* is the resolved art-pass settings from
+    :func:`hfwm.effects.resolve` — ``{}`` or ``None`` for a raw stitch.
+    """
     import PIL.Image
     from PIL import Image
 
     PIL.Image.MAX_IMAGE_PIXELS = None
+
+    passes = passes or {}
+    ocean_opts = passes.get("ocean")
+    ocean_rgb = ocean_opts["color"] if ocean_opts else None
+    want_base_art = "base-art" in passes
+    want_alpha_sea = "alpha-sea" in passes
+    # alpha-sea and base-art erase the sea identically; the only difference
+    # is whether a backdrop goes under it before the BLPs are written.
+    sea_mode = (
+        "erase" if (want_base_art or want_alpha_sea)
+        else ("unify" if ocean_opts else None)
+    )
 
     folder = zone_info["folder"]
     cols, rows = zone_info["cols"], zone_info["rows"]
@@ -292,7 +409,7 @@ def process_zone(
             continue
 
         cropped, stats = _stitch_region(
-            region, tile_cache, dx1 - dx0, dy1 - dy0, ocean_rgb,
+            region, tile_cache, dx1 - dx0, dy1 - dy0, sea_mode, ocean_rgb,
         )
         for k in agg:
             agg[k] += stats.get(k, 0)
@@ -332,7 +449,7 @@ def process_zone(
                 f"(coverage {cx0:.3f},{cy0:.3f}-{cx1:.3f},{cy1:.3f})"
             )
 
-        scaled = cropped.resize((px1 - px0, py1 - py0), Image.LANCZOS)
+        scaled = resize_rgba(cropped, (px1 - px0, py1 - py0), Image.LANCZOS)
         cropped.close()
         layer.paste(scaled, (px0, py0))
         scaled.close()
@@ -345,16 +462,62 @@ def process_zone(
             "reason": "; ".join(notes) or "no minimap tiles loaded",
         }
 
-    # --- Flatten onto the background, then pad to the tile grid ---------
-    # Sea if this zone has any, black otherwise, so an interior map like
-    # Alterac Valley is left exactly as it was.  The padding beyond the art
+    # --- Flatten onto the backdrop, then pad to the tile grid -----------
+    # The backdrop is whatever the enabled art pass says everything the
+    # stitch did not cover should be: nothing at all (alpha-sea, which
+    # defers the decision to the addon), the zone's original hand-painted
+    # art, the unified sea colour, or black.  The padding beyond the art
     # layer is trimmed by ``SetTexCoord`` in Renderer.lua and never visible,
-    # but it shares the background so the BLPs stay self-consistent.
-    background = (ocean_rgb if ocean_rgb is not None and has_ocean
-                  else (0, 0, 0)) + (255,)
+    # but it shares the backdrop so the BLPs stay self-consistent.
     out_w, out_h = cols * tile_w, rows * tile_h
-    canvas = Image.new("RGBA", (out_w, out_h), background)
-    canvas.alpha_composite(layer)
+    base_art_used = False
+    base_art_missing = 0
+
+    canvas = None
+    if want_base_art:
+        canvas, base_art_missing = _base_art_canvas(
+            zone_info, base_art_cache or {}, out_w, out_h,
+        )
+        if canvas is None:
+            notes.append(
+                "base art unavailable (none of the zone's "
+                f"{len(zone_info['tile_fdids'])} original art tiles could be "
+                "read) — falling back to a black backdrop"
+            )
+        else:
+            base_art_used = True
+            if base_art_missing:
+                notes.append(
+                    f"{base_art_missing} of "
+                    f"{len(zone_info['tile_fdids'])} original art tiles "
+                    f"missing — those areas fall back to black"
+                )
+
+    if canvas is None:
+        if want_alpha_sea:
+            # The whole point of this pass: choose nothing.  The canvas stays
+            # transparent, the erased sea and the uncovered cells stay holes,
+            # and the addon puts something behind the tiles at draw time.
+            # BLP2 here is uncompressed BGRA with alphaDepth 8 (see blp.py),
+            # so the alpha survives into the shipped file intact.
+            canvas = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 0))
+        else:
+            # Sea if this zone has any, black otherwise, so an interior map
+            # like Alterac Valley is left exactly as it was.
+            background = (ocean_rgb if ocean_rgb is not None and has_ocean
+                          else (0, 0, 0)) + (255,)
+            canvas = Image.new("RGBA", (out_w, out_h), background)
+
+    if want_alpha_sea:
+        # Plain paste, not alpha_composite.  Compositing would resolve every
+        # transparent pixel against the canvas and throw away the sea colour
+        # that erase_tile() deliberately left in the RGB channels, which is
+        # what keeps the coastline downscaling into sea rather than into
+        # black.  There is nothing to composite against anyway: the canvas
+        # here is empty by construction.
+        canvas.paste(layer, (0, 0))
+    else:
+        canvas.alpha_composite(layer)
     layer.close()
     layer = canvas
 
@@ -391,6 +554,9 @@ def process_zone(
         "output": f"{out_w}x{out_h}",
         "regions": regions_drawn,
         "has_ocean": has_ocean,
+        "alpha_sea": want_alpha_sea,
+        "base_art": base_art_used,
+        "base_art_missing": base_art_missing,
         "stitch_px": sorted(p for p in stitch_px if p),
         "files": names,
         "fdids": list(tile_fdids),
@@ -405,13 +571,23 @@ def process_zone(
 # ---------------------------------------------------------------------------
 
 def process_zone_job(job: tuple) -> tuple[str, dict]:
-    """Top-level callable for ``ProcessPoolExecutor`` workers."""
-    zone_info, tile_cache_str, output_dir, ocean_rgb = job
+    """Top-level callable for ``ProcessPoolExecutor`` workers.
+
+    The job tuple is ``(zone_info, tile_cache, output_dir, passes,
+    base_art_cache)``.  Both caches arrive with string keys because the
+    whole tuple has to pickle across the process boundary, and *passes* is
+    plain nested dicts for the same reason.
+    """
+    (zone_info, tile_cache_str, output_dir, passes,
+     base_art_cache_str) = job
     folder = zone_info.get("folder", "?")
     try:
         tile_cache = {int(k): Path(v) for k, v in tile_cache_str.items()}
+        base_art_cache = {
+            int(k): Path(v) for k, v in (base_art_cache_str or {}).items()
+        }
         return folder, process_zone(
-            zone_info, tile_cache, output_dir, ocean_rgb,
+            zone_info, tile_cache, output_dir, passes, base_art_cache,
         )
     except Exception:
         import traceback

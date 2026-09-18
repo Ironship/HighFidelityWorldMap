@@ -10,6 +10,7 @@ from .constants import (
     BLP2_PALETTE_SIZE,
     NUM_MIP_LEVELS,
 )
+from .resample import resize_rgba
 
 
 def _generate_mips(img):
@@ -25,7 +26,14 @@ def _generate_mips(img):
         mips.append(current.tobytes("raw", "BGRA"))
         if w == 1 and h == 1:
             break
-        current = current.resize((max(w // 2, 1), max(h // 2, 1)), _Img.BOX)
+        # resize_rgba so a sea that was erased by clearing only its alpha
+        # keeps its colour down the whole chain: a mip that had zeroed it
+        # would blend every part-transparent coast pixel towards black
+        # rather than towards sea, fringing the coastline as the map zooms.
+        # NUM_MIP_LEVELS is 1, so this is insurance rather than load-bearing;
+        # it is here so that raising it stays safe.
+        current = resize_rgba(
+            current, (max(w // 2, 1), max(h // 2, 1)), _Img.BOX)
     return mips
 
 

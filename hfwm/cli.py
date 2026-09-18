@@ -5,7 +5,17 @@ Four phases:
   1. Zone database  — build-pinned DB2 exports + WDT MAID chunks
   2. Tile download  — every unique minimap tile FDID, cached on disk
   3. Zone processing — stitch, crop, fit the art layer, encode BLP2
+     3b. the same again with every art pass off, into ``Original/``
   4. FDIDMap.lua    — FileDataID -> bundled texture path
+
+Phase 3b (``--original``, on by default) is what backs the in-game
+"Original" background.  It has to be a real second dump: the art passes
+change the pixels, and the raw stitch cannot be recovered from the
+shipped art at draw time — an attempt to do that by drawing the
+transparent tiles with ``SetBlendMode("DISABLE")`` failed, because this
+client honours the alpha channel regardless of blend mode.  The cost is
+another ~175 MB on disk and roughly double the phase-3 time, so
+``--no-original`` is there for anyone who does not want the option.
 
 There is no listfile phase, no AI/inpainting prompt, no zone presets and
 no hybrid-submerge pass; those were retail-specific.
@@ -24,19 +34,20 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 
 from .constants import (
-    DEFAULT_OCEAN_COLOR,
+    BASE_ART_TILE_CACHE,
     GAME_BUILD,
     GAME_PRODUCT,
     MAID_FIELD_MAPTEXTURE,
     MAID_FIELD_MINIMAP,
     MINIMAP_TILE_CACHE,
+    ORIGINAL_SUBDIR,
     WORLDMAP_DIR,
 )
 from .db2 import fetch_zone_db
+from .effects import ART_PASSES, banner_lines, resolve, stamp
 from .fdid_map import generate_fdid_map
 from .fmt import format_size, format_time
 from .http import download_casc_cached
-from .ocean import parse_rgb
 from .zone import process_zone_job
 
 
@@ -44,24 +55,31 @@ from .zone import process_zone_job
 # Phase 2: minimap tile downloader
 # ---------------------------------------------------------------------------
 
-def download_minimap_tiles(
+def download_tiles(
     all_fdids: set[int],
+    cache_dir: Path = MINIMAP_TILE_CACHE,
+    label: str = "minimap",
     max_workers: int = 8,
 ) -> dict[int, Path]:
-    """Download minimap BLP tiles from wago.tools with local caching."""
-    MINIMAP_TILE_CACHE.mkdir(parents=True, exist_ok=True)
+    """Download BLP tiles by FDID from wago.tools, with local caching.
+
+    Used for both the minimap terrain tiles and — when the base-art pass
+    is on — Blizzard's own art-layer tiles; the endpoint is the same and
+    keyed by FDID either way, so only *cache_dir* and the wording differ.
+    """
+    cache_dir.mkdir(parents=True, exist_ok=True)
 
     cached: dict[int, Path] = {}
     to_download: list[int] = []
     for fdid in sorted(all_fdids):
-        p = MINIMAP_TILE_CACHE / f"{fdid}.blp"
+        p = cache_dir / f"{fdid}.blp"
         if p.exists() and p.stat().st_size > 0:
             cached[fdid] = p
         else:
             to_download.append(fdid)
 
     if not to_download:
-        print(f"  All {len(cached)} minimap tiles already cached.", flush=True)
+        print(f"  All {len(cached)} {label} tiles already cached.", flush=True)
         return cached
 
     print(f"  {len(cached)} cached, {len(to_download)} to download ...",
@@ -73,7 +91,7 @@ def download_minimap_tiles(
 
     def _dl(fdid: int) -> tuple[int, Path | None]:
         try:
-            return fdid, download_casc_cached(fdid, MINIMAP_TILE_CACHE)
+            return fdid, download_casc_cached(fdid, cache_dir)
         except Exception:
             return fdid, None
 
@@ -98,7 +116,7 @@ def download_minimap_tiles(
 
     print(flush=True)
     if failed:
-        print(f"  Warning: {len(failed)} tiles failed to download "
+        print(f"  Warning: {len(failed)} {label} tiles failed to download "
               f"(e.g. {failed[:5]}).", flush=True)
     return cached
 
@@ -133,6 +151,78 @@ def _tile_size_histogram(
 # ---------------------------------------------------------------------------
 # Argument parser
 # ---------------------------------------------------------------------------
+
+def _add_art_pass_args(parser: argparse.ArgumentParser) -> None:
+    """Generate the flags for every pass in :data:`ART_PASSES`.
+
+    Nothing here knows what any individual pass does — add one to the
+    registry and its flags, help text, defaults and validation appear
+    without touching this file.  ``default=None`` on the toggles is what
+    lets :func:`effects.resolve` tell "explicitly asked for" apart from
+    "left at its default", which is how supersede conflicts get caught.
+    """
+    group = parser.add_argument_group(
+        "art passes",
+        "Transforms applied to the stitched art. Each is independently "
+        "toggleable; --no-art-passes turns the lot off for a raw stitch.",
+    )
+    group.add_argument(
+        "--list-art-passes",
+        action="store_true",
+        help="Describe every available art pass and exit",
+    )
+    group.add_argument(
+        "--no-art-passes",
+        action="store_true",
+        help="Disable every art pass — the raw stitch, gaps left black",
+    )
+    for p in ART_PASSES:
+        state = "on" if p.default else "off"
+        # BooleanOptionalAction derives the --no-<name> form itself.
+        group.add_argument(
+            f"--{p.name}",
+            dest=p.dest,
+            default=None,
+            action=argparse.BooleanOptionalAction,
+            help=f"{p.summary} (default: {state})",
+        )
+        for opt in p.options:
+            group.add_argument(
+                f"--{p.name}-{opt.name}",
+                dest=f"{p.dest}_{opt.dest}",
+                metavar=opt.metavar,
+                default=opt.default,
+                help=f"[--{p.name}] {opt.help} (default: {opt.default})",
+            )
+
+    # Back-compat: --no-ocean-fill predates the registry and is what the
+    # first ocean commit shipped.  Kept working, hidden from --help so the
+    # generated --no-ocean is the one that gets discovered.
+    group.add_argument(
+        "--no-ocean-fill",
+        dest="no_ocean_fill",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+
+
+def _print_art_passes() -> None:
+    """Long-form ``--list-art-passes`` output."""
+    print("Art passes:\n")
+    for p in ART_PASSES:
+        print(f"  --{p.name}" + (" " * max(1, 22 - len(p.name)))
+              + f"default: {'on' if p.default else 'off'}")
+        print(f"      {p.summary}")
+        for note in p.notes:
+            print(f"      {note}")
+        for opt in p.options:
+            print(f"      --{p.name}-{opt.name} {opt.metavar}  "
+                  f"(default: {opt.default})")
+        if p.supersedes:
+            print("      supersedes: "
+                  + ", ".join(f"--{s}" for s in p.supersedes))
+        print()
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -170,6 +260,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip FDIDMap.lua generation",
     )
     parser.add_argument(
+        "--original",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help=(
+            f"Also write a raw, art-pass-free dump to {ORIGINAL_SUBDIR}/, "
+            "which backs the in-game Original background. Roughly doubles "
+            "the output size and the processing time (default: on)"
+        ),
+    )
+    parser.add_argument(
         "--threads",
         type=int,
         default=max(2, cpu_count() - 1),
@@ -181,24 +281,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=8,
         help="Parallel download threads (default: 8)",
     )
-    default_hex = "#%02X%02X%02X" % DEFAULT_OCEAN_COLOR
-    parser.add_argument(
-        "--ocean-color",
-        metavar="RGB",
-        default=default_hex,
-        help=(
-            "Colour every ocean fill is collapsed onto, as #RRGGBB or "
-            f"R,G,B (default: {default_hex}, the game's own coastal water)"
-        ),
-    )
-    parser.add_argument(
-        "--no-ocean-fill",
-        action="store_true",
-        help=(
-            "Leave the sea raw: keep the stitch's several different ocean "
-            "fills and leave gaps in the terrain grid black"
-        ),
-    )
+    _add_art_pass_args(parser)
     parser.add_argument(
         "--maid-field",
         type=int,
@@ -214,20 +297,115 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 # ---------------------------------------------------------------------------
+# Phase 3b: the raw second dump
+# ---------------------------------------------------------------------------
+
+def run_original_pass(
+    zone_db: dict[str, dict],
+    tile_cache_str: dict[str, str],
+    output_dir: str,
+    threads: int,
+) -> dict:
+    """Write the raw, art-pass-free dump under ``<output_dir>/Original/``.
+
+    Phase 3 again with ``passes={}``: the same stitch, crop and geometry
+    with none of the transforms, so the FDIDs line up tile for tile with
+    the main table and the addon can swap between the two without
+    re-laying anything out.
+
+    Reported as a single progress counter rather than a line per zone —
+    phase 3 has already printed one of those for each, and the geometry it
+    would report is by construction identical.
+    """
+    dst = os.path.join(output_dir, ORIGINAL_SUBDIR)
+    os.makedirs(dst, exist_ok=True)
+    jobs = [
+        (zone_db[folder], tile_cache_str, dst, {}, {})
+        for folder in sorted(zone_db)
+    ]
+
+    ok = 0
+    done = 0
+    tiles = 0
+    total_bytes = 0
+    failed: list[str] = []
+    t0 = time.time()
+
+    def _handle(folder: str, res: dict) -> None:
+        nonlocal ok, done, tiles, total_bytes
+        done += 1
+        if res["status"] == "ok":
+            ok += 1
+            tiles += res["tiles"]
+            total_bytes += res["bytes"]
+        elif res["status"] == "error":
+            failed.append(f"{folder}: {res.get('reason', '?')}")
+        elapsed = time.time() - t0
+        eta = (len(jobs) - done) * elapsed / done if done else 0
+        print(f"\r    [{done}/{len(jobs)}] {tiles} BLP  "
+              f"{format_size(total_bytes)}  ETA: {format_time(eta)}   ",
+              end="", flush=True)
+
+    if threads <= 1 or len(jobs) <= 2:
+        for job in jobs:
+            folder, res = process_zone_job(job)
+            _handle(folder, res)
+    else:
+        with ProcessPoolExecutor(max_workers=threads) as pool:
+            futures = {
+                pool.submit(process_zone_job, job): job[0]["folder"]
+                for job in jobs
+            }
+            for fut in as_completed(futures):
+                folder, res = fut.result()
+                _handle(folder, res)
+
+    print(flush=True)
+    print(f"  {ok}/{len(jobs)} zones, {tiles} BLPs, "
+          f"{format_size(total_bytes)} in {format_time(time.time() - t0)}",
+          flush=True)
+    if failed:
+        print(f"  {len(failed)} zone(s) FAILED:", flush=True)
+        for line in failed[:10]:
+            print(f"    {line}", flush=True)
+
+    return {"zones": ok, "tiles": tiles, "bytes": total_bytes,
+            "failed": len(failed)}
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 def main() -> None:
     args = build_parser().parse_args()
+
+    if args.list_art_passes:
+        _print_art_passes()
+        return
+
     output_dir = os.path.abspath(args.output_dir)
 
-    ocean_rgb: tuple[int, int, int] | None = None
-    if not args.no_ocean_fill:
-        try:
-            ocean_rgb = parse_rgb(args.ocean_color)
-        except ValueError as exc:
-            print(f"ERROR: --ocean-color: {exc}", file=sys.stderr)
-            sys.exit(2)
+    requested = {p.name: getattr(args, p.dest) for p in ART_PASSES}
+    if args.no_ocean_fill:            # deprecated alias for --no-ocean
+        requested["ocean"] = False
+    try:
+        passes, pass_notes = resolve(
+            requested,
+            {
+                f"{p.dest}_{o.dest}": getattr(args, f"{p.dest}_{o.dest}")
+                for p in ART_PASSES for o in p.options
+            },
+            all_off=args.no_art_passes,
+        )
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(2)
+
+    ocean_opts = passes.get("ocean")
+    ocean_rgb = ocean_opts["color"] if ocean_opts else None
+    want_base_art = "base-art" in passes
+    want_alpha_sea = "alpha-sea" in passes
 
     print("=" * 66, flush=True)
     print("  High Fidelity World Map Forever — texture generator", flush=True)
@@ -239,12 +417,10 @@ def main() -> None:
           flush=True)
     print(f"Encoding:  uncompressed BGRA BLP2", flush=True)
     print(f"MAID field:{args.maid_field}", flush=True)
-    print(
-        "Ocean:     "
-        + ("raw (several fills, gaps left black)" if ocean_rgb is None
-           else "unified to #%02X%02X%02X" % ocean_rgb),
-        flush=True,
-    )
+    for i, line in enumerate(banner_lines(passes)):
+        print(f"{'Art pass:' if i == 0 else '':<11}{line}", flush=True)
+    for note in pass_notes:
+        print(f"{'':<11}note: {note}", flush=True)
     print(flush=True)
 
     # --- Phase 1: zone database ---------------------------------------
@@ -305,16 +481,36 @@ def main() -> None:
 
     # --- Phase 2: download tiles --------------------------------------
     print("\n--- Phase 2: Downloading minimap tiles ---", flush=True)
-    tile_cache = download_minimap_tiles(needed_fdids, args.dl_threads)
+    tile_cache = download_tiles(
+        needed_fdids, MINIMAP_TILE_CACHE, "minimap", args.dl_threads,
+    )
     _tile_size_histogram(tile_cache)
+
+    base_art_cache: dict[int, Path] = {}
+    if want_base_art:
+        # The base-art backdrop is built from the very FDIDs the addon
+        # remaps — the client's own art-layer tiles for each zone.
+        art_fdids = {
+            fdid for z in zone_db.values() for fdid in z["tile_fdids"]
+        }
+        print(f"\n--- Phase 2b: Downloading base art ({len(art_fdids)} "
+              f"tiles) ---", flush=True)
+        base_art_cache = download_tiles(
+            art_fdids, BASE_ART_TILE_CACHE, "base art", args.dl_threads,
+        )
+        if not base_art_cache:
+            print("  ERROR: --base-art is on but no original art tiles "
+                  "could be downloaded.", file=sys.stderr)
+            sys.exit(1)
 
     # --- Phase 3: process zones ---------------------------------------
     print(f"\n--- Phase 3: Processing zones ({args.threads} workers) ---",
           flush=True)
     os.makedirs(output_dir, exist_ok=True)
     tile_cache_str = {str(k): str(v) for k, v in tile_cache.items()}
+    base_art_str = {str(k): str(v) for k, v in base_art_cache.items()}
     jobs = [
-        (zone_db[folder], tile_cache_str, output_dir, ocean_rgb)
+        (zone_db[folder], tile_cache_str, output_dir, passes, base_art_str)
         for folder in sorted(zone_db)
     ]
 
@@ -328,11 +524,12 @@ def main() -> None:
     holes = 0
     sea_cells = 0
     sea_zones = 0
+    base_art_zones = 0
     t0 = time.time()
 
     def _handle(folder: str, res: dict) -> None:
         nonlocal ok, total_bytes, total_out_tiles, upscaled, dropped, holes
-        nonlocal sea_cells, sea_zones
+        nonlocal sea_cells, sea_zones, base_art_zones
         status = res["status"]
         if status == "ok":
             ok += 1
@@ -346,10 +543,16 @@ def main() -> None:
             filled = mm.get("ocean_cells", 0)
             sea_cells += filled
             sea_zones += 1 if res.get("has_ocean") else 0
+            base_art_zones += 1 if res.get("base_art") else 0
             if hole > 0:
                 extra = f"  {hole} empty cells"
                 if filled:
-                    extra += f" ({filled} sea)"
+                    if res.get("base_art"):
+                        extra += " (base art)"
+                    elif res.get("alpha_sea"):
+                        extra += " (transparent)"
+                    else:
+                        extra += f" ({filled} sea)"
             else:
                 extra = ""
             sp = "/".join(str(p) for p in res.get("stitch_px", [])) or "-"
@@ -394,7 +597,19 @@ def main() -> None:
         print(f"  {dropped} source tiles unusable (too small / "
               f"unreadable / not downloaded)", flush=True)
     if holes:
-        if ocean_rgb is None:
+        if want_base_art:
+            print(
+                f"  {holes} stitch cells had no minimap coverage — "
+                f"showing Blizzard's own art through",
+                flush=True,
+            )
+        elif want_alpha_sea:
+            print(
+                f"  {holes} stitch cells had no minimap coverage — left "
+                f"transparent for the in-game background to fill",
+                flush=True,
+            )
+        elif ocean_rgb is None:
             print(f"  {holes} stitch cells left black (no minimap coverage)",
                   flush=True)
         else:
@@ -404,7 +619,19 @@ def main() -> None:
                 f"black (no open water alongside)",
                 flush=True,
             )
-    if ocean_rgb is not None:
+    if want_base_art:
+        print(
+            f"  {base_art_zones}/{ok} zones composited over their original "
+            f"hand-painted art; the sea and every gap come from it",
+            flush=True,
+        )
+    elif want_alpha_sea:
+        print(
+            f"  {sea_zones}/{ok} zones have sea, shipped transparent — pick "
+            f"the backdrop in game with /hfwm bg or the options panel",
+            flush=True,
+        )
+    elif ocean_rgb is not None:
         ocean_hex = "#%02X%02X%02X" % ocean_rgb
         print(
             f"  {sea_zones}/{ok} zones have sea, unified to {ocean_hex} "
@@ -420,12 +647,41 @@ def main() -> None:
         for line in failed[:10]:
             print(f"    {line}", flush=True)
 
+    # --- Phase 3b: the raw second dump --------------------------------
+    original_dir = os.path.join(output_dir, ORIGINAL_SUBDIR)
+    # With no art passes enabled the primary output already *is* the raw
+    # stitch, so a byte-identical second copy would only cost disk.  The
+    # Original table is then left empty, which is exactly how the addon
+    # knows to drop the entry from its dropdown — there is nothing to pick
+    # between.
+    want_original = bool(args.original and passes)
+
+    if want_original:
+        print(f"\n--- Phase 3b: Raw dump into {ORIGINAL_SUBDIR}/ "
+              f"({args.threads} workers) ---", flush=True)
+        run_original_pass(zone_db, tile_cache_str, output_dir, args.threads)
+    elif args.original:
+        print(f"\n  Skipping the {ORIGINAL_SUBDIR}/ dump: no art passes are "
+              f"enabled, so the main output is already the raw stitch.",
+              flush=True)
+    elif os.path.isdir(original_dir):
+        print(f"\n  WARNING: --no-original was given but {ORIGINAL_SUBDIR}/ "
+              f"still exists from an earlier build. It is left alone and "
+              f"will be picked up by phase 4; delete it to drop the "
+              f"in-game Original background.", flush=True)
+
     # --- Phase 4: FDIDMap.lua -----------------------------------------
     if args.skip_fdid_map:
         return
     print("\n--- Phase 4: Generating FDIDMap.lua ---", flush=True)
     try:
-        summary = generate_fdid_map(output_dir, zone_db)
+        # Scan the raw tree whenever one is on disk, not only when this run
+        # wrote it: a rebuild with --no-original should not silently strip a
+        # background whose art is still installed.
+        summary = generate_fdid_map(
+            output_dir, zone_db, stamp(passes),
+            original=want_original or os.path.isdir(original_dir),
+        )
     except OSError as exc:
         print(f"  Warning: FDIDMap.lua generation failed: {exc}", flush=True)
         return
@@ -435,5 +691,12 @@ def main() -> None:
             f"  NOTE: {summary['entries']} map entries vs "
             f"{total_out_tiles} BLPs written — "
             f"{summary['missing']} expected files were absent.",
+            flush=True,
+        )
+    if summary["original_entries"]:
+        print(
+            f"  In-game Original background available: "
+            f"{summary['original_entries']} raw textures across "
+            f"{summary['original_zones']} zones.",
             flush=True,
         )

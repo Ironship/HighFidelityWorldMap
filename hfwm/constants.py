@@ -42,10 +42,24 @@ DB2_CACHE_DIR = CACHE_ROOT / "db2"
 WDT_CACHE_DIR = CACHE_ROOT / "wdt"
 MINIMAP_TILE_CACHE = CACHE_ROOT / "minimap"
 MINIMAP_DB_CACHE = CACHE_ROOT / "minimap_db.json"
+
+# Blizzard's own hand-painted art-layer tiles, downloaded only when the
+# base-art pass is enabled.  Same CASC endpoint as the minimap tiles and
+# also keyed by FDID, so one shared directory would be safe — these are
+# kept apart purely so a cache directory's name never lies about what is
+# in it.
+BASE_ART_TILE_CACHE = CACHE_ROOT / "baseart"
+
 PROVENANCE_FILE = CACHE_ROOT / "provenance.json"
 
 FDID_MAP_FILE = SCRIPT_DIR / "FDIDMap.lua"
 WORLDMAP_DIR = SCRIPT_DIR / "WorldMap"
+
+# Subdirectory of the output dir holding the raw second dump (--original).
+# It cannot collide with a zone folder: zone folders are named from UiMap's
+# own art-tile folder names, and the FDIDMap generator only ever looks inside
+# folders it already has a zone entry for, so this one is simply passed over.
+ORIGINAL_SUBDIR = "Original"
 
 # ---------------------------------------------------------------------------
 # URLs

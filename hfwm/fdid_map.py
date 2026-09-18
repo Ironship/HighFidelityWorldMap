@@ -8,6 +8,13 @@ Unlike the retail pipeline this is built straight from ``UiMapArtTile``
 (via the zone DB), not from a community listfile — the FDIDs are the
 authoritative ones for the pinned build, and every entry is verified
 against a file that actually exists on disk.
+
+Two tables come out of it.  ``HFWMF_FDID_MAP`` points at the art the
+enabled art passes produced, which is what the addon draws by default.
+``HFWMF_FDID_MAP_ORIGINAL`` points at the raw second dump under
+``WorldMap/Original/`` and is what the in-game "Original" background
+draws; it is empty when that dump was not generated, which is how the
+addon knows to leave the entry out of its dropdown.
 """
 
 from __future__ import annotations
@@ -15,41 +22,48 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from .constants import FDID_MAP_FILE
+from .constants import FDID_MAP_FILE, ORIGINAL_SUBDIR
 from .zone import tile_filenames
 
 
-def generate_fdid_map(output_dir: str, zones: dict[str, dict]) -> dict:
-    """Write ``FDIDMap.lua`` for every zone whose BLPs are present.
+def _collect(
+    root: Path,
+    zones: dict[str, dict],
+    prefix: str = "",
+) -> dict:
+    """Gather ``(fdid, relative_path)`` pairs for every BLP present in *root*.
 
-    Returns a small summary dict for the caller to report.
+    *prefix* is prepended to each path, so the ``Original/`` tree resolves
+    against the same ``FDID_BASE`` the addon already has.  Paths use the
+    doubled backslash the generated Lua source needs.
     """
-    out = Path(output_dir)
-    if not out.is_dir():
-        print("  Output directory not found — skipping FDIDMap.lua.",
-              flush=True)
-        return {"entries": 0, "zones": 0, "missing": 0}
-
     entries: list[tuple[int, str]] = []
     covered: list[str] = []
     missing_files = 0
     partial: list[str] = []
 
+    if not root.is_dir():
+        return {
+            "entries": entries, "covered": covered,
+            "missing": missing_files, "partial": partial,
+        }
+
     for folder in sorted(zones):
         z = zones[folder]
         fdids = z["tile_fdids"]
         names = tile_filenames(folder, len(fdids))
-        zone_dir = out / folder
+        zone_dir = root / folder
         if not zone_dir.is_dir():
             continue
 
+        lua_dir = f"{prefix}\\\\{folder}" if prefix else folder
         zone_entries: list[tuple[int, str]] = []
         absent = 0
         for fdid, fname in zip(fdids, names):
             if not (zone_dir / fname).is_file():
                 absent += 1
                 continue
-            zone_entries.append((fdid, f"{folder}\\\\{Path(fname).stem}"))
+            zone_entries.append((fdid, f"{lua_dir}\\\\{Path(fname).stem}"))
 
         if absent:
             missing_files += absent
@@ -58,37 +72,111 @@ def generate_fdid_map(output_dir: str, zones: dict[str, dict]) -> dict:
             entries.extend(zone_entries)
             covered.append(folder)
 
-    _write_table(entries, covered)
-
-    if partial:
-        print(f"  WARNING: {len(partial)} zone(s) have missing BLPs:",
-              flush=True)
-        for line in partial[:10]:
-            print(f"    {line}", flush=True)
-
     return {
-        "entries": len(entries),
-        "zones": len(covered),
-        "missing": missing_files,
+        "entries": entries, "covered": covered,
+        "missing": missing_files, "partial": partial,
     }
 
 
-def _write_table(entries: list[tuple[int, str]], covered: list[str]) -> None:
+def generate_fdid_map(
+    output_dir: str,
+    zones: dict[str, dict],
+    art_passes: list[str] | None = None,
+    original: bool = False,
+) -> dict:
+    """Write ``FDIDMap.lua`` for every zone whose BLPs are present.
+
+    *art_passes* is the stamp from :func:`hfwm.effects.stamp` — which art
+    passes produced the BLPs the main table points at.  It goes in the
+    header because ``WorldMap/`` is a build artifact and is not tracked, so
+    this file is the only committed record of how the installed art was
+    made.
+
+    *original* asks for the ``Original/`` subtree to be scanned into a
+    second table as well.  Passing it when that subtree is absent is not an
+    error — the table is simply written empty.
+
+    Returns a small summary dict for the caller to report.
+    """
+    out = Path(output_dir)
+    if not out.is_dir():
+        print("  Output directory not found — skipping FDIDMap.lua.",
+              flush=True)
+        return {"entries": 0, "zones": 0, "missing": 0,
+                "original_entries": 0, "original_zones": 0}
+
+    main = _collect(out, zones)
+    orig = (_collect(out / ORIGINAL_SUBDIR, zones, ORIGINAL_SUBDIR)
+            if original else None)
+
+    _write_table(main, orig, art_passes or [])
+
+    for label, res in (("", main), (f"{ORIGINAL_SUBDIR}/", orig)):
+        partial = res["partial"] if res else []
+        if not partial:
+            continue
+        print(f"  WARNING: {len(partial)} {label or 'main'} zone(s) have "
+              f"missing BLPs:", flush=True)
+        for line in partial[:10]:
+            print(f"    {label}{line}", flush=True)
+
+    return {
+        "entries": len(main["entries"]),
+        "zones": len(main["covered"]),
+        "missing": main["missing"],
+        "original_entries": len(orig["entries"]) if orig else 0,
+        "original_zones": len(orig["covered"]) if orig else 0,
+    }
+
+
+def _write_table(
+    main: dict,
+    orig: dict | None,
+    art_passes: list[str],
+) -> None:
     with open(FDID_MAP_FILE, "w", encoding="utf-8") as f:
         f.write("-- Auto-generated by generateHFWM.py - DO NOT EDIT\n")
         f.write(
-            f"-- {len(entries)} textures across {len(covered)} zones\n"
+            f"-- {len(main['entries'])} textures across "
+            f"{len(main['covered'])} zones\n"
         )
         f.write(f"-- Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        if art_passes:
+            f.write(f"-- Art passes: {', '.join(art_passes)}\n")
         f.write("HFWMF_FDID_MAP = {\n")
-        for fdid, path in entries:
+        for fdid, path in main["entries"]:
             f.write(f'    [{fdid}] = "{path}",\n')
         f.write("}\n")
         f.write("\n-- No submerged (layer-2) art variants are generated for\n")
         f.write("-- this build; kept so Renderer.lua's lookup stays valid.\n")
         f.write("HFWMF_FDID_MAP_SUB = {}\n")
+
+        f.write("\n-- The raw stitch, with no art pass applied: the sea in\n")
+        f.write("-- the two colours the game's own tiles render it, hard\n")
+        f.write("-- cell seams, black voids and all. A genuinely separate\n")
+        f.write("-- dump rather than a redraw of the table above, because\n")
+        f.write("-- the client honours the alpha channel whatever blend\n")
+        f.write("-- mode a texture is given. Empty unless the build ran\n")
+        f.write("-- with --original, and Config.lua hides the in-game\n")
+        f.write("-- \"Original\" background when it is.\n")
+        if orig and orig["entries"]:
+            f.write(
+                f"-- {len(orig['entries'])} textures across "
+                f"{len(orig['covered'])} zones\n"
+            )
+            f.write("HFWMF_FDID_MAP_ORIGINAL = {\n")
+            for fdid, path in orig["entries"]:
+                f.write(f'    [{fdid}] = "{path}",\n')
+            f.write("}\n")
+        else:
+            f.write("HFWMF_FDID_MAP_ORIGINAL = {}\n")
+
+    extra = ""
+    if orig and orig["entries"]:
+        extra = (f", plus {len(orig['entries'])} raw textures across "
+                 f"{len(orig['covered'])} zones")
     print(
-        f"  Generated FDIDMap.lua: {len(entries)} textures, "
-        f"{len(covered)} zones.",
+        f"  Generated FDIDMap.lua: {len(main['entries'])} textures, "
+        f"{len(main['covered'])} zones{extra}.",
         flush=True,
     )
