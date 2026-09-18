@@ -22,9 +22,13 @@ comes back short and the paste rect is shrunk to match (see
 short crop is what puts the art out from under the client's zone
 highlights.
 
-No inpainting: missing minimap tiles stay black.  That is deliberate
-(see CLAUDE.md) — the goal is a stitched-minimap world map, warts and
-all.
+No inpainting.  The one thing that is not left raw is the sea: the
+stitch delivers it as several different flat fills meeting along tile
+boundaries, so :mod:`hfwm.ocean` collapses them onto a single colour and
+extends that colour into the empty cells beyond the terrain grid.  Only
+gaps that actually border open water are filled — everything else still
+stays black, because the goal is still a stitched-minimap world map,
+warts and all.  ``--no-ocean-fill`` turns the pass off entirely.
 """
 
 from __future__ import annotations
@@ -37,9 +41,11 @@ from .constants import (
     MINIMAP_TILE_PX,
     MIN_SOURCE_TILE_PX,
     MIN_STITCH_TILE_PX,
+    OCEAN_TILE_FRACTION,
     TILE_WORLD_SIZE,
 )
 from .coordinates import compute_crop_box
+from .ocean import classify_missing_cells, unify_tile
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +100,7 @@ def _stitch_region(
     tile_cache: dict[int, Path],
     dst_w: int,
     dst_h: int,
+    ocean_rgb: tuple[int, int, int] | None = None,
 ):
     """Stitch one region's minimap tiles and crop to its world bounds.
 
@@ -101,6 +108,13 @@ def _stitch_region(
     ``stats["coverage"]`` is the fraction of the region's world
     rectangle the crop actually covers — the caller must paste into that
     fraction of the destination rect rather than stretching to fill it.
+
+    When *ocean_rgb* is set, every ocean-fill pixel is recoloured to it
+    and empty cells that open onto real water are filled with it (see
+    :mod:`hfwm.ocean`).  The recolour happens at each tile's native
+    resolution, before the downscale to ``tp`` — afterwards the downscale
+    has already blended dark open ocean into light coastal water across
+    every coast tile, and no exact-colour match can undo that.
     """
     from PIL import Image
 
@@ -117,6 +131,7 @@ def _stitch_region(
     too_small = 0
     unreadable = 0
     missing = 0
+    ocean_fracs: dict[tuple[int, int], float] = {}
 
     for key_str, fdid in region["tiles"].items():
         r, c = (int(x) for x in key_str.split("_"))
@@ -136,6 +151,8 @@ def _stitch_region(
             tile.close()
             too_small += 1
             continue
+        if ocean_rgb is not None:
+            tile, ocean_fracs[(r, c)] = unify_tile(tile, ocean_rgb)
         if (w, h) != (tp, tp):
             # gotchas.md 1.2: some legitimate minimap tiles ship at 256px.
             # Upscale rather than drop them, so a zone never ends up with
@@ -158,11 +175,34 @@ def _stitch_region(
         "cells": scols * srows,
         "stitch_px": tp,
         "coverage": (0.0, 0.0, 1.0, 1.0),
+        "ocean_cells": 0,
+        "has_ocean": False,
     }
 
     if loaded == 0:
         stitch.close()
         return None, stats
+
+    # --- Extend the sea into the empty cells ----------------------------
+    # Only the ones that actually border open water: an interior map like
+    # Alterac Valley bakes its own grey void into its tiles, and painting
+    # the gap around it blue just relocates the seam.
+    if ocean_rgb is not None:
+        filled = classify_missing_cells(
+            ocean_fracs, row_min, row_max, col_min, col_max,
+        )
+        for r, c in filled:
+            stitch.paste(
+                ocean_rgb + (255,),
+                (
+                    (c - col_min) * tp, (r - row_min) * tp,
+                    (c - col_min + 1) * tp, (r - row_min + 1) * tp,
+                ),
+            )
+        stats["ocean_cells"] = len(filled)
+        stats["has_ocean"] = bool(filled) or any(
+            f >= OCEAN_TILE_FRACTION for f in ocean_fracs.values()
+        )
 
     # --- Crop to the region's world-space rectangle ---------------------
     # Map vertical axis = world X (loc_top is max X), horizontal = world Y
@@ -195,6 +235,7 @@ def process_zone(
     zone_info: dict,
     tile_cache: dict[int, Path],
     output_dir: str,
+    ocean_rgb: tuple[int, int, int] | None = None,
 ) -> dict:
     """Build every BLP tile for one zone."""
     import PIL.Image
@@ -218,11 +259,20 @@ def process_zone(
             ),
         }
 
-    layer = Image.new("RGBA", (layer_w, layer_h), (0, 0, 0, 255))
+    # Start fully transparent rather than black.  Every source tile is
+    # opaque RGB, so alpha ends up being an exact record of which pixels a
+    # region actually covered — which is what lets the background colour be
+    # chosen *after* stitching, once it is known whether this zone has any
+    # sea in it.  A region's world rect can run past the terrain grid (every
+    # continent map does), so on Eastern Kingdoms the rightmost 6% of the
+    # art layer is background and has to match the ocean or the seam is
+    # right back.
+    layer = Image.new("RGBA", (layer_w, layer_h), (0, 0, 0, 0))
 
     agg = {"loaded": 0, "upscaled": 0, "too_small": 0,
-           "unreadable": 0, "missing": 0, "cells": 0}
+           "unreadable": 0, "missing": 0, "cells": 0, "ocean_cells": 0}
     regions_drawn = 0
+    has_ocean = False
     notes: list[str] = []
     stitch_px: set[int] = set()
 
@@ -242,11 +292,12 @@ def process_zone(
             continue
 
         cropped, stats = _stitch_region(
-            region, tile_cache, dx1 - dx0, dy1 - dy0,
+            region, tile_cache, dx1 - dx0, dy1 - dy0, ocean_rgb,
         )
         for k in agg:
             agg[k] += stats.get(k, 0)
         stitch_px.add(stats.get("stitch_px", 0))
+        has_ocean = has_ocean or stats["has_ocean"]
         if cropped is None:
             notes.append(
                 f"region map {region['map_id']} produced nothing"
@@ -294,13 +345,18 @@ def process_zone(
             "reason": "; ".join(notes) or "no minimap tiles loaded",
         }
 
-    # --- Pad the art layer up to the tile grid --------------------------
+    # --- Flatten onto the background, then pad to the tile grid ---------
+    # Sea if this zone has any, black otherwise, so an interior map like
+    # Alterac Valley is left exactly as it was.  The padding beyond the art
+    # layer is trimmed by ``SetTexCoord`` in Renderer.lua and never visible,
+    # but it shares the background so the BLPs stay self-consistent.
+    background = (ocean_rgb if ocean_rgb is not None and has_ocean
+                  else (0, 0, 0)) + (255,)
     out_w, out_h = cols * tile_w, rows * tile_h
-    if (out_w, out_h) != (layer_w, layer_h):
-        canvas = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 255))
-        canvas.paste(layer, (0, 0))
-        layer.close()
-        layer = canvas
+    canvas = Image.new("RGBA", (out_w, out_h), background)
+    canvas.alpha_composite(layer)
+    layer.close()
+    layer = canvas
 
     # --- Encode BLP tiles, row-major -----------------------------------
     names = tile_filenames(folder, expected)
@@ -334,6 +390,7 @@ def process_zone(
         "layer": f"{layer_w}x{layer_h}",
         "output": f"{out_w}x{out_h}",
         "regions": regions_drawn,
+        "has_ocean": has_ocean,
         "stitch_px": sorted(p for p in stitch_px if p),
         "files": names,
         "fdids": list(tile_fdids),
@@ -349,11 +406,13 @@ def process_zone(
 
 def process_zone_job(job: tuple) -> tuple[str, dict]:
     """Top-level callable for ``ProcessPoolExecutor`` workers."""
-    zone_info, tile_cache_str, output_dir = job
+    zone_info, tile_cache_str, output_dir, ocean_rgb = job
     folder = zone_info.get("folder", "?")
     try:
         tile_cache = {int(k): Path(v) for k, v in tile_cache_str.items()}
-        return folder, process_zone(zone_info, tile_cache, output_dir)
+        return folder, process_zone(
+            zone_info, tile_cache, output_dir, ocean_rgb,
+        )
     except Exception:
         import traceback
         return folder, {"status": "error", "reason": traceback.format_exc()}

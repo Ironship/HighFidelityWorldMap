@@ -24,6 +24,7 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 
 from .constants import (
+    DEFAULT_OCEAN_COLOR,
     GAME_BUILD,
     GAME_PRODUCT,
     MAID_FIELD_MAPTEXTURE,
@@ -35,6 +36,7 @@ from .db2 import fetch_zone_db
 from .fdid_map import generate_fdid_map
 from .fmt import format_size, format_time
 from .http import download_casc_cached
+from .ocean import parse_rgb
 from .zone import process_zone_job
 
 
@@ -179,6 +181,24 @@ def build_parser() -> argparse.ArgumentParser:
         default=8,
         help="Parallel download threads (default: 8)",
     )
+    default_hex = "#%02X%02X%02X" % DEFAULT_OCEAN_COLOR
+    parser.add_argument(
+        "--ocean-color",
+        metavar="RGB",
+        default=default_hex,
+        help=(
+            "Colour every ocean fill is collapsed onto, as #RRGGBB or "
+            f"R,G,B (default: {default_hex}, the game's own coastal water)"
+        ),
+    )
+    parser.add_argument(
+        "--no-ocean-fill",
+        action="store_true",
+        help=(
+            "Leave the sea raw: keep the stitch's several different ocean "
+            "fills and leave gaps in the terrain grid black"
+        ),
+    )
     parser.add_argument(
         "--maid-field",
         type=int,
@@ -201,6 +221,14 @@ def main() -> None:
     args = build_parser().parse_args()
     output_dir = os.path.abspath(args.output_dir)
 
+    ocean_rgb: tuple[int, int, int] | None = None
+    if not args.no_ocean_fill:
+        try:
+            ocean_rgb = parse_rgb(args.ocean_color)
+        except ValueError as exc:
+            print(f"ERROR: --ocean-color: {exc}", file=sys.stderr)
+            sys.exit(2)
+
     print("=" * 66, flush=True)
     print("  High Fidelity World Map Forever — texture generator", flush=True)
     print("=" * 66, flush=True)
@@ -211,6 +239,12 @@ def main() -> None:
           flush=True)
     print(f"Encoding:  uncompressed BGRA BLP2", flush=True)
     print(f"MAID field:{args.maid_field}", flush=True)
+    print(
+        "Ocean:     "
+        + ("raw (several fills, gaps left black)" if ocean_rgb is None
+           else "unified to #%02X%02X%02X" % ocean_rgb),
+        flush=True,
+    )
     print(flush=True)
 
     # --- Phase 1: zone database ---------------------------------------
@@ -280,7 +314,7 @@ def main() -> None:
     os.makedirs(output_dir, exist_ok=True)
     tile_cache_str = {str(k): str(v) for k, v in tile_cache.items()}
     jobs = [
-        (zone_db[folder], tile_cache_str, output_dir)
+        (zone_db[folder], tile_cache_str, output_dir, ocean_rgb)
         for folder in sorted(zone_db)
     ]
 
@@ -292,10 +326,13 @@ def main() -> None:
     upscaled = 0
     dropped = 0
     holes = 0
+    sea_cells = 0
+    sea_zones = 0
     t0 = time.time()
 
     def _handle(folder: str, res: dict) -> None:
         nonlocal ok, total_bytes, total_out_tiles, upscaled, dropped, holes
+        nonlocal sea_cells, sea_zones
         status = res["status"]
         if status == "ok":
             ok += 1
@@ -306,7 +343,15 @@ def main() -> None:
             dropped += mm["too_small"] + mm["unreadable"] + mm["missing"]
             hole = mm["cells"] - mm["loaded"]
             holes += max(0, hole)
-            extra = f"  {hole} empty cells" if hole > 0 else ""
+            filled = mm.get("ocean_cells", 0)
+            sea_cells += filled
+            sea_zones += 1 if res.get("has_ocean") else 0
+            if hole > 0:
+                extra = f"  {hole} empty cells"
+                if filled:
+                    extra += f" ({filled} sea)"
+            else:
+                extra = ""
             sp = "/".join(str(p) for p in res.get("stitch_px", [])) or "-"
             print(
                 f"  {folder:34s} {res['grid']:>5}  {res['tiles']:3d} BLP  "
@@ -349,8 +394,23 @@ def main() -> None:
         print(f"  {dropped} source tiles unusable (too small / "
               f"unreadable / not downloaded)", flush=True)
     if holes:
-        print(f"  {holes} stitch cells left black (no minimap coverage)",
-              flush=True)
+        if ocean_rgb is None:
+            print(f"  {holes} stitch cells left black (no minimap coverage)",
+                  flush=True)
+        else:
+            print(
+                f"  {holes} stitch cells had no minimap coverage — "
+                f"{sea_cells} filled with sea, {holes - sea_cells} left "
+                f"black (no open water alongside)",
+                flush=True,
+            )
+    if ocean_rgb is not None:
+        ocean_hex = "#%02X%02X%02X" % ocean_rgb
+        print(
+            f"  {sea_zones}/{ok} zones have sea, unified to {ocean_hex} "
+            f"along with their uncovered art-layer background",
+            flush=True,
+        )
     if skipped:
         print(f"\n  {len(skipped)} zone(s) skipped:", flush=True)
         for line in skipped[:20]:

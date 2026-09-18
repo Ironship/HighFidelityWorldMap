@@ -20,15 +20,42 @@ Two halves, no server component.
 
 ## Regenerating the map art
 
-`WorldMap/` (60 zones, 687 BLPs, ~177 MB) is a build artifact and is not tracked. Rebuild it with:
+`WorldMap/` (60 zones, 687 BLPs, ~175 MB) is a build artifact and is not tracked. Rebuild it with:
 
 ```sh
 python generateHFWM.py
 ```
 
 Phases: build the zone DB from wago.tools DB2 exports plus WDT `MAID` chunks → download the
-minimap BLPs from CASC → per zone stitch, crop to world bounds, fit the art layer, slice to BLP2 →
-emit `FDIDMap.lua`. Useful flags: `--zones`, `--dry-run`, `--refresh`, `--threads`, `--maid-field`.
+minimap BLPs from CASC → per zone stitch, unify the ocean, crop to world bounds, fit the art layer,
+slice to BLP2 → emit `FDIDMap.lua`. Useful flags: `--zones`, `--dry-run`, `--refresh`, `--threads`,
+`--maid-field`, `--ocean-color`, `--no-ocean-fill`.
+
+## Ocean unification
+
+The raw stitch renders the sea three different ways, which meet as hard rectangular seams on
+533-yard tile boundaries: an ADT with no terrain bakes a near-black `(8,16,16)` fill, an ADT that
+does have terrain renders its water through the water shader as a lighter `(26,50,69)`, and cells
+the WDT has no tile for at all are simply absent (74% of the Eastern Kingdoms art layer). `hfwm/ocean.py`
+collapses all three onto one colour in two passes:
+
+- **Pixel pass** — every pixel matching the measured ocean palette (`OCEAN_FILL_COLORS`, ±10 per
+  channel) is recoloured. This runs at each tile's native resolution *before* the downscale to the
+  region's stitch resolution; do it after and the downscale has already blended dark ocean into
+  light across every coast tile. Inland lakes carry their own tint, are not in the palette, and
+  survive.
+- **Cell pass** — empty cells are grouped into 4-connected components over the region's WDT grid,
+  and a component is filled only if it borders a tile that is at least 50% ocean. So the sea around
+  a continent or island fills, while an interior map's baked grey void (Alterac Valley) or a hole in
+  the middle of a landmass stays black.
+
+The art layer is then flattened onto the ocean colour rather than black, so the uncovered
+background — the rightmost ~6% of the Eastern Kingdoms layer, whose world bounds run past the
+terrain grid — matches the sea too.
+
+`--ocean-color` picks the target colour (default `#1A3245`, the game's own coastal water: unify onto
+the near-black open-ocean fill instead and every shore gets darker rather than the sea getting
+consistent). `--no-ocean-fill` turns the whole thing off and leaves the raw stitch.
 
 ## How this fork differs from retail
 
@@ -37,8 +64,9 @@ emit `FDIDMap.lua`. Useful flags: `--zones`, `--dry-run`, `--refresh`, `--thread
 - **No `WorldMapArea`.** That table 404s on this build, so zone bounds come from
   `UiMapAssignment.Region_*` (`loc_top=Region_3`, `loc_bottom=Region_0`, `loc_left=Region_4`,
   `loc_right=Region_1`).
-- **No AI inpainting, continent overlays or zone presets.** Gaps stay black — the output is an
-  honest stitched minimap, warts and all.
+- **No AI inpainting, continent overlays or zone presets.** Nothing is invented: the only gap
+  filling is the ocean pass above, which extends a colour the client itself rendered into cells
+  that provably border open water. Everything else stays black.
 
 ## Gotchas
 
