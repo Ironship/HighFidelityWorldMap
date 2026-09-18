@@ -14,6 +14,14 @@ Getting this wrong does not look broken, it looks *slightly stretched* —
 hence the explicit geometry rather than anything inferred from the tile
 count.
 
+A region's world rectangle is *not* guaranteed to lie inside the
+terrain's 64x64 tile grid.  Continent maps are bounded to the art
+layer's 3:2 aspect, so their eastern edge runs off the grid; the crop
+comes back short and the paste rect is shrunk to match (see
+``coordinates.compute_crop_box``).  Filling the whole destination with a
+short crop is what puts the art out from under the client's zone
+highlights.
+
 No inpainting: missing minimap tiles stay black.  That is deliberate
 (see CLAUDE.md) — the goal is a stitched-minimap world map, warts and
 all.
@@ -31,6 +39,7 @@ from .constants import (
     MIN_STITCH_TILE_PX,
     TILE_WORLD_SIZE,
 )
+from .coordinates import compute_crop_box
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +98,9 @@ def _stitch_region(
     """Stitch one region's minimap tiles and crop to its world bounds.
 
     Returns ``(cropped_image, stats)`` or ``(None, stats)``.
+    ``stats["coverage"]`` is the fraction of the region's world
+    rectangle the crop actually covers — the caller must paste into that
+    fraction of the destination rect rather than stretching to fill it.
     """
     from PIL import Image
 
@@ -145,6 +157,7 @@ def _stitch_region(
         "missing": missing,
         "cells": scols * srows,
         "stitch_px": tp,
+        "coverage": (0.0, 0.0, 1.0, 1.0),
     }
 
     if loaded == 0:
@@ -154,31 +167,22 @@ def _stitch_region(
     # --- Crop to the region's world-space rectangle ---------------------
     # Map vertical axis = world X (loc_top is max X), horizontal = world Y
     # (loc_left is max Y).  Both run in the negative direction across the
-    # image, which is why every term is (origin - bound).
-    world_origin_x = (32 - row_min) * TILE_WORLD_SIZE
-    world_origin_y = (32 - col_min) * TILE_WORLD_SIZE
-    px_per_yard = tp / TILE_WORLD_SIZE
-
-    crop_top = (world_origin_x - region["loc_top"]) * px_per_yard
-    crop_bottom = (world_origin_x - region["loc_bottom"]) * px_per_yard
-    crop_left = (world_origin_y - region["loc_left"]) * px_per_yard
-    crop_right = (world_origin_y - region["loc_right"]) * px_per_yard
-
+    # image, which is why compute_crop_box works in (origin - bound).
     sw, sh = stitch.size
-    crop_left = max(0, min(crop_left, sw))
-    crop_right = max(0, min(crop_right, sw))
-    crop_top = max(0, min(crop_top, sh))
-    crop_bottom = max(0, min(crop_bottom, sh))
+    box, coverage = compute_crop_box(
+        row_min, col_min,
+        region["loc_top"], region["loc_bottom"],
+        region["loc_left"], region["loc_right"],
+        sw, sh, tp,
+    )
+    stats["coverage"] = coverage
 
-    if crop_right - crop_left < 1 or crop_bottom - crop_top < 1:
+    if box[2] - box[0] < 1 or box[3] - box[1] < 1:
         stitch.close()
         stats["degenerate"] = True
         return None, stats
 
-    cropped = stitch.crop((
-        int(crop_left), int(crop_top),
-        int(round(crop_right)), int(round(crop_bottom)),
-    ))
+    cropped = stitch.crop(box)
     stitch.close()
     return cropped, stats
 
@@ -250,9 +254,36 @@ def process_zone(
             )
             continue
 
-        scaled = cropped.resize((dx1 - dx0, dy1 - dy0), Image.LANCZOS)
+        # The crop is clamped to the terrain grid, so it can cover only
+        # part of the region's world rectangle.  Shrink the paste rect by
+        # the same fractions — anything else rescales the whole map and
+        # slides it out from under the client's zone highlights.
+        cx0, cy0, cx1, cy1 = stats["coverage"]
+        rect_w, rect_h = dx1 - dx0, dy1 - dy0
+        px0 = dx0 + int(round(cx0 * rect_w))
+        px1 = dx0 + int(round(cx1 * rect_w))
+        py0 = dy0 + int(round(cy0 * rect_h))
+        py1 = dy0 + int(round(cy1 * rect_h))
+        px0, px1 = max(0, px0), min(layer_w, px1)
+        py0, py1 = max(0, py0), min(layer_h, py1)
+        if px1 - px0 < 1 or py1 - py0 < 1:
+            cropped.close()
+            notes.append(
+                f"region map {region['map_id']} covers no pixels of its "
+                f"ui rect after clamping to the terrain grid"
+            )
+            continue
+        if (px0, py0, px1, py1) != (dx0, dy0, dx1, dy1):
+            notes.append(
+                f"region map {region['map_id']} world bounds run past the "
+                f"terrain grid — drawn into "
+                f"{px0},{py0}-{px1},{py1} of {dx0},{dy0}-{dx1},{dy1} "
+                f"(coverage {cx0:.3f},{cy0:.3f}-{cx1:.3f},{cy1:.3f})"
+            )
+
+        scaled = cropped.resize((px1 - px0, py1 - py0), Image.LANCZOS)
         cropped.close()
-        layer.paste(scaled, (dx0, dy0))
+        layer.paste(scaled, (px0, py0))
         scaled.close()
         regions_drawn += 1
 
