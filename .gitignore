@@ -8,3 +8,7 @@ WorldMap*
 # Python
 __pycache__/
 *.py[cod]
+
+# BigWigs packager staging dir (and a local copy of release.sh, if you keep one)
+.release/
+.env

@@ -1,0 +1,29 @@
+# BigWigs packager config — https://github.com/BigWigsMods/packager/wiki/Preparing-the-PackageMeta-File
+#
+# The zip is dominated by WorldMap/, which is generated (and .gitignored), not
+# committed. CI regenerates it and then `git add -fN`s it so the packager stops
+# treating it as an untracked file and copies it into the package. See
+# .github/workflows/release.yml.
+
+package-as: HighFidelityWorldMapForever
+
+# No colon in the value — the packager's pkgmeta parser splits on the first one.
+changelog-title: High Fidelity World Map Forever
+
+# Everything below is either build machinery or a local artefact — none of it
+# belongs in the package users download.
+ignore:
+  - .github
+  - .pkgmeta
+  - .gitignore
+  - .release
+  - .cache-*
+  - __pycache__
+  - hfwm/__pycache__
+
+# No embedded libraries, so a nolib build would be byte-identical. Leave it off.
+enable-nolib-creation: no
+
+# Single `## Interface:` line, single game flavour (Forever, 16xxx) — nothing to
+# split.
+enable-toc-creation: no

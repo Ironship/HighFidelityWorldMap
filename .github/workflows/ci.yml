@@ -1,0 +1,77 @@
+name: CI
+
+# Cheap checks on every push and PR. Deliberately does *not* generate the map
+# art — that is a ~350 MB job and belongs only in the release workflow.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lua:
+    name: Lua syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Lua 5.1
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lua5.1
+
+      - name: Compile-check every file listed in the TOC
+        run: |
+          set -euo pipefail
+          status=0
+          # Read the file list out of the TOC so a file added to the repo but
+          # never wired into the TOC does not silently pass.
+          while IFS= read -r file; do
+            [[ -f "$file" ]] || { echo "::error::$file is in the TOC but missing"; status=1; continue; }
+            [[ "$file" == *.lua ]] || continue
+            luac5.1 -p "$file" || status=1
+          done < <(grep -E '^[^#[:space:]].*\.(lua|xml)[[:space:]]*$' HighFidelityWorldMapForever.toc | tr -d '\r')
+          exit $status
+
+  python:
+    name: Generator imports and plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: python -m pip install --upgrade pip Pillow
+
+      - name: Byte-compile the pipeline
+        run: python -m compileall -q hfwm generateHFWM.py
+
+      # Hits wago.tools for the DB2 exports but writes no tiles. Catches a
+      # pinned build going away or the zone DB changing shape.
+      - name: Dry-run the generator
+        run: python generateHFWM.py ./WorldMap --dry-run
+
+  package:
+    name: Packager config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # -d skips uploading, -z skips zip creation: validates the TOC, the
+      # .pkgmeta and the changelog without building or publishing anything.
+      - uses: BigWigsMods/packager@v2
+        with:
+          args: -d -z
+          pandoc: "false"

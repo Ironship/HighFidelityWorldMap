@@ -1,0 +1,173 @@
+name: Release
+
+# Two ways in:
+#
+#   1. Push a tag yourself:  git tag -a v1.0.1 -m v1.0.1 && git push origin v1.0.1
+#   2. Actions -> Release -> Run workflow, pick patch/minor/major and the tag is
+#      created for you.
+#
+# Option 2 deliberately tags *and* packages in the same job. A tag pushed with
+# GITHUB_TOKEN does not trigger other workflows, so chaining two workflows would
+# silently do nothing.
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Which part of the version to bump"
+        type: choice
+        required: true
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+      prerelease:
+        description: 'Optional suffix, e.g. "beta.1" -> v1.0.1-beta.1. A tag containing "beta" or "alpha" uploads to that CurseForge channel.'
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+# A release pushes ~350 MB to CurseForge; never run two at once.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build art, package, publish
+    runs-on: ubuntu-latest
+    # Phase 3 runs twice (art + Original/), so give it plenty of room.
+    timeout-minutes: 300
+
+    steps:
+      - name: Check out with full history
+        uses: actions/checkout@v5
+        with:
+          # release.sh walks back through tags to build the changelog.
+          fetch-depth: 0
+
+      - name: Create and push the new tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          BUMP: ${{ inputs.bump }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+
+          latest="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -n1)"
+          if [[ -z "$latest" ]]; then
+            base="0.1.0"
+          else
+            # Strip the leading v and any -prerelease suffix.
+            core="${latest#v}"
+            core="${core%%-*}"
+            IFS=. read -r major minor patch <<< "$core"
+            major="${major:-0}"; minor="${minor:-0}"; patch="${patch:-0}"
+            case "$BUMP" in
+              major) base="$((major + 1)).0.0" ;;
+              minor) base="${major}.$((minor + 1)).0" ;;
+              patch) base="${major}.${minor}.$((patch + 1))" ;;
+              *) echo "::error::unknown bump '$BUMP'"; exit 1 ;;
+            esac
+          fi
+
+          next="v${base}"
+          if [[ -n "$PRERELEASE" ]]; then
+            next="${next}-${PRERELEASE#-}"
+          fi
+
+          if git rev-parse -q --verify "refs/tags/$next" >/dev/null; then
+            echo "::error::tag $next already exists"
+            exit 1
+          fi
+
+          echo "Previous tag: ${latest:-<none>}  ->  new tag: $next"
+          echo "### Releasing \`$next\` (previous: \`${latest:-none}\`)" >> "$GITHUB_STEP_SUMMARY"
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Annotated: release.sh only recognises annotated tags as versions.
+          git tag -a "$next" -m "$next"
+          git push origin "refs/tags/$next"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install generator dependencies
+        run: python -m pip install --upgrade pip Pillow
+
+      - name: Read the pinned game build
+        id: pipeline
+        run: |
+          set -euo pipefail
+          python - >> "$GITHUB_OUTPUT" <<'PY'
+          from hfwm.constants import GAME_BUILD, GAME_PRODUCT
+          print(f"build={GAME_BUILD}")
+          print(f"cache_dir=.cache-{GAME_PRODUCT}-{GAME_BUILD}")
+          PY
+
+      # ~270 MB of DB2 exports, WDTs and minimap BLPs pulled from wago.tools.
+      # Caching it turns the download phase into a no-op on later releases.
+      - name: Restore CASC download cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pipeline.outputs.cache_dir }}
+          key: casc-${{ steps.pipeline.outputs.build }}-${{ hashFiles('hfwm/constants.py') }}
+          restore-keys: |
+            casc-${{ steps.pipeline.outputs.build }}-
+
+      - name: Generate the map art
+        run: python generateHFWM.py ./WorldMap
+
+      - name: Check the art actually got built
+        run: |
+          set -euo pipefail
+          count="$(find WorldMap -type f -name '*.blp' | wc -l)"
+          echo "Generated $count BLPs, $(du -sh WorldMap | cut -f1) total."
+          # A full build is ~1370 tiles; anything far below that means zones
+          # failed to download and the package would ship with holes in it.
+          if (( count < 1200 )); then
+            echo "::error::only $count BLPs generated, expected ~1370 — refusing to publish an incomplete map"
+            exit 1
+          fi
+          test -s FDIDMap.lua
+
+      # release.sh excludes anything `git ls-files --others` reports, which
+      # includes .gitignored paths — so the freshly generated WorldMap/ would be
+      # dropped from the zip. Adding it to the index with --intent-to-add (-N)
+      # takes it off that list without writing 350 MB of blobs into .git. The
+      # index is thrown away with the runner; nothing is committed.
+      - name: Stage the generated art for packaging
+        run: git add -fN WorldMap FDIDMap.lua
+
+      - name: Package and upload
+        uses: BigWigsMods/packager@v2
+        with:
+          # Nothing goes to WoWInterface, so skip the pandoc install.
+          pandoc: "false"
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+
+      # Redundant once the GitHub Release exists, but it is the only copy of the
+      # zip if the CurseForge or Release upload is what failed.
+      - name: Keep the zip as a build artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: .release/*.zip
+          if-no-files-found: warn
+          retention-days: 7
+          # BLPs are already DXT-compressed; re-deflating them is wasted time.
+          compression-level: 0
