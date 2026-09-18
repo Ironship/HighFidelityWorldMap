@@ -2,10 +2,10 @@
 -- High Fidelity World Map Forever — Bootstrap
 -- Wires up events and hooks after all modules are loaded.
 --
--- /hfwmf             – toggle on / off
--- /hfwmf on|off      – explicit enable / disable
--- /hfwmf alpha 0-1   – set overlay opacity
--- /hfwmf debug       – print diagnostic info for current map
+-- /hfwm             – toggle on / off
+-- /hfwm on|off      – explicit enable / disable
+-- /hfwm alpha 0-1   – set overlay opacity
+-- /hfwm debug       – print diagnostic info for current map
 -------------------------------------------------------------------------------
 local addonName, ns = ...
 
@@ -82,6 +82,6 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         Cave:Start()
 
         Commands:Register()
-        P("loaded — /hfwmf to toggle")
+        P("loaded — /hfwm to toggle")
     end
 end)

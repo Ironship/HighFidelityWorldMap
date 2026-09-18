@@ -6,7 +6,7 @@ A fork of [HighFidelityWorldMap](https://github.com/Sectimus/HighFidelityWorldMa
 It replaces the world map's hand-painted art with a satellite-style view stitched from the game's
 own minimap terrain tiles, drawn inside Blizzard's native map framework rather than replacing it.
 
-Type `/hfwmf` in game to toggle.
+Type `/hfwm` in game to toggle.
 
 ## Layout
 

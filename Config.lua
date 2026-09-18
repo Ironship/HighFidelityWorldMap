@@ -9,7 +9,7 @@ local Config = ns.Config
 Config.DEFAULTS = {
     enabled     = true,
     alpha       = 1.0,
-    caveEnabled = false,  -- cave overlay is opt-in; enable with /hfwmf cave on
+    caveEnabled = false,  -- cave overlay is opt-in; enable with /hfwm cave on
 }
 
 -- FileDataID lookup tables (populated from FDIDMap.lua)

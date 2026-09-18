@@ -41,7 +41,7 @@ function Commands:Handle(msg)
             ns.Renderer:ForceRefresh()
             return
         else
-            P("Usage: /hfwmf alpha 0.0-1.0")
+            P("Usage: /hfwm alpha 0.0-1.0")
             return
         end
     elseif cmd == "debug" then
@@ -51,11 +51,11 @@ function Commands:Handle(msg)
         db.enabled = not db.enabled
     else
         print("|cff33ccffHigh Fidelity World Map Forever|r commands:")
-        print("  /hfwmf          - toggle overlay")
-        print("  /hfwmf on|off   - enable / disable")
-        print("  /hfwmf alpha N      - set opacity (0-1)")
-        print("  /hfwmf cave [on|off] - toggle cave/dungeon overlay (opt-in)")
-        print("  /hfwmf debug        - diagnostic info + force refresh")
+        print("  /hfwm               - toggle overlay")
+        print("  /hfwm on|off        - enable / disable")
+        print("  /hfwm alpha N       - set opacity (0-1)")
+        print("  /hfwm cave [on|off] - toggle cave/dungeon overlay (opt-in)")
+        print("  /hfwm debug         - diagnostic info + force refresh")
         return
     end
 
@@ -235,7 +235,7 @@ function Commands:Debug()
 end
 
 function Commands:Register()
-    SLASH_HFWMF1 = "/hfwmf"
+    SLASH_HFWMF1 = "/hfwm"
     SLASH_HFWMF2 = "/hfwmforever"
     SlashCmdList["HFWMF"] = function(msg) self:Handle(msg) end
 end
