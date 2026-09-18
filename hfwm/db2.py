@@ -1,0 +1,547 @@
+"""Zone database builder for HFWM-Forever.
+
+Downloads the build-pinned DB2 exports and the WDT files they point at,
+then produces one entry per renderable UiMap describing:
+
+  * the art-layer geometry the client expects (``cols``/``rows`` of
+    tiles, ``layer_w``/``layer_h`` in pixels, ``tile_w``/``tile_h``), and
+    the layer-0 ``FileDataID`` of every tile in row-major order, and
+  * one or more *regions* — a world-space rectangle on a terrain map,
+    the minimap tiles covering it, and the normalised sub-rect of the
+    art layer it occupies.
+
+The join chain (all tables verified present on 1.60.1.69913):
+
+    UiMap                 ID, Name_lang, Type
+    UiMapXMapArt          UiMapID -> UiMapArtID  (lowest PhaseID wins)
+    UiMapArt              ID -> UiMapArtStyleID
+    UiMapArtStyleLayer    UiMapArtStyleID -> Layer/Tile width+height
+    UiMapArtTile          UiMapArtID -> (RowIndex, ColIndex, FileDataID)
+    UiMapAssignment       UiMapID -> MapID, Region_0..5, UiMin/UiMax
+    Map                   ID -> Directory, WdtFileDataID
+
+Two deliberate departures from the retail pipeline:
+
+  * **No community listfile.**  Retail resolved a zone's on-disk art
+    folder by matching listfile paths; here the tile ``FileDataID``s come
+    straight out of ``UiMapArtTile`` and the folder name is derived from
+    ``UiMap.Name_lang``, so the pipeline has no third-party dependency.
+  * **No WorldMapArea.**  That table 404s on this build.  Zone bounds
+    come from ``UiMapAssignment.Region_*``.
+
+``UiMapAssignment`` region fields, confirmed against known zones:
+
+    loc_top    = Region_3   (max world X)
+    loc_bottom = Region_0   (min world X)
+    loc_left   = Region_4   (max world Y)
+    loc_right  = Region_1   (min world Y)
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import time
+
+from .cache import CachedFile
+from .constants import (
+    DB2_CACHE_DIR,
+    DB2_CACHE_TTL_DAYS,
+    DB2_TABLES,
+    EXPECTED_ART_LAYER_DIMS,
+    GAME_BUILD,
+    GAME_PRODUCT,
+    MAID_FIELD_MINIMAP,
+    MINIMAP_DB_CACHE,
+    MINIMAP_DB_CACHE_TTL_DAYS,
+    PROVENANCE_FILE,
+    WDT_CACHE_DIR,
+    db2_url,
+)
+from .coordinates import world_to_tile
+from .http import download_casc, fetch_csv
+from .wdt import parse_wdt_maid
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def fetch_zone_db(
+    force_refresh: bool = False,
+    maid_field: int = MAID_FIELD_MINIMAP,
+) -> dict[str, dict]:
+    """Return the zone database, using the TTL cache when possible."""
+    use_cache = maid_field == MAID_FIELD_MINIMAP
+    cache = CachedFile(MINIMAP_DB_CACHE, MINIMAP_DB_CACHE_TTL_DAYS)
+
+    if use_cache and not force_refresh:
+        data, age = cache.load_or_none()
+        if data is not None:
+            print(
+                f"  Using cached zone DB ({len(data)} zones, "
+                f"{age:.0f} days old).",
+                flush=True,
+            )
+            return data
+
+    tables = _fetch_all_tables(force_refresh)
+    db = _build_zone_db(tables, maid_field)
+    if use_cache:
+        cache.save(db)
+    return db
+
+
+# ---------------------------------------------------------------------------
+# DB2 downloads
+# ---------------------------------------------------------------------------
+
+def _fetch_table(table: str, force_refresh: bool) -> list[dict]:
+    """Fetch one build-pinned DB2 CSV export, with a disk cache."""
+    DB2_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache = CachedFile(DB2_CACHE_DIR / f"{table}.json", DB2_CACHE_TTL_DAYS)
+
+    if not force_refresh:
+        rows, _age = cache.load_or_none()
+        if rows:
+            return rows
+
+    rows = fetch_csv(db2_url(table))
+    if not rows:
+        raise OSError(
+            f"{table}.db2 came back empty for build {GAME_BUILD}. "
+            "The build may have been de-listed on wago.tools — check "
+            "GAME_BUILD in hfwm/constants.py."
+        )
+    cache.save(rows)
+    return rows
+
+
+def _fetch_all_tables(force_refresh: bool) -> dict[str, list[dict]]:
+    """Download every table in :data:`DB2_TABLES`."""
+    print(f"  Downloading {len(DB2_TABLES)} DB2 tables "
+          f"(build {GAME_BUILD}) ...", flush=True)
+    tables: dict[str, list[dict]] = {}
+    for name in DB2_TABLES:
+        rows = _fetch_table(name, force_refresh)
+        tables[name] = rows
+        print(f"    {name}: {len(rows)} rows", flush=True)
+    return tables
+
+
+# ---------------------------------------------------------------------------
+# Small helpers
+# ---------------------------------------------------------------------------
+
+def _int(row: dict, key: str) -> int | None:
+    try:
+        return int(row[key])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _float(row: dict, key: str) -> float | None:
+    try:
+        return float(row[key])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _folder_name(name: str) -> str:
+    """Blizzard-style folder name: ``Un'Goro Crater`` -> ``UnGoroCrater``."""
+    return re.sub(r"[^A-Za-z0-9]", "", name)
+
+
+# ---------------------------------------------------------------------------
+# Art geometry
+# ---------------------------------------------------------------------------
+
+def _build_art_geometry(
+    art_rows: list[dict],
+    style_layer_rows: list[dict],
+    art_tile_rows: list[dict],
+) -> dict[int, dict]:
+    """Return ``{UiMapArtID: geometry}`` for every art with complete tiles.
+
+    ``tile_fdids`` is row-major — the same order the client's
+    ``C_Map.GetMapArtLayerTextures`` returns, which is what the addon's
+    ``BaseArt.lua`` relies on.
+    """
+    # UiMapArtID -> UiMapArtStyleID
+    art_to_style: dict[int, int] = {}
+    for r in art_rows:
+        aid = _int(r, "ID")
+        sid = _int(r, "UiMapArtStyleID")
+        if aid is not None and sid is not None:
+            art_to_style[aid] = sid
+
+    # UiMapArtStyleID -> layer-0 dimensions
+    style_dims: dict[int, dict] = {}
+    for r in style_layer_rows:
+        if _int(r, "LayerIndex") != 0:
+            continue
+        sid = _int(r, "UiMapArtStyleID")
+        lw, lh = _int(r, "LayerWidth"), _int(r, "LayerHeight")
+        tw, th = _int(r, "TileWidth"), _int(r, "TileHeight")
+        if None in (sid, lw, lh, tw, th) or tw <= 0 or th <= 0:
+            continue
+        cols = -(-lw // tw)   # ceil
+        rows = -(-lh // th)
+        expected = EXPECTED_ART_LAYER_DIMS.get((cols, rows))
+        if expected and (lw, lh) != expected:
+            print(
+                f"    WARNING: art style {sid} is {cols}x{rows} tiles but "
+                f"{lw}x{lh}px — expected {expected[0]}x{expected[1]}px.",
+                flush=True,
+            )
+        style_dims[sid] = {
+            "cols": cols, "rows": rows,
+            "layer_w": lw, "layer_h": lh,
+            "tile_w": tw, "tile_h": th,
+        }
+
+    # UiMapArtID -> {(row, col): FileDataID}
+    cells: dict[int, dict[tuple[int, int], int]] = {}
+    for r in art_tile_rows:
+        if _int(r, "LayerIndex") != 0:
+            continue
+        aid = _int(r, "UiMapArtID")
+        ri, ci = _int(r, "RowIndex"), _int(r, "ColIndex")
+        fdid = _int(r, "FileDataID")
+        if None in (aid, ri, ci, fdid) or fdid <= 0:
+            continue
+        cells.setdefault(aid, {})[(ri, ci)] = fdid
+
+    geometry: dict[int, dict] = {}
+    incomplete = 0
+    for aid, grid in cells.items():
+        sid = art_to_style.get(aid)
+        dims = style_dims.get(sid) if sid is not None else None
+        if not dims:
+            continue
+        ordered: list[int] = []
+        missing = False
+        for ri in range(dims["rows"]):
+            for ci in range(dims["cols"]):
+                fdid = grid.get((ri, ci))
+                if fdid is None:
+                    missing = True
+                    break
+                ordered.append(fdid)
+            if missing:
+                break
+        if missing:
+            incomplete += 1
+            continue
+        geometry[aid] = dict(dims, tile_fdids=ordered, style_id=sid)
+
+    if incomplete:
+        print(f"    {incomplete} arts skipped (incomplete tile grid)",
+              flush=True)
+    print(f"    {len(geometry)} arts with complete layer-0 geometry",
+          flush=True)
+    return geometry
+
+
+# ---------------------------------------------------------------------------
+# WDT downloads
+# ---------------------------------------------------------------------------
+
+def _fetch_wdt(map_id: int, wdt_fdid: int) -> bytes:
+    """Download a WDT with filesystem caching; ``b""`` on failure."""
+    WDT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_path = WDT_CACHE_DIR / f"{map_id}_{wdt_fdid}.wdt"
+    try:
+        if cache_path.exists() and cache_path.stat().st_size > 0:
+            return cache_path.read_bytes()
+        data = download_casc(wdt_fdid)
+        cache_path.write_bytes(data)
+        return data
+    except Exception as exc:
+        print(f"    WARNING: WDT {wdt_fdid} (map {map_id}): {exc}", flush=True)
+        return b""
+
+
+def _download_wdt_grids(
+    needed: dict[int, int],
+    maid_field: int,
+) -> tuple[dict[int, dict[tuple[int, int], int]], dict[str, dict]]:
+    """Parse MAID grids for every ``{map_id: wdt_fdid}`` in *needed*.
+
+    Also returns provenance for each WDT.  ``wago.tools``'
+    ``/api/casc/{fdid}`` endpoint is **not** product-pinned, so recording
+    the hash and tile footprint is the only way to notice if a future run
+    silently ingests a different product's terrain.
+    """
+    print(f"  Downloading {len(needed)} WDT files ...", flush=True)
+    grids: dict[int, dict[tuple[int, int], int]] = {}
+    provenance: dict[str, dict] = {}
+
+    for map_id, wdt_fdid in sorted(needed.items()):
+        data = _fetch_wdt(map_id, wdt_fdid)
+        if not data:
+            continue
+        grid = parse_wdt_maid(data, field_index=maid_field)
+        if not grid:
+            print(f"    map {map_id}: WDT has no MAID field {maid_field} data",
+                  flush=True)
+            continue
+        grids[map_id] = grid
+
+        rows = [r for r, _ in grid]
+        cols = [c for _, c in grid]
+        provenance[str(wdt_fdid)] = {
+            "map_id": map_id,
+            "wdt_fdid": wdt_fdid,
+            "md5": hashlib.md5(data).hexdigest(),
+            "bytes": len(data),
+            "tiles": len(grid),
+            "row_range": [min(rows), max(rows)],
+            "col_range": [min(cols), max(cols)],
+        }
+        print(
+            f"    map {map_id}: {len(grid)} tiles "
+            f"(rows {min(rows)}-{max(rows)}, cols {min(cols)}-{max(cols)})",
+            flush=True,
+        )
+
+    return grids, provenance
+
+
+# ---------------------------------------------------------------------------
+# Zone assembly
+# ---------------------------------------------------------------------------
+
+def _build_zone_db(
+    tables: dict[str, list[dict]],
+    maid_field: int,
+) -> dict[str, dict]:
+    """Join the DB2 tables and WDT grids into the final zone database."""
+    # --- Map: terrain directory + WDT ---
+    map_info: dict[int, dict] = {}
+    for r in tables["Map"]:
+        mid = _int(r, "ID")
+        wdt = _int(r, "WdtFileDataID")
+        directory = r.get("Directory") or ""
+        if mid is not None and wdt and wdt > 0 and directory:
+            map_info[mid] = {"directory": directory, "wdt_fdid": wdt}
+
+    # --- UiMap: names + types ---
+    ui_names: dict[int, str] = {}
+    ui_types: dict[int, int] = {}
+    for r in tables["UiMap"]:
+        uid = _int(r, "ID")
+        name = r.get("Name_lang") or ""
+        if uid is None or not name:
+            continue
+        ui_names[uid] = name
+        ui_types[uid] = _int(r, "Type") or 0
+
+    # --- UiMapXMapArt: lowest PhaseID wins ---
+    ui_to_art: dict[int, int] = {}
+    ui_art_phase: dict[int, int] = {}
+    for r in tables["UiMapXMapArt"]:
+        uid = _int(r, "UiMapID")
+        aid = _int(r, "UiMapArtID")
+        if uid is None or aid is None:
+            continue
+        phase = _int(r, "PhaseID") or 0
+        if uid not in ui_to_art or phase < ui_art_phase[uid]:
+            ui_to_art[uid] = aid
+            ui_art_phase[uid] = phase
+
+    # --- Art geometry ---
+    geometry = _build_art_geometry(
+        tables["UiMapArt"],
+        tables["UiMapArtStyleLayer"],
+        tables["UiMapArtTile"],
+    )
+
+    # --- UiMapAssignment: group regions per UiMap ---
+    assignments: dict[int, list[dict]] = {}
+    for idx, r in enumerate(tables["UiMapAssignment"]):
+        uid = _int(r, "UiMapID")
+        mid = _int(r, "MapID")
+        if uid is None or mid is None or mid not in map_info:
+            continue
+        if uid not in ui_to_art or ui_to_art[uid] not in geometry:
+            continue
+
+        r0 = _float(r, "Region_0")
+        r1 = _float(r, "Region_1")
+        r3 = _float(r, "Region_3")
+        r4 = _float(r, "Region_4")
+        if None in (r0, r1, r3, r4):
+            continue
+        if r0 == 0 and r1 == 0 and r3 == 0 and r4 == 0:
+            continue
+
+        info = map_info[mid]
+        assignments.setdefault(uid, []).append({
+            "map_id": mid,
+            "map_dir": info["directory"],
+            "wdt_fdid": info["wdt_fdid"],
+            "loc_top": r3,
+            "loc_bottom": r0,
+            "loc_left": r4,
+            "loc_right": r1,
+            "ui_min_x": _float(r, "UiMin_0") or 0.0,
+            "ui_min_y": _float(r, "UiMin_1") or 0.0,
+            "ui_max_x": _float(r, "UiMax_0") if _float(r, "UiMax_0") is not None else 1.0,
+            "ui_max_y": _float(r, "UiMax_1") if _float(r, "UiMax_1") is not None else 1.0,
+            "order": idx,
+        })
+
+    # --- WDT grids for every map we need ---
+    needed: dict[int, int] = {}
+    for regions in assignments.values():
+        for reg in regions:
+            needed.setdefault(reg["map_id"], reg["wdt_fdid"])
+    grids, wdt_provenance = _download_wdt_grids(needed, maid_field)
+
+    # --- Emit zones ---
+    zones: dict[str, dict] = {}
+    used: set[str] = set()
+    skipped_no_tiles = 0
+
+    for uid in sorted(assignments):
+        art_id = ui_to_art[uid]
+        geo = geometry[art_id]
+
+        regions: list[dict] = []
+        for reg in sorted(assignments[uid], key=lambda x: x["order"]):
+            grid = grids.get(reg["map_id"])
+            if not grid:
+                continue
+
+            row_min = world_to_tile(reg["loc_top"])
+            row_max = world_to_tile(reg["loc_bottom"])
+            col_min = world_to_tile(reg["loc_left"])
+            col_max = world_to_tile(reg["loc_right"])
+            if row_min > row_max:
+                row_min, row_max = row_max, row_min
+            if col_min > col_max:
+                col_min, col_max = col_max, col_min
+            row_min, row_max = max(0, row_min), min(63, row_max)
+            col_min, col_max = max(0, col_min), min(63, col_max)
+
+            tiles: dict[str, int] = {}
+            for rr in range(row_min, row_max + 1):
+                for cc in range(col_min, col_max + 1):
+                    fdid = grid.get((rr, cc))
+                    if fdid:
+                        tiles[f"{rr}_{cc}"] = fdid
+            if not tiles:
+                continue
+
+            regions.append(dict(
+                reg,
+                row_min=row_min, row_max=row_max,
+                col_min=col_min, col_max=col_max,
+                tiles=tiles,
+            ))
+
+        if not regions:
+            skipped_no_tiles += 1
+            continue
+
+        base = _folder_name(ui_names[uid]) or f"UiMap{uid}"
+        key = base if base not in used else f"{base}{uid}"
+        used.add(key)
+
+        zones[key] = {
+            "folder": key,
+            "area_name": ui_names[uid],
+            "ui_map_id": uid,
+            "ui_map_type": ui_types.get(uid, 0),
+            "ui_map_art_id": art_id,
+            "cols": geo["cols"],
+            "rows": geo["rows"],
+            "layer_w": geo["layer_w"],
+            "layer_h": geo["layer_h"],
+            "tile_w": geo["tile_w"],
+            "tile_h": geo["tile_h"],
+            "tile_fdids": geo["tile_fdids"],
+            "regions": regions,
+        }
+
+    if skipped_no_tiles:
+        print(f"    {skipped_no_tiles} UiMaps skipped (no minimap coverage)",
+              flush=True)
+
+    multi = sum(1 for z in zones.values() if len(z["regions"]) > 1)
+    unique_tiles = {
+        fdid
+        for z in zones.values()
+        for reg in z["regions"]
+        for fdid in reg["tiles"].values()
+    }
+    print(
+        f"  Zone DB: {len(zones)} zones "
+        f"({multi} multi-region), {len(unique_tiles)} unique minimap tiles",
+        flush=True,
+    )
+
+    _write_provenance(wdt_provenance, zones, maid_field)
+    return zones
+
+
+# ---------------------------------------------------------------------------
+# Provenance
+# ---------------------------------------------------------------------------
+
+def _write_provenance(
+    wdt_provenance: dict[str, dict],
+    zones: dict[str, dict],
+    maid_field: int,
+) -> None:
+    """Record what this run actually ingested.
+
+    The DB2 exports are build-pinned, but ``wago.tools``'
+    ``/api/casc/{fdid}`` serves whichever build was most recently
+    ingested.  If a later retail ingest flips a shared FDID (Azeroth's
+    WDT 775971 and Kalimdor's 782779 are the exposed ones), the md5 and
+    tile footprint recorded here will no longer match and the mismatch
+    is diagnosable instead of silent.
+    """
+    payload = {
+        "product": GAME_PRODUCT,
+        "build": GAME_BUILD,
+        "generated": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "maid_field": maid_field,
+        "note": (
+            "DB2 exports are pinned to 'build'. The CASC file endpoint is "
+            "NOT product-pinned — verify wdt md5s below before trusting a "
+            "re-run against a different ingest."
+        ),
+        "wdts": wdt_provenance,
+        "zones": {
+            key: {
+                "ui_map_id": z["ui_map_id"],
+                "ui_map_art_id": z["ui_map_art_id"],
+                "area_name": z["area_name"],
+                "grid": f"{z['cols']}x{z['rows']}",
+                "layer": f"{z['layer_w']}x{z['layer_h']}",
+                "tile": f"{z['tile_w']}x{z['tile_h']}",
+                "regions": [
+                    {
+                        "map_id": reg["map_id"],
+                        "map_dir": reg["map_dir"],
+                        "tiles": len(reg["tiles"]),
+                        "rows": [reg["row_min"], reg["row_max"]],
+                        "cols": [reg["col_min"], reg["col_max"]],
+                        "ui_rect": [
+                            reg["ui_min_x"], reg["ui_min_y"],
+                            reg["ui_max_x"], reg["ui_max_y"],
+                        ],
+                    }
+                    for reg in z["regions"]
+                ],
+            }
+            for key, z in sorted(zones.items())
+        },
+    }
+    PROVENANCE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PROVENANCE_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    print(f"  Provenance written to {PROVENANCE_FILE.name}", flush=True)

@@ -1,0 +1,10 @@
+# Generated map art — regenerate with `python generateHFWM.py`
+WorldMap/
+WorldMap*
+
+# Build-stamped pipeline cache (DB2 CSVs, WDTs, minimap BLPs)
+.cache-*/
+
+# Python
+__pycache__/
+*.py[cod]

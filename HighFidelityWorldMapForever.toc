@@ -1,0 +1,20 @@
+## Interface: 16001
+## Title: High Fidelity World Map Forever
+## Notes: Overlays high-resolution minimap exploration textures onto the world map for a satellite-view experience. Built from World of Warcraft Forever (wow_classic_beta 1.60.1.69913) map data. Type /hfwmf to toggle.
+## Author: HighFidelityWorldMapForever
+## Version: 1.0.0
+## SavedVariables: HighFidelityWorldMapForeverDB
+## IconTexture: Interface\Icons\INV_Misc_Map02
+
+FDIDMap.lua
+Namespace.lua
+Config.lua
+TexturePool.lua
+BaseArt.lua
+Exploration.lua
+Watchdog.lua
+Renderer.lua
+Cave.lua
+CaveRenderer.lua
+Commands.lua
+Core.lua
