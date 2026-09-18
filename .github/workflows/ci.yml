@@ -20,15 +20,16 @@ concurrency:
 
 jobs:
   lua:
-    name: Lua syntax
+    name: Lua
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@v5
 
-      - name: Install Lua 5.1
+      - name: Install Lua
         run: sudo apt-get update -qq && sudo apt-get install -y -qq lua5.1
 
-      - name: Compile-check every file listed in the TOC
+      - name: Lint Lua
         run: |
           set -euo pipefail
           status=0
@@ -42,36 +43,73 @@ jobs:
           exit $status
 
   python:
-    name: Generator imports and plan
+    name: Generator
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - run: python -m pip install --upgrade pip Pillow
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
 
-      - name: Byte-compile the pipeline
+      - name: Lint Python
         run: python -m compileall -q hfwm generateHFWM.py
 
       # Hits wago.tools for the DB2 exports but writes no tiles. Catches a
       # pinned build going away or the zone DB changing shape.
-      - name: Dry-run the generator
+      - name: Dry run generator
         run: python generateHFWM.py ./WorldMap --dry-run
 
+      # The dry run stops before a single pixel is touched, so it never
+      # imports what the processing phase needs — a missing numpy got all the
+      # way to a release before anything noticed. One interior zone is four
+      # source tiles and about a second, and it runs the whole path: download,
+      # stitch, the sea erase, the resample, BLP2 encode.
+      #
+      # --skip-fdid-map because phase 4 writes FDIDMap.lua next to the script
+      # rather than into the output dir, and a one-zone map would overwrite the
+      # committed one.
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          python generateHFWM.py ./smoke --zones ThunderBluff --skip-fdid-map
+          count="$(find smoke -type f -name '*.blp' | wc -l)"
+          echo "Smoke build produced $count BLPs."
+          # 12 for the zone, 12 again for the Original/ dump.
+          if (( count != 24 )); then
+            echo "::error::expected 24 BLPs from the smoke build, got $count"
+            exit 1
+          fi
+
+      # ThunderBluff is landlocked, so the run above never reaches the ocean
+      # pass's cell classification. Same zone, other code path.
+      - name: Smoke test (ocean pass)
+        run: |
+          set -euo pipefail
+          python generateHFWM.py ./smoke-ocean --zones ThunderBluff \
+            --ocean --no-original --skip-fdid-map
+          test "$(find smoke-ocean -type f -name '*.blp' | wc -l)" -eq 12
+
   package:
-    name: Packager config
+    name: Packager
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       # -d skips uploading, -z skips zip creation: validates the TOC, the
       # .pkgmeta and the changelog without building or publishing anything.
-      - uses: BigWigsMods/packager@v2
+      - name: Validate package config
+        uses: BigWigsMods/packager@v2
         with:
           args: -d -z
           pandoc: "false"

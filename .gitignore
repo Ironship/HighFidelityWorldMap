@@ -5,6 +5,10 @@ WorldMap*
 # Build-stamped pipeline cache (DB2 CSVs, WDTs, minimap BLPs)
 .cache-*/
 
+# CI's one-zone smoke builds
+smoke/
+smoke-ocean/
+
 # Python
 __pycache__/
 *.py[cod]

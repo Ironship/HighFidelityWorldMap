@@ -1,0 +1,7 @@
+# Generator dependencies. The addon itself needs nothing — this is only for
+# generateHFWM.py, and CI installs from here so the workflows cannot drift
+# out of step with what the pipeline actually imports.
+Pillow
+# hfwm/ocean.py does its sea masking on the pixel array: the ocean-fill
+# match in ocean_mask, and the alpha erase in erase_tile.
+numpy
