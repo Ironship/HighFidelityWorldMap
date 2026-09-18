@@ -4,6 +4,8 @@
 --
 -- /hfwm             – toggle on / off
 -- /hfwm on|off      – explicit enable / disable
+-- /hfwm bg NAME     – map background: default | ocean | hybrid
+-- /hfwm options     – open the options panel
 -- /hfwm alpha 0-1   – set overlay opacity
 -- /hfwm debug       – print diagnostic info for current map
 -------------------------------------------------------------------------------
@@ -14,6 +16,7 @@ local BaseArt     = ns.BaseArt
 local Exploration = ns.Exploration
 local Renderer    = ns.Renderer
 local Commands    = ns.Commands
+local Options     = ns.Options
 local Cave        = ns.Cave
 local CaveRenderer = ns.CaveRenderer
 local P           = ns.P
@@ -82,6 +85,9 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         Cave:Start()
 
         Commands:Register()
-        P("loaded — /hfwm to toggle")
+        -- After Commands, so a Lua error while probing the client's options
+        -- APIs still leaves the slash commands working.
+        Options:Init()
+        P("loaded — /hfwm to toggle, /hfwm options for settings")
     end
 end)

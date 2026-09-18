@@ -7,14 +7,83 @@ local Renderer    = ns.Renderer
 local Config      = ns.Config
 local Pool        = ns.Pool
 local BaseArt     = ns.BaseArt
+local MapFrameBg  = ns.MapFrameBg
 local Exploration = ns.Exploration
 local Watchdog    = ns.Watchdog
 local P           = ns.P
 
+-------------------------------------------------------------------------------
+-- Backdrop
+--
+-- The bundled BLPs ship with their sea and their uncovered cells
+-- transparent (pipeline art pass "alpha-sea"), so *something* has to be
+-- behind them. What that something is, is the map-background setting:
+--
+--   Ocean Blue   a flat colour drawn here, Blizzard's art hidden
+--   Hybrid       no backdrop at all, Blizzard's art left visible so it
+--                shows through the transparent sea
+--   Transparent  no backdrop, no Blizzard's art, and the map frame's own
+--                backing hidden too (MapFrameBg) so the holes go through the
+--                UI and onto the world rather than onto a panel. Without
+--                that last layer it differs from Hybrid only in whether
+--                Blizzard's art shows, which is not much of a choice.
+--   Original     a separate, opaque tile set; nothing could show through
+--                it, so again no backdrop
+--
+-- One texture on the overlay frame, at the BACKGROUND draw layer so it sits
+-- under the tiles (TexturePool creates those at ARTWORK sublevel 2). It
+-- covers the whole frame, which is exactly the tile grid: the frame is
+-- SetAllPoints to the canvas, and the grid is laid out at
+-- layerW*scaleX x layerH*scaleY == canvasW x canvasH.
+-------------------------------------------------------------------------------
+-- Created once and kept. Refresh() can re-parent the overlay frame when the
+-- client swaps the canvas out from under it, but the frame object itself is
+-- never replaced, so the texture on it stays good.
+local function GetBackdrop()
+    if not Config.overlayFrame then return nil end
+    if not Config.backdropTexture then
+        local tex = Config.overlayFrame:CreateTexture(nil, "BACKGROUND")
+        tex:SetAllPoints(Config.overlayFrame)
+        Config.backdropTexture = tex
+    end
+    return Config.backdropTexture
+end
+
+--- Apply the chosen background: colour the backdrop, stand aside for
+--- Blizzard's art, or need nothing behind the tiles at all. Returns the
+--- entry applied.
+---@param bg table entry from Config.BACKGROUNDS
+local function ApplyBackground(bg)
+    local tex = GetBackdrop()
+    if bg.rgb then
+        if tex then
+            tex:SetColorTexture(bg.rgb[1], bg.rgb[2], bg.rgb[3], 1)
+            tex:Show()
+        end
+        BaseArt:SetVisible(false)
+    elseif bg.blizzardArt then
+        if tex then tex:Hide() end
+        BaseArt:SetVisible(true)
+    else
+        -- Transparent and Original: nothing of ours behind the tiles, and
+        -- nothing of Blizzard's either.
+        if tex then tex:Hide() end
+        BaseArt:SetVisible(false)
+    end
+    -- Orthogonal to the three branches above, and only Transparent wants it:
+    -- the other entries all put something opaque in front of the frame's own
+    -- backing, so hiding it would change nothing but could still be seen at
+    -- the map's edges.
+    MapFrameBg:SetVisible(not bg.seeThrough)
+    return bg
+end
+
 --- Restore default map art and release HFWM textures.
 local function RestoreDefaults()
     Config.overlayActive = false
+    if Config.backdropTexture then Config.backdropTexture:Hide() end
     BaseArt:SetVisible(true)
+    MapFrameBg:SetVisible(true)
     Exploration:SetVisible(true)
 end
 
@@ -114,7 +183,13 @@ function Renderer:Refresh(force)
         return
     end
 
-    local FDID_MAP     = Config.FDID_MAP
+    -- The background decides which tile set to draw, not just what goes
+    -- behind it: Original has its own raw dump under WorldMap/Original/ and
+    -- therefore its own lookup table. Everything else draws the bundled
+    -- transparent art. Resolved before ApplyBackground so both see the same
+    -- entry.
+    local background   = Config:GetBackground()
+    local FDID_MAP     = Config:GetTileMap(background)
     local FDID_MAP_SUB = Config.FDID_MAP_SUB
     local FDID_BASE    = Config.FDID_BASE
 
@@ -122,9 +197,12 @@ function Renderer:Refresh(force)
     local useBundled = FDID_MAP[fdids[1]] ~= nil
 
     if trace then
-        P(("  fdids=%d  firstFDID=%d  useBundled=%s  FDID_MAP_size=%d"):format(
-            #fdids, fdids[1], tostring(useBundled),
-            Config._fdidMapSize or -1))
+        P(("  fdids=%d  firstFDID=%d  useBundled=%s  background=%s  "
+           .. "tileMap_size=%d"):format(
+            #fdids, fdids[1], tostring(useBundled), background.key,
+            background.tiles == "original"
+                and (Config._fdidMapOriginalSize or -1)
+                or (Config._fdidMapSize or -1)))
     end
     local useSubmerged = false
 
@@ -157,19 +235,40 @@ function Renderer:Refresh(force)
         end
     end
 
-    if canvasW == 0 or canvasH == 0 then
+    --- Switch the overlay on, and return the background entry in force.
+    ---
+    --- The background only means anything where we are drawing our own
+    --- transparent tiles. On a map with no bundled BLPs the tiles are the
+    --- client's own opaque art, so behave exactly as before — hide the detail
+    --- layer, draw no backdrop — and return nil to say the setting does not
+    --- apply here.
+    local function Activate()
         Config.overlayActive = true
-        BaseArt:SetVisible(false)
+        local bg
+        if useBundled then
+            bg = ApplyBackground(background)
+        else
+            if Config.backdropTexture then Config.backdropTexture:Hide() end
+            BaseArt:SetVisible(false)
+            MapFrameBg:SetVisible(true)
+        end
         Exploration:SetVisible(false)
         Watchdog:Start()
+        return bg
+    end
+
+    if canvasW == 0 or canvasH == 0 then
+        Activate()
         return
     end
 
     -- Activate overlay
-    Config.overlayActive = true
-    BaseArt:SetVisible(false)
-    Exploration:SetVisible(false)
-    Watchdog:Start()
+    local bg = Activate()
+
+    if trace then
+        P(("  background=%s  baseArtVisible=%s"):format(
+            bg and bg.key or "n/a", tostring(BaseArt.visible)))
+    end
 
     local currentLevel = canvas:GetFrameLevel()
     Config.overlayFrame:SetFrameLevel(currentLevel + 500)

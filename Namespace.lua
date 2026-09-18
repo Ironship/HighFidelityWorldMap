@@ -10,10 +10,12 @@ local addonName, ns = ...
 ns.Config      = {}
 ns.Pool        = {}
 ns.BaseArt     = {}
+ns.MapFrameBg  = {}
 ns.Exploration = {}
 ns.Watchdog    = {}
 ns.Renderer    = {}
 ns.Commands    = {}
+ns.Options     = {}
 ns.Cave        = {}
 ns.CaveRenderer = {}
 

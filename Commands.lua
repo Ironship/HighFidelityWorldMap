@@ -33,6 +33,44 @@ function Commands:Handle(msg)
             ns.CaveRenderer:HideCave()
         end
         return
+    elseif cmd == "bg" or cmd == "background" then
+        local want = args[2] or ""
+        -- Only what this install can actually draw: "original" needs the
+        -- second, raw tile dump, which a build without --original never wrote.
+        local list = Config:AvailableBackgrounds()
+        if want == "" then
+            -- No argument: cycle, which is what a keybind would want.
+            local cur = Config:GetBackground()
+            local nxt = list[1]
+            for i, bg in ipairs(list) do
+                if bg.key == cur.key then
+                    nxt = list[i % #list + 1]
+                    break
+                end
+            end
+            want = nxt and nxt.key or ""
+        end
+        local applied = Config:SetBackground(want)
+        if applied then
+            P(("Map background: |cff33ccff%s|r — %s"):format(
+                applied.label, applied.desc))
+            if ns.Options.panel then ns.Options:Refresh() end
+        else
+            local keys = {}
+            for _, bg in ipairs(list) do
+                keys[#keys + 1] = bg.key
+            end
+            P(("Unknown background '%s'. Options: %s"):format(
+                want, table.concat(keys, ", ")))
+            if not Config:BackgroundAvailable({ tiles = "original" }) then
+                P("  (|cff999999original|r needs the raw tile dump — rebuild "
+                    .. "the art with --original)")
+            end
+        end
+        return
+    elseif cmd == "options" or cmd == "config" or cmd == "settings" then
+        ns.Options:Open()
+        return
     elseif cmd == "alpha" then
         local val = tonumber(args[2])
         if val then
@@ -44,6 +82,73 @@ function Commands:Handle(msg)
             P("Usage: /hfwm alpha 0.0-1.0")
             return
         end
+    elseif cmd == "baseart" then
+        -- Blizzard's own detail layer: the parchment, the sea labels and the
+        -- compass rose. Every background but Hybrid hides it, but only
+        -- Transparent puts nothing opaque in front — so if the search below
+        -- comes back empty, Transparent is the one entry that shows it.
+        local BaseArt = ns.BaseArt
+        local found = BaseArt:Describe()
+        P(("detail layers: %d found, currently %s"):format(
+            #found, BaseArt.visible and "shown" or "hidden"))
+        for i, line in ipairs(found) do
+            print(("  %d. %s"):format(i, line))
+        end
+        if #found == 0 then
+            print("  (none found — open the map first; if the map is open and "
+                .. "this is still empty, the client keeps its detail layers "
+                .. "somewhere the search does not look)")
+        end
+        return
+    elseif cmd == "framebg" then
+        -- What the Transparent background hides, and — when the answer turns
+        -- out to be "not enough" — what else is down there. The search is by
+        -- draw layer and size rather than by name, so a miss is invisible
+        -- unless something walks the whole tree and says so.
+        local MapFrameBg = ns.MapFrameBg
+        local sub = args[2] or ""
+
+        if sub == "all" or sub == "survey" then
+            local rows = MapFrameBg:Survey()
+            P(("map-frame survey: %d widget(s) under WorldMapFrame"):format(
+                #rows))
+            print("  reached | alpha shown  layer/sub  owner -> region  = texture")
+            for _, r in ipairs(rows) do
+                print(("  %s | %.2f %-5s %s/%d  %s -> %s  = %s"):format(
+                    r.reached and "YES" or " no", r.alpha,
+                    tostring(r.shown), r.layer, r.sublevel,
+                    r.owner, r.region, r.tex))
+            end
+            if #rows == 0 then
+                print("  (nothing found — open the map first)")
+            end
+            return
+        elseif sub == "nuke" then
+            -- Not a setting: a bisection tool. If this makes the map
+            -- see-through then the backing is in the survey and the ordinary
+            -- search can be taught to reach it; if it does not, nothing in
+            -- the UI is what we are looking at.
+            local n = MapFrameBg:Nuke()
+            P(("hid %d widget(s) under WorldMapFrame. "):format(n)
+                .. "|cffff4444/hfwm framebg restore|r puts them back.")
+            return
+        elseif sub == "restore" then
+            P(("restored %d widget(s)."):format(MapFrameBg:Unnuke()))
+            return
+        end
+
+        local found = MapFrameBg:Describe()
+        P(("map-frame backing: %d region(s), currently %s"):format(
+            #found, MapFrameBg.visible and "shown" or "hidden"))
+        for i, name in ipairs(found) do
+            print(("  %d. %s"):format(i, name))
+        end
+        if #found == 0 then
+            print("  (nothing found — open the map first)")
+        end
+        print("  |cff999999framebg all|r surveys the whole frame tree; "
+            .. "|cff999999framebg nuke|r hides all of it")
+        return
     elseif cmd == "debug" then
         self:Debug()
         return
@@ -53,8 +158,19 @@ function Commands:Handle(msg)
         print("|cff33ccffHigh Fidelity World Map Forever|r commands:")
         print("  /hfwm               - toggle overlay")
         print("  /hfwm on|off        - enable / disable")
+        print("  /hfwm options       - open the options panel")
+        local keys = {}
+        for _, bg in ipairs(Config:AvailableBackgrounds()) do
+            keys[#keys + 1] = bg.key
+        end
+        print("  /hfwm bg [NAME]     - map background: "
+            .. table.concat(keys, " | ") .. " (no name cycles)")
         print("  /hfwm alpha N       - set opacity (0-1)")
         print("  /hfwm cave [on|off] - toggle cave/dungeon overlay (opt-in)")
+        print("  /hfwm baseart       - Blizzard's detail layer, and whether "
+            .. "the search finds it")
+        print("  /hfwm framebg       - map-frame backing Transparent hides")
+        print("                        (all = survey everything, nuke/restore)")
         print("  /hfwm debug         - diagnostic info + force refresh")
         return
     end
@@ -68,7 +184,10 @@ function Commands:Handle(msg)
 end
 
 function Commands:Debug()
-    local FDID_MAP     = Config.FDID_MAP
+    local bg = Config:GetBackground()
+    -- The tile table the active background actually draws from, so every
+    -- lookup reported below matches what is on screen.
+    local FDID_MAP     = Config:GetTileMap(bg)
     local FDID_MAP_SUB = Config.FDID_MAP_SUB
 
     -- FDID_MAP health check
@@ -79,6 +198,31 @@ function Commands:Debug()
     P("debug: FDID_MAP=" .. mapCount .. " entries, FDID_MAP_SUB=" .. subCount
         .. "  enabled=" .. tostring(Config.db and Config.db.enabled))
     print(("  FDID_BASE: %s"):format(Config.FDID_BASE or "nil"))
+    print(("  tile tables: bundled=%d  original=%d"):format(
+        Config._fdidMapSize or -1, Config._fdidMapOriginalSize or -1))
+    local bgHow
+    if bg.rgb then
+        bgHow = ("#%02X%02X%02X"):format(
+            bg.rgb[1] * 255, bg.rgb[2] * 255, bg.rgb[3] * 255)
+    elseif bg.blizzardArt then
+        bgHow = "Blizzard art"
+    elseif bg.seeThrough then
+        bgHow = "nothing behind the tiles, map frame backing hidden"
+    else
+        bgHow = "nothing behind the tiles"
+    end
+    print(("  background: %s (%s)  tiles=%s  backdrop=%s  baseArtVisible=%s")
+        :format(
+            bg.key, bgHow, bg.tiles or "bundled",
+            Config.backdropTexture
+                and tostring(Config.backdropTexture:IsShown()) or "nil",
+            tostring(ns.BaseArt.visible)))
+    print(("  frame backing: %d region(s) touched, currently %s"):format(
+        #ns.MapFrameBg.order,
+        ns.MapFrameBg.visible and "shown" or "hidden"))
+    print(("  options: dropdown=%s  registered=%s"):format(
+        tostring(ns.Options.dropdownKind),
+        tostring(ns.Options.clientRegistered)))
 
     local mapID = WorldMapFrame:GetMapID()
     P("debug: mapID=" .. tostring(mapID)
@@ -177,14 +321,19 @@ function Commands:Debug()
             print(("  canvas: %.0f x %.0f"):format(w, h))
         end
 
-        -- Check detail layer pool
+        -- Check detail layer pool. The pool is only one of the places BaseArt
+        -- looks, and a NIL here used to mean BaseArt gave up entirely — so
+        -- report what it actually found alongside it.
         local dlp = WorldMapFrame.detailLayerPool
         local dlpCount = 0
-        if dlp then
+        if dlp and dlp.EnumerateActive then
             for _ in dlp:EnumerateActive() do dlpCount = dlpCount + 1 end
         end
         print(("  detailLayerPool: %s  active=%d"):format(
             dlp and "exists" or "NIL", dlpCount))
+        print(("  BaseArt: %d layer(s) found, visible=%s  "
+            .. "(|cff999999/hfwm baseart|r for detail)"):format(
+            #ns.BaseArt:Describe(), tostring(ns.BaseArt.visible)))
     end
 
     print("  overlayActive: " .. tostring(Config.overlayActive))

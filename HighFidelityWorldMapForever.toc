@@ -11,10 +11,12 @@ Namespace.lua
 Config.lua
 TexturePool.lua
 BaseArt.lua
+MapFrameBg.lua
 Exploration.lua
 Watchdog.lua
 Renderer.lua
 Cave.lua
 CaveRenderer.lua
 Commands.lua
+Options.lua
 Core.lua
