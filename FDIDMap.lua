@@ -690,6 +690,13 @@ HFWMF_FDID_MAP = {
     [7317233] = "ZephrasIsle\\zephrasisle11",
     [7317234] = "ZephrasIsle\\zephrasisle12",
     [8128990] = "ZephrasIsle2665\\zephrasisle26651",
+
+    -- Hand-added: real baked WMO minimap art for Fargodeep Mine, extracted
+    -- from md_goldmine_varianta.wmo via hfwm/cave_minimap.py. Not part of
+    -- generateHFWM.py's auto-generation; a future regeneration run must
+    -- preserve or reintroduce these two entries.
+    [900000001] = "FargodeepMine\\upper",
+    [900000002] = "FargodeepMine\\lower",
 }
 
 -- No submerged (layer-2) art variants are generated for
@@ -1393,4 +1400,10 @@ HFWMF_FDID_MAP_ORIGINAL = {
     [7317233] = "Original\\ZephrasIsle\\zephrasisle11",
     [7317234] = "Original\\ZephrasIsle\\zephrasisle12",
     [8128990] = "Original\\ZephrasIsle2665\\zephrasisle26651",
+
+    -- Hand-added: same Fargodeep Mine cave art as HFWMF_FDID_MAP above.
+    -- No separate "paperback" art pass exists yet for indoor WMO minimap
+    -- tiles, so both background variants share the one baked composite.
+    [900000001] = "FargodeepMine\\upper",
+    [900000002] = "FargodeepMine\\lower",
 }

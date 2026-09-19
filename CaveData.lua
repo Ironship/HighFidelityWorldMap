@@ -1347,28 +1347,26 @@ HFWMF_CAVE_DATA = {
                     uiMapID = 38,
                     areaIDs = { 57 },
                     bounds  = { -9860, -9700, 41.75, 281.75 },
-                    layerW  = 1002, layerH = 668,
-                    tileW   = 256, tileH  = 256,
-                    cols    = 4, rows   = 3,
-                    tiles   = {
-                        603267, 603271, 603272, 603273,
-                        603274, 603275, 603276, 603277,
-                        603278, 603268, 603269, 603270,
-                    },
+                    -- Real baked WMO minimap art (md_goldmine_varianta.wmo),
+                    -- composited offline by hfwm/cave_minimap.py. Single
+                    -- whole-floor tile via a synthetic FDID; see FDIDMap.lua.
+                    layerW  = 348, layerH = 257,
+                    tileW   = 348, tileH  = 257,
+                    cols    = 1, rows   = 1,
+                    tiles   = { 900000001 },
                 },
                 {
                     name    = "Lower Mines",
                     uiMapID = 39,
                     areaIDs = { 57 },
                     bounds  = { -9880, -9710, 34.25, 289.25 },
-                    layerW  = 1002, layerH = 668,
-                    tileW   = 256, tileH  = 256,
-                    cols    = 4, rows   = 3,
-                    tiles   = {
-                        603279, 603283, 603284, 603285,
-                        603286, 603287, 603288, 603289,
-                        603290, 603280, 603281, 603282,
-                    },
+                    -- Real baked WMO minimap art (md_goldmine_varianta.wmo),
+                    -- composited offline by hfwm/cave_minimap.py. Single
+                    -- whole-floor tile via a synthetic FDID; see FDIDMap.lua.
+                    layerW  = 348, layerH = 257,
+                    tileW   = 348, tileH  = 257,
+                    cols    = 1, rows   = 1,
+                    tiles   = { 900000002 },
                 },
             },
         },

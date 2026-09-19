@@ -97,6 +97,12 @@ local contentW, contentH = 0, 0
 local cavePool        = {}
 local activeCaveTiles = {}
 
+-- Snapshot of the most recent RenderTiles call, for /hfwm debug. Not used
+-- for rendering itself — purely so Commands.lua can report, per tile,
+-- whether the FDID_MAP lookup hit (real baked art) or fell through to a
+-- raw client FDID, without recomputing any of RenderTiles's own state.
+local lastRenderInfo = nil
+
 local function PoolAcquire()
     local tex = tremove(cavePool)
     if not tex then
@@ -661,6 +667,14 @@ function CaveRenderer:RenderTiles(floorMapID)
     local scaleY = canvasH / layerH
     local tileIdx = 1
 
+    lastRenderInfo = {
+        floorMapID = floorMapID,
+        layerW = layerW, layerH = layerH,
+        tileW = tilePxW, tileH = tilePxH,
+        cols = cols, rows = rows,
+        tiles = {},
+    }
+
     for row = 0, rows - 1 do
         for col = 0, cols - 1 do
             local fdid = fdids[tileIdx]
@@ -668,6 +682,10 @@ function CaveRenderer:RenderTiles(floorMapID)
 
             local rel = FDID_MAP[fdid]
             local src = rel and (FDID_BASE .. rel) or fdid
+
+            lastRenderInfo.tiles[tileIdx] = {
+                fdid = fdid, bundled = (rel ~= nil), rel = rel, src = src,
+            }
 
             local artTileW = math.min(tilePxW, layerW - col * tilePxW)
             local artTileH = math.min(tilePxH, layerH - row * tilePxH)
@@ -683,6 +701,13 @@ function CaveRenderer:RenderTiles(floorMapID)
     end
 
     return #activeCaveTiles > 0
+end
+
+--- Snapshot of the most recent RenderTiles call (layer dims + per-tile FDID
+--- lookup results), for /hfwm debug. Returns nil if no floor has been
+--- rendered yet this session.
+function CaveRenderer:DebugTiles()
+    return lastRenderInfo
 end
 
 -------------------------------------------------------------------------------

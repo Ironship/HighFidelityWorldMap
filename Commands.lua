@@ -477,6 +477,28 @@ function Commands:Debug()
     else
         print("        window: not built yet (no cave entered this session)")
     end
+    -- Per-tile FDID lookup replay for the current cave floor: which FDID was
+    -- asked for, whether it hit FDID_MAP (real baked art, e.g. Fargodeep's
+    -- md_goldmine_varianta.wmo composite), and the exact source string that
+    -- got handed to SetTexture. "raw FDID (client art)" means it fell
+    -- through to whatever Blizzard's own client streams for that FDID.
+    local tileInfo = ns.CaveRenderer:DebugTiles()
+    if tileInfo then
+        print(("        last render: mapID=%s  layer=%dx%d  tile=%dx%d  grid=%dx%d"):format(
+            tostring(tileInfo.floorMapID), tileInfo.layerW, tileInfo.layerH,
+            tileInfo.tileW, tileInfo.tileH, tileInfo.cols, tileInfo.rows))
+        for i, t in ipairs(tileInfo.tiles) do
+            if t.bundled then
+                print(("          tile %d: fdid=%s => BUNDLED (%s)"):format(
+                    i, tostring(t.fdid), t.src))
+            else
+                print(("          tile %d: fdid=%s => raw FDID (client art)"):format(
+                    i, tostring(t.fdid)))
+            end
+        end
+    else
+        print("        last render: none yet (no floor rendered this session)")
+    end
     if Config.caveAllFloors then
         for i, f in ipairs(Config.caveAllFloors) do
             local marker = (f.mapID == Config.caveCurrentFloorMapID)
