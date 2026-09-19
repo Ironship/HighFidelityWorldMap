@@ -1341,6 +1341,24 @@ HFWMF_CAVE_DATA = {
             groupID = 139,
             areaIDs = { 57 },
             bounds  = { -9880, -9700, 34.25, 289.25 },
+            -- World<->pixel projection for the player pin/arrow, baked by
+            -- hfwm/cave_minimap.py (world_to_local_projection) rather than
+            -- derived at runtime. `bounds` above is a linear stretch that
+            -- only works for unrotated, edge-to-edge art; Fargodeep's art
+            -- is real WMO-local-coordinate geometry rotated to true north
+            -- (see the floors' own rotation comment), so CaveTable.lua's
+            -- GetPlayerPosition uses this instead whenever it's present,
+            -- falling back to the `bounds` stretch for every other place.
+            -- Shared by both floors (same WMO instance/placement/canvas).
+            projection = {
+                minLocalX = -150.180939, maxLocalY = 64.272247,
+                scale = 1.993,
+                preRotW = 348, preRotH = 257,
+                rotateAngle = 211.5,
+                rotatedW = 432, rotatedH = 401,
+                yaw = 301.5,
+                placementWorldX = -9833.622502, placementWorldY = 193.516169,
+            },
             floors  = {
                 {
                     name    = "Fargodeep Mine",

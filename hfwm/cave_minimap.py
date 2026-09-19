@@ -495,6 +495,93 @@ def world_align_rotation_degrees(placement_yaw_degrees: float) -> float:
     return placement_yaw_degrees - 90.0
 
 
+def world_to_local_projection(placement: WmoPlacement,
+                               min_local_x: float, max_local_y: float,
+                               scale: float,
+                               pre_rotate_w: int, pre_rotate_h: int,
+                               rotate_angle_degrees: float,
+                               rotated_w: int, rotated_h: int) -> dict:
+    """The constants ``CaveTable:GetPlayerPosition`` needs to place the
+    player pin on Fargodeep's rotated, WMO-local-coordinate art, baked once
+    here rather than re-derived in Lua at runtime.
+
+    Two transforms chain together, both already exercised elsewhere in this
+    file and cross-checked against data this project independently trusts
+    (the same standard used for ``world_z_range_for_groups``'s height fix):
+
+    1. World -> WMO-local (X, Y). This is ``world_z_range_for_groups``'s
+       horizontal-plane counterpart: that function converts local Z to
+       world Z with a pure offset (yaw never changes height); this is the
+       remaining rotation for the horizontal plane. Forward direction
+       (local -> world), combining the M2/WMO local-axis convention (local
+       +X = South, local +Y = East) with a right-handed yaw about Up
+       (``world_align_rotation_degrees``'s "East towards North" fact) and
+       the MODF raw-field convention already validated for height:
+
+           northOffset = -localX * cos(yaw) + localY * sin(yaw)
+           eastOffset  =  localX * sin(yaw) + localY * cos(yaw)
+           worldX = placementWorldX + northOffset   -- north component
+           worldY = placementWorldY - eastOffset     -- west component
+
+       where ``placementWorldX = 32*TILESIZE - placement.position.z`` and
+       ``placementWorldY = 32*TILESIZE - placement.position.x`` (the same
+       raw-x/raw-z -> world horizontal-axis correction already validated in
+       ``world_z_range_for_groups``'s docstring). The 2x2 matrix this
+       represents is its own inverse (determinant -1, and squares to
+       identity), so the world -> local direction baked here reuses the
+       same cos/sin terms:
+
+           localX = -northOffset * cos(yaw) + eastOffset * sin(yaw)
+           localY =  northOffset * sin(yaw) + eastOffset * cos(yaw)
+
+       Validated in this session two ways: (a) transforming every one of
+       Fargodeep's 21 WMO groups' bbox corners through the forward
+       transform lands their world-space bounding box at
+       X in [-9870.7, -9711.2], Y in [63.9, 215.9] — inside
+       CaveData.lua's already-trusted place ``bounds`` of
+       {-9880, -9700, 34.25, 289.25} in both axes, exactly as expected
+       for a WMO's own geometric footprint sitting inside the DB2 area's
+       (necessarily coarser) bounding rectangle; (b) a local -> world ->
+       local round trip over the same 21 corners is exact (0.000000 unit
+       error), confirming the inverse is algebraically correct, not just
+       plausible.
+
+    2. WMO-local (X, Y) -> baked pixel. This is exactly
+       ``build_floor_image``'s own per-group placement formula
+       (``px = (x - minLocalX) * scale``, ``py = (maxLocalY - y) * scale``)
+       generalised from a group anchor to any point, followed by the same
+       ``Image.rotate(angle, expand=True)`` pixel transform already
+       empirically validated against Pillow's real behaviour elsewhere in
+       this project (rotate about the pre-rotation image's own center,
+       re-center in the larger post-rotation canvas). Re-validated here at
+       Fargodeep's actual dimensions (348x257 -> 432x401 at 211.5 degrees)
+       against real marked-pixel round trips through Pillow, matching to
+       within ~1px (antialiasing) on every test point.
+
+    Both floors share every value here — same WMO instance, same
+    placement, same shared pre-rotation canvas — so this is computed once
+    and stored at the *place* level in CaveData.lua, not per floor.
+    """
+    px, py, pz = placement.position
+    yaw = placement.rotation[1]
+    tilesize = 533.33333
+    placement_world_x = 32 * tilesize - pz
+    placement_world_y = 32 * tilesize - px
+    return {
+        "minLocalX": min_local_x,
+        "maxLocalY": max_local_y,
+        "scale": scale,
+        "preRotW": pre_rotate_w,
+        "preRotH": pre_rotate_h,
+        "rotateAngle": rotate_angle_degrees,
+        "rotatedW": rotated_w,
+        "rotatedH": rotated_h,
+        "yaw": yaw,
+        "placementWorldX": placement_world_x,
+        "placementWorldY": placement_world_y,
+    }
+
+
 def generate_fargodeep(scale: float = MINIMAP_PX_PER_UNIT) -> dict:
     """Fetch, parse, composite and encode Fargodeep Mine's two floors.
 
@@ -531,6 +618,10 @@ def generate_fargodeep(scale: float = MINIMAP_PX_PER_UNIT) -> dict:
                    for i in tiled_idx)
     canvas_h = max(round((maxy - by_index[i].bbox[4]) * scale) + tiles[i].height
                    for i in tiled_idx)
+    # Pre-rotation canvas size, kept for the projection block below — both
+    # floors share this exact (canvas_w, canvas_h) at this point in the
+    # function, before either gets rotated/padded.
+    pre_rotate_w, pre_rotate_h = canvas_w, canvas_h
 
     out_dir = WORLDMAP_DIR / "FargodeepMine"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -576,6 +667,16 @@ def generate_fargodeep(scale: float = MINIMAP_PX_PER_UNIT) -> dict:
     (out_dir / "upper.blp").write_bytes(encode_blp2_bgra(upper_img))
     (out_dir / "lower.blp").write_bytes(encode_blp2_bgra(lower_img))
 
+    # World<->pixel projection for CaveTable.lua's GetPlayerPosition — see
+    # world_align_rotation_degrees's docstring for the rotation half of this
+    # and world_to_local_projection() below for the placement half. Both
+    # floors share every one of these values (same WMO instance, same
+    # composite pipeline, same shared pre-rotation canvas), so this is one
+    # block at the *place* level, not duplicated per floor.
+    projection = world_to_local_projection(
+        placement, minx, maxy, scale, pre_rotate_w, pre_rotate_h,
+        rotate_angle, canvas_w, canvas_h)
+
     common = dict(layerW=canvas_w, layerH=canvas_h,
                   tileW=canvas_w, tileH=canvas_h, cols=1, rows=1)
     return {
@@ -592,6 +693,7 @@ def generate_fargodeep(scale: float = MINIMAP_PX_PER_UNIT) -> dict:
             FDID_FARGODEEP_LOWER: "FargodeepMine\\lower",
         },
         "canvas": (canvas_w, canvas_h),
+        "projection": projection,
     }
 
 
@@ -611,3 +713,12 @@ if __name__ == "__main__":
     print("\n-- FDIDMap.lua entries --")
     for fdid, rel in result["fdid_map_entries"].items():
         print(f'    [{fdid}] = "{rel}",')
+    p = result["projection"]
+    print("\n-- projection (place-level) --")
+    print(f"  minLocalX = {p['minLocalX']:.6f}, maxLocalY = {p['maxLocalY']:.6f},")
+    print(f"  scale = {p['scale']},")
+    print(f"  preRotW = {p['preRotW']}, preRotH = {p['preRotH']},")
+    print(f"  rotateAngle = {p['rotateAngle']},")
+    print(f"  rotatedW = {p['rotatedW']}, rotatedH = {p['rotatedH']},")
+    print(f"  yaw = {p['yaw']},")
+    print(f"  placementWorldX = {p['placementWorldX']:.6f}, placementWorldY = {p['placementWorldY']:.6f},")

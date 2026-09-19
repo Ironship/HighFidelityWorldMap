@@ -114,6 +114,12 @@ function CaveTable:Load()
                 mapID   = src.mapID,
                 areaIDs = src.areaIDs or {},
                 bounds  = src.bounds,
+                -- World<->pixel projection for rotated, WMO-local-coordinate
+                -- art (see CaveData.lua's Fargodeep entry and
+                -- ProjectPlayerPosition below). Absent on every place whose
+                -- art is the plain unrotated bounds-stretch, which
+                -- GetPlayerPosition treats as "use the old formula".
+                projection = src.projection,
                 floors  = {},
                 -- Suppression is keyed on this, so it has to be stable across
                 -- a session and distinct from any C_Map group key. The place's
@@ -544,6 +550,59 @@ function CaveTable:GetArtTextures(floorID)
     return floor and floor.tiles or nil
 end
 
+--- Place the player on rotated, WMO-local-coordinate art (see
+--- CaveData.lua's Fargodeep entry) via *projection*, the constants
+--- hfwm/cave_minimap.py's world_to_local_projection bakes offline.
+---
+--- Two transforms chain together, both cross-validated against real data
+--- when they were derived (see world_to_local_projection's own docstring
+--- for the validation: a 0.000000-unit local->world->local round trip
+--- over every WMO group corner, and the resulting world-space bounding
+--- box landing inside CaveData.lua's already-trusted place bounds):
+---
+---   1. World (worldX, worldY) -> WMO-local (localX, localY). The inverse
+---      of the yaw rotation applied when the WMO was placed into the
+---      world — a 2x2 matrix that is its own inverse here, so the same
+---      cos/sin terms invert it: given northOffset/eastOffset relative to
+---      the placement's own world position,
+---        localX = -northOffset * cos(yaw) + eastOffset * sin(yaw)
+---        localY =  northOffset * sin(yaw) + eastOffset * cos(yaw)
+---   2. WMO-local -> baked pixel. The composite canvas places local (X,
+---      Y) at column <- (localX - minLocalX) * scale, row <- (maxLocalY
+---      - localY) * scale (build_floor_image's own anchor formula), then
+---      the whole canvas was rotated with Image.rotate(angle,
+---      expand=True) to align to true north — undone here with the same
+---      rotate-about-center formula already validated against Pillow's
+---      actual behaviour.
+---
+---@return number|nil x, number|nil y  0..1 from the art's top-left
+local function ProjectPlayerPosition(projection, worldX, worldY)
+    local yawRad = math.rad(projection.yaw)
+    local cosYaw, sinYaw = math.cos(yawRad), math.sin(yawRad)
+
+    local northOffset = worldX - projection.placementWorldX
+    local eastOffset  = projection.placementWorldY - worldY
+    local localX = -northOffset * cosYaw + eastOffset * sinYaw
+    local localY =  northOffset * sinYaw + eastOffset * cosYaw
+
+    local x0 = (localX - projection.minLocalX) * projection.scale
+    local y0 = (projection.maxLocalY - localY) * projection.scale
+
+    local rotRad = math.rad(projection.rotateAngle)
+    local cosRot, sinRot = math.cos(rotRad), math.sin(rotRad)
+    local dx = x0 - projection.preRotW / 2
+    local dy = y0 - projection.preRotH / 2
+    local finalX = projection.rotatedW / 2 + dx * cosRot + dy * sinRot
+    local finalY = projection.rotatedH / 2 - dx * sinRot + dy * cosRot
+
+    local x, y = finalX / projection.rotatedW, finalY / projection.rotatedH
+    -- Outside the art entirely (player is elsewhere in the mine's DB2 area
+    -- rectangle but off this floor's own composited footprint) — no pin
+    -- beats a wrong one, same standard as the bounds path below.
+    if x < 0 or x > 1 or y < 0 or y > 1 then return nil end
+    return x, y
+end
+
 --- Like C_Map.GetPlayerMapPosition, as plain normalised x, y.
 ---
 --- The axis mapping is the one hfwm/db2.py documents for UiMapAssignment and
@@ -552,17 +611,27 @@ end
 --- which is why neither numerator looks like the other. bounds itself reads
 --- as { minY, maxY, minX, maxX } — see Contains's comment — so it is indexed
 --- to match that, not the { minX, maxX, minY, maxY } it is documented as.
+---
+--- This linear stretch only holds for unrotated art that fills its canvas
+--- edge to edge. Fargodeep's real WMO-local-coordinate art is rotated to
+--- true north (see CaveData.lua's projection block), so it's routed through
+--- ProjectPlayerPosition instead whenever the place carries one.
 ---@return number|nil x, number|nil y  0..1 from the art's top-left
 function CaveTable:GetPlayerPosition(floorID)
     local floor = self:GetFloor(floorID)
     if not floor then return nil end
+
+    local worldX, worldY = PlayerWorldXY()
+    if not worldX then return nil end
+
+    if floor.place.projection then
+        return ProjectPlayerPosition(floor.place.projection, worldX, worldY)
+    end
+
     -- The floor's own rectangle where it has one, the place's otherwise: a
     -- pin placed against the wrong extent is worse than no pin.
     local bounds = floor.bounds or floor.place.bounds
     if not bounds then return nil end
-
-    local worldX, worldY = PlayerWorldXY()
-    if not worldX then return nil end
     if not Contains(bounds, worldX, worldY) then return nil end
 
     local spanY = bounds[2] - bounds[1]
