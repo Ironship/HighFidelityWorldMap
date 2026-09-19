@@ -604,12 +604,17 @@ local function UpdatePlayerPin(floorMapID)
 
     playerPin:ClearAllPoints()
     playerPin:SetPoint("CENTER", content, "TOPLEFT", x * w, -(y * h))
-    -- WoW facing: 0 = north, increasing counter-clockwise. SetRotation turns
-    -- clockwise for positive values, so negate. Nil while the camera is
-    -- mid-transition (taxi, cinematic) — point the arrow north rather than
-    -- erroring in an OnUpdate.
+    -- WoW facing and Texture:SetRotation both turn counter-clockwise for
+    -- positive values, so facing is used as-is. Negating it, as this used
+    -- to, was the bug an in-game check caught: north/south are their own
+    -- negatives mod 2*pi, so facing 0 and pi rotate the same way under
+    -- either sign and looked fine, while east/west landed mirrored — turn
+    -- left and the arrow swung right, turn right and it swung left.
+    --
+    -- Nil while the camera is mid-transition (taxi, cinematic) — point the
+    -- arrow north rather than erroring in an OnUpdate.
     local facing = GetPlayerFacing()
-    playerPin:SetRotation(facing and -facing or 0)
+    playerPin:SetRotation(facing or 0)
     playerPin:Show()
 end
 

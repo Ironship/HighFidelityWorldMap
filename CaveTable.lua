@@ -580,8 +580,23 @@ local function ProjectPlayerPosition(projection, worldX, worldY)
     local yawRad = math.rad(projection.yaw)
     local cosYaw, sinYaw = math.cos(yawRad), math.sin(yawRad)
 
-    local northOffset = worldX - projection.placementWorldX
-    local eastOffset  = projection.placementWorldY - worldY
+    -- Same DB2 axis transposition as Contains() below, just baked into the
+    -- projection block instead of `bounds`: cave_minimap.py's
+    -- world_to_local_projection names its fields placementWorldX/Y as if
+    -- they lined up with UnitPosition's X/Y, but placementWorldX is
+    -- actually the WMO placement's real *west* (this file's worldY)
+    -- coordinate and placementWorldY its real *north* (worldX) coordinate —
+    -- swapped, the same way `bounds` turned out to be. Confirmed the same
+    -- way that one was: with the fields taken at face value, every sampled
+    -- point across Fargodeep's own DB2 rectangle projected miles outside
+    -- the baked canvas (0/441 landed in 0..1); swapping which real
+    -- coordinate feeds which offset here puts the great majority (378/441)
+    -- inside it, with the rest legitimately falling outside the WMO's
+    -- footprint near the rectangle's corners. Worth fixing at the root in
+    -- world_to_local_projection so a future regenerate doesn't reintroduce
+    -- this; until then, this reads the block as it actually is.
+    local northOffset = worldY - projection.placementWorldX
+    local eastOffset  = projection.placementWorldY - worldX
     local localX = -northOffset * cosYaw + eastOffset * sinYaw
     local localY =  northOffset * sinYaw + eastOffset * cosYaw
 
