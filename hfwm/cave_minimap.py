@@ -74,6 +74,30 @@ class WmoGroup:
 # the "varianta" model, md_goldmine_varianta.wmo.
 FARGODEEP_WMO_FDID = 110773  # world/wmo/dungeon/md_goldmine/md_goldmine_varianta.wmo
 
+# Fargodeep's WMO *instance* — how the world actually places that root file
+# into Dun Morogh, needed only for the world-alignment rotation (see
+# WORLD_YAW_FOR_CANVAS_ROTATION below). Found the same way the WMO/tile
+# FDIDs above were: no DB2 table carries this, so it comes from the actual
+# ADT that covers Fargodeep Mine's own world-space bounds (CaveData.lua's
+# existing ``bounds = { -9860, -9700, 41.75, 281.75 }``, run through
+# hfwm/coordinates.py's world_to_tile on both axes -> ADT tile (31, 50) on
+# Map 0 "Azeroth" -> looked up in the wowdev/wow-listfile release CSV as
+# ``world/maps/azeroth/azeroth_31_50_obj0.adt``, FileDataID 777838; the
+# root ``..._31_50.adt`` (777837) carries no MWMO/MODF/MDDF at all — they
+# live entirely in ``_obj0`` on this build, and MODF's ``nameId`` there is
+# already a raw FileDataID (flags & 0x8, no MWID indirection) since neither
+# an MWID nor MWMO chunk exists to index into.
+FARGODEEP_ADT_OBJ0_FDID = 777838  # world/maps/azeroth/azeroth_31_50_obj0.adt
+
+# The specific MODF record for Fargodeep, for a same-file sanity check
+# rather than blind trust in "the one entry whose nameId matches": its
+# nameSet (3) matches the WMOAreaTable NameSetID already used elsewhere in
+# this project to identify Fargodeep's WMO (see FARGODEEP_WMO_FDID above),
+# so both independent lookups (AreaTable's WMOAreaTable row, and this
+# ADT's own MODF entry) agree on the same placement.
+FARGODEEP_MODF_UNIQUE_ID = 210351
+FARGODEEP_MODF_NAME_SET = 3
+
 # group index -> minimap tile FDID, resolved via the community listfile
 # against world/minimaps/wmo/dungeon/md_goldmine_varianta/md_goldmine_varianta_<NNN>_00_00.blp.
 # Group 0 has no listfile entry at all (it is the small unnamed antiportal/
@@ -124,6 +148,138 @@ def parse_wmo_groups(wmo_root_bytes: bytes,
             name=name_at(name_off), tile_fdid=tile_fdids.get(i),
         ))
     return groups
+
+
+@dataclass
+class WmoPlacement:
+    unique_id: int
+    position: tuple[float, float, float]
+    rotation: tuple[float, float, float]  # degrees: (pitch, yaw, roll)
+    name_set: int
+
+
+def parse_modf_placements(obj0_adt_bytes: bytes,
+                           wmo_fdid: int) -> list[WmoPlacement]:
+    """Parse every MODF record in a split-format ``_obj0.adt`` that places
+    *wmo_fdid*, direct-FileDataID mode only.
+
+    ``SMMapObjDef`` (wowdev.wiki/ADT/v18#MODF_chunk) is 64 bytes: nameId,
+    uniqueId, C3Vector position, C3Vector rotation, CAaBox extents,
+    flags, doodadSet, nameSet, scale. This build's Fargodeep-covering ADT
+    carries no MWMO/MWID chunk at all (confirmed by scanning its own
+    top-level chunk list), which only makes sense if ``modf_entry_is_
+    filedata_id`` (flag 0x8) is set on every record and ``nameId`` is
+    already the FileDataID — so that's the only mode this parses; a
+    record without that flag would need an MWID lookup this function
+    doesn't have and is skipped rather than misread.
+    """
+    pos = 0
+    placements: list[WmoPlacement] = []
+    while pos < len(obj0_adt_bytes) - 8:
+        magic = obj0_adt_bytes[pos:pos + 4][::-1]
+        size = struct.unpack_from("<I", obj0_adt_bytes, pos + 4)[0]
+        if magic == b"MODF":
+            body = obj0_adt_bytes[pos + 8:pos + 8 + size]
+            for i in range(len(body) // 64):
+                (name_id, unique_id, px, py, pz, rx, ry, rz,
+                 *_rest_bbox, flags, doodad_set, name_set, _scale) = \
+                    struct.unpack_from("<II3f3f6fHHHH", body, i * 64)
+                if name_id != wmo_fdid or not (flags & 0x8):
+                    continue
+                placements.append(WmoPlacement(
+                    unique_id=unique_id, position=(px, py, pz),
+                    rotation=(rx, ry, rz), name_set=name_set,
+                ))
+        pos += 8 + size
+    return placements
+
+
+def fetch_wmo_world_yaw(adt_obj0_fdid: int, wmo_fdid: int,
+                         expected_unique_id: int | None = None) -> float:
+    """Return the WMO instance's placement yaw (MODF rotation.y, degrees).
+
+    Pitch/roll (rotation.x / rotation.z) are not returned: this project
+    only ever composites a *flat*, top-down floor plan, and wowdev.wiki's
+    ADT/v18 coordinate-system table names rotation.y specifically as "the
+    rotation around the Up axis" — the only component that can matter for
+    a top-down image. A cave placed with real pitch/roll would need actual
+    3-D re-projection this pipeline doesn't (yet) do; Fargodeep's own
+    record has rotation == (0.0, 301.5, 0.0), i.e. flat, so this isn't
+    exercised here.
+    """
+    data = _download_cached(adt_obj0_fdid, WMO_CACHE_DIR)
+    placements = parse_modf_placements(data, wmo_fdid)
+    if expected_unique_id is not None:
+        placements = [p for p in placements if p.unique_id == expected_unique_id]
+    if not placements:
+        raise ValueError(
+            f"No MODF placement of WMO {wmo_fdid} found in ADT {adt_obj0_fdid}"
+            + (f" with uniqueId {expected_unique_id}" if expected_unique_id else ""))
+    return placements[0].rotation[1]
+
+
+def fetch_wmo_world_placement(adt_obj0_fdid: int, wmo_fdid: int,
+                               expected_unique_id: int | None = None) -> WmoPlacement:
+    """Return the full MODF placement record (position + rotation), for
+    callers that need more than just the yaw — see
+    ``world_z_range_for_groups`` for why the height component matters here.
+    """
+    data = _download_cached(adt_obj0_fdid, WMO_CACHE_DIR)
+    placements = parse_modf_placements(data, wmo_fdid)
+    if expected_unique_id is not None:
+        placements = [p for p in placements if p.unique_id == expected_unique_id]
+    if not placements:
+        raise ValueError(
+            f"No MODF placement of WMO {wmo_fdid} found in ADT {adt_obj0_fdid}"
+            + (f" with uniqueId {expected_unique_id}" if expected_unique_id else ""))
+    return placements[0]
+
+
+def world_z_range_for_groups(groups_by_index: dict[int, "WmoGroup"],
+                              group_indices: list[int],
+                              placement: WmoPlacement) -> tuple[float, float]:
+    """Real world-space (worldZ) height range spanned by a floor's groups.
+
+    ``CaveTable.lua``'s ``Contains()`` can't tell Fargodeep's two floors
+    apart from X/Y alone over most of the mine — the DB2 rows behind
+    ``CaveData.lua``'s ``bounds`` carry no usable Z at all (every interior
+    row reads -10000/1000000), and the two floors' real footprints overlap
+    almost entirely in a vertical shaft. This WMO's own group geometry
+    (already fetched for the art itself) has the real Z data that's
+    missing, so it's reused here rather than guessed.
+
+    Converting a group's *local* bbox Z into *world* Z needs the
+    placement's own height offset — and that offset is the MODF record's
+    raw **y** field, not its z field, per wowdev.wiki/ADT/v18's coordinate
+    table: the WDT/ADT (Terrain) axes are `Forward*x + Left*y + Up*z`-style
+    Vector3s built from the *placement* row's fields as
+    ``Left*x' + Up*y + Forward*z'`` (``x' = 32*TILESIZE - x``,
+    ``z' = 32*TILESIZE - z``) — i.e. the raw ``y`` field is Up (height)
+    unmodified, while the raw ``x``/``z`` fields are the two *horizontal*
+    terrain axes, each needing the ``32*TILESIZE - value`` correction.
+
+    This isn't a guess: it's cross-checked against data this project
+    already trusts. Applying that same transform to Fargodeep's own MODF
+    position — x'=17066.67-16873.15=193.52, z'=17066.67-26900.29=-9833.62
+    (TILESIZE=533.333) — lands *inside* ``CaveData.lua``'s existing
+    ``bounds = {-9880, -9700, 34.25, 289.25}`` for this exact place, a
+    rectangle that was itself independently confirmed correct from two
+    live ``/hfwm debug`` captures (see ``CaveTable.lua``'s ``Contains()``
+    comment). Both raw x and raw z land in-range; the raw y field is what's
+    left over for height, matching the "Up" row of the same table.
+
+    Yaw (rotation about Up) never changes height, so no rotation math is
+    needed here — just the additive offset.
+
+    Returns ``(worldZMin, worldZMax)`` across the given groups.
+    """
+    local_zs = []
+    for i in group_indices:
+        g = groups_by_index[i]
+        local_zs.append(g.bbox[2])
+        local_zs.append(g.bbox[5])
+    height_offset = placement.position[1]
+    return (min(local_zs) + height_offset, max(local_zs) + height_offset)
 
 
 def _download_cached(fdid: int, cache_dir: Path) -> bytes:
@@ -278,6 +434,67 @@ def build_floor_image(groups_by_index: dict[int, WmoGroup],
     return canvas
 
 
+def world_align_rotation_degrees(placement_yaw_degrees: float) -> float:
+    """PIL ``Image.rotate()`` angle (CCW-positive) that turns a
+    ``build_floor_image()`` canvas from WMO-group-local orientation into
+    world/true-north-up orientation, given the WMO instance's MODF
+    ``rotation.y`` (degrees).
+
+    Why this is needed at all: ``build_floor_image()`` places tiles using
+    each group's own MOGI bounding box, which is in the *WMO's own local
+    model space* — correct for every fix so far, because Marlamin's
+    compiler and World of MapCraft both build that same local-space image
+    and stop there. But those two tools are solving a different problem
+    than this one: they bake either a standalone WMO asset (no placement
+    at all) or a *dungeon-only* WDT's instance WMO (placed at a fixed,
+    always-zero rotation by convention, since an instance has no outdoor
+    terrain to be misaligned with). Fargodeep Mine is a real open-world
+    micro-dungeon: its WMO is placed into Dun Morogh's terrain with a
+    real, non-zero MODF rotation (301.5 degrees — see
+    ``fetch_wmo_world_yaw``), and unlike the small minimap widget (which
+    rotates freely with the player's facing, so a WMO-local-space image is
+    fine there), the World Map this addon draws over is always north-up.
+    Composited-but-unrotated, Fargodeep's floor plan is turned exactly as
+    far from north-up as its placement is turned from identity — which is
+    what the user is seeing when they say the cave's orientation is wrong.
+
+    Derivation (no shipped tool does this step, so this one is worked from
+    wowdev.wiki/ADT/v18's own coordinate-system table rather than fitted):
+
+      * "M2/WMO (Models)" axes: local +X = South, local +Y = East. MOGI
+        bounding boxes are in this space, so a group's local (x, y) is
+        world-relative (South, East) = (x, y) *before* placement rotation.
+      * "MDDF/MODF (Placement)" row: "Rotation y: around Up axis" — i.e.
+        ``rotation.y`` is precisely the yaw applied about the vertical
+        axis when placing the model into the world, in a right-handed
+        sense (the same table's "for LH renderers, all rotations have to
+        be negated" note is a caveat for the *other* case, not this one).
+        A right-handed yaw about Up rotates East *towards* North for
+        positive angle (Up = East x North).
+      * ``build_floor_image`` already maps canvas column <- local X,
+        canvas row <- -(local Y) (see its own docstring). Composing that
+        fixed mapping with the placement rotation and solving for the
+        pure-2D transform from (column, row) to a north-up map (column <-
+        world East, row <- -world North) collapses to a single rotation:
+        world-up-map angle = 90 - rotation.y, applied *clockwise* to the
+        pixel grid (a rotation matrix applied directly to row-down pixel
+        coordinates is clockwise for a positive angle, not counter-
+        clockwise, because the row axis is flipped relative to the
+        right-handed math the matrix assumes).
+      * ``Image.rotate()`` is counter-clockwise-positive, so negate:
+        PIL angle = rotation.y - 90.
+
+    This is the one step in the whole pipeline that isn't cross-checked
+    against a second independent shipped implementation the way the
+    placement/scale fix was (nothing else stitches an open-world WMO cave
+    onto a north-up world map), so it should be treated as the first
+    thing to double check in-game: if the cave's orientation still looks
+    wrong, flipping the sign here (``90 - rotation.y`` instead of
+    ``rotation.y - 90``) is the first thing to try.
+    """
+    return placement_yaw_degrees - 90.0
+
+
 def generate_fargodeep(scale: float = MINIMAP_PX_PER_UNIT) -> dict:
     """Fetch, parse, composite and encode Fargodeep Mine's two floors.
 
@@ -323,6 +540,39 @@ def generate_fargodeep(scale: float = MINIMAP_PX_PER_UNIT) -> dict:
     lower_img = build_floor_image(
         by_index, lower_idx, tiles, minx, maxy, canvas_w, canvas_h, scale)
 
+    # Rotate both floors into world/true-north-up orientation. Same yaw
+    # for both: they're two floors of one WMO instance, placed as a unit
+    # (see world_align_rotation_degrees's docstring for why this step
+    # exists and where the angle comes from).
+    placement = fetch_wmo_world_placement(
+        FARGODEEP_ADT_OBJ0_FDID, FARGODEEP_WMO_FDID, FARGODEEP_MODF_UNIQUE_ID)
+    placement_yaw = placement.rotation[1]
+    rotate_angle = world_align_rotation_degrees(placement_yaw)
+
+    # Real per-floor worldZ ranges for CaveTable.lua's floor-selection tie
+    # break — see world_z_range_for_groups's docstring for why the DB2-baked
+    # bounds can't provide this themselves.
+    lower_z_range = world_z_range_for_groups(by_index, lower_idx, placement)
+    upper_z_range = world_z_range_for_groups(by_index, upper_idx, placement)
+    upper_img = upper_img.rotate(rotate_angle, expand=True, fillcolor=(0, 0, 0, 255))
+    lower_img = lower_img.rotate(rotate_angle, expand=True, fillcolor=(0, 0, 0, 255))
+    # expand=True can size the two floors' canvases slightly differently
+    # (rotating a WxH box by a non-multiple-of-90 angle rounds bounding
+    # dimensions independently) even though they were built on one shared
+    # WxH canvas beforehand; pad both to the union so layerW/layerH stays
+    # single-valued, same as CaveData.lua expects one size per place.
+    out_w = max(upper_img.width, lower_img.width)
+    out_h = max(upper_img.height, lower_img.height)
+    if upper_img.size != (out_w, out_h):
+        padded = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 255))
+        padded.paste(upper_img, (0, 0))
+        upper_img = padded
+    if lower_img.size != (out_w, out_h):
+        padded = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 255))
+        padded.paste(lower_img, (0, 0))
+        lower_img = padded
+    canvas_w, canvas_h = out_w, out_h
+
     (out_dir / "upper.blp").write_bytes(encode_blp2_bgra(upper_img))
     (out_dir / "lower.blp").write_bytes(encode_blp2_bgra(lower_img))
 
@@ -331,10 +581,12 @@ def generate_fargodeep(scale: float = MINIMAP_PX_PER_UNIT) -> dict:
     return {
         "upper": {**common, "tiles": [FDID_FARGODEEP_UPPER],
                   "groups": sorted(upper_idx),
-                  "names": [by_index[i].name for i in sorted(upper_idx)]},
+                  "names": [by_index[i].name for i in sorted(upper_idx)],
+                  "zMin": upper_z_range[0], "zMax": upper_z_range[1]},
         "lower": {**common, "tiles": [FDID_FARGODEEP_LOWER],
                   "groups": sorted(lower_idx),
-                  "names": [by_index[i].name for i in sorted(lower_idx)]},
+                  "names": [by_index[i].name for i in sorted(lower_idx)],
+                  "zMin": lower_z_range[0], "zMax": lower_z_range[1]},
         "fdid_map_entries": {
             FDID_FARGODEEP_UPPER: "FargodeepMine\\upper",
             FDID_FARGODEEP_LOWER: "FargodeepMine\\lower",
@@ -355,6 +607,7 @@ if __name__ == "__main__":
         print(f"  tileW  = {f['tileW']}, tileH  = {f['tileH']},")
         print(f"  cols   = {f['cols']}, rows   = {f['rows']},")
         print(f"  tiles  = {{ {f['tiles'][0]} }},")
+        print(f"  zMin   = {f['zMin']:.2f}, zMax   = {f['zMax']:.2f},")
     print("\n-- FDIDMap.lua entries --")
     for fdid, rel in result["fdid_map_entries"].items():
         print(f'    [{fdid}] = "{rel}",')

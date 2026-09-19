@@ -137,6 +137,13 @@ function CaveTable:Load()
                     cols     = floor.cols,
                     rows     = floor.rows,
                     tiles    = floor.tiles,
+                    -- Real worldZ range from the floor's own WMO geometry,
+                    -- when the generator provided one (see CaveData.lua's
+                    -- Fargodeep entries). Absent on every floor that has no
+                    -- such data, which FloorForPosition treats as "no
+                    -- opinion" rather than a false match.
+                    zMin     = floor.zMin,
+                    zMax     = floor.zMax,
                 }
                 floorByID[nextID] = place.floors[j]
             end
@@ -190,13 +197,15 @@ end
 ---
 --- UnitPosition returns y, x, z, instanceID — Y first, which is easy to get
 --- backwards and produces a pin that is plausibly wrong rather than obviously
---- wrong, so it is unpacked in one place only.
----@return number|nil worldX, number|nil worldY
+--- wrong, so it is unpacked in one place only. Z is passed through too, for
+--- FloorForPosition's zMin/zMax tie-break — existing callers that only take
+--- the first two return values (worldX, worldY) are unaffected.
+---@return number|nil worldX, number|nil worldY, number|nil worldZ
 local function PlayerWorldXY()
     if not UnitPosition then return nil end
-    local ok, y, x = pcall(UnitPosition, "player")
+    local ok, y, x, z = pcall(UnitPosition, "player")
     if not ok or not x or not y then return nil end
-    return x, y
+    return x, y, z
 end
 
 --- Does this world-space rectangle contain (worldX, worldY)?
@@ -223,26 +232,67 @@ local function RectArea(bounds)
     return (bounds[2] - bounds[1]) * (bounds[4] - bounds[3])
 end
 
+--- Does *floor*'s real worldZ range (see CaveData.lua's Fargodeep entries)
+--- contain worldZ? Returns nil, not false, when either side has no opinion
+--- (no worldZ reading, or this floor was generated without a zMin/zMax) —
+--- callers must tell "doesn't contain" apart from "can't say" so a place
+--- with no Z data at all falls through to the rectangle test untouched.
+---@param floor table
+---@param worldZ number|nil
+---@return boolean|nil
+local function ContainsZ(floor, worldZ)
+    if not worldZ or not floor.zMin or not floor.zMax then return nil end
+    return worldZ >= floor.zMin and worldZ <= floor.zMax
+end
+
 --- Which floor of *place* the player is most likely standing on.
 ---
---- The rectangles are the only discriminator there is: the source rows carry
---- no usable Z bounds — they are -10000 and 1000000 on every interior row —
---- so two floors stacked in the same shaft have overlapping, sometimes
---- identical, footprints. Where they do differ this gets the floor right, and
---- Gnomeregan's four levels are a good case: the Hall of Gears and the Launch
---- Bay barely overlap.
+--- The X/Y rectangles are the primary discriminator, but the source rows
+--- behind them carry no usable Z bounds — they are -10000 and 1000000 on
+--- every interior row — so two floors stacked in the same shaft can have
+--- overlapping, sometimes identical, footprints. Where the rectangles do
+--- differ this gets the floor right without any Z data at all, and
+--- Gnomeregan's four levels are a good case: the Hall of Gears and the
+--- Launch Bay barely overlap.
 ---
---- Where they do not differ it returns the shallowest, and the depth slider is
---- how the player says otherwise. That is not a consolation prize — it is the
---- reason the slider is the feature's main control rather than a nicety.
+--- Where the footprints don't differ, a floor that was generated with a
+--- real worldZ range (from its own WMO geometry, not the DB2 rows — see
+--- hfwm/cave_minimap.py's world_z_range_for_groups) gets first say: if
+--- exactly one floor's range contains the player's altitude, that floor
+--- wins outright, rectangle area be damned. Fargodeep Mine's upper and
+--- lower floors are exactly this case — their X/Y footprints overlap
+--- almost entirely, but their real heights (roughly 14-49 vs. 0-24) mostly
+--- don't.
+---
+--- Failing that — no floor here has Z data, both ranges contain the
+--- player, or neither does — it falls back to the smallest containing
+--- rectangle, and if that doesn't discriminate either it returns the
+--- shallowest, with the depth slider as how the player says otherwise.
+--- That is not a consolation prize — it is the reason the slider is the
+--- feature's main control rather than a nicety.
 ---@param place table
 ---@return table floor
 local function FloorForPosition(place)
     local first = place.floors[1]
     if #place.floors == 1 then return first end
 
-    local worldX, worldY = PlayerWorldXY()
+    local worldX, worldY, worldZ = PlayerWorldXY()
     if not worldX then return first end
+
+    local zHit
+    for _, floor in ipairs(place.floors) do
+        if ContainsZ(floor, worldZ) then
+            if zHit then
+                -- More than one floor's range contains the player: not a
+                -- discriminator here (they overlap at this altitude), fall
+                -- through to the rectangle test instead of guessing.
+                zHit = nil
+                break
+            end
+            zHit = floor
+        end
+    end
+    if zHit then return zHit end
 
     local best, bestArea
     for _, floor in ipairs(place.floors) do
@@ -381,9 +431,9 @@ function CaveTable:DebugTrace()
         return lines
     end
 
-    local worldX, worldY = PlayerWorldXY()
-    add(("  findFloor: worldX=%s  worldY=%s"):format(
-        tostring(worldX), tostring(worldY)))
+    local worldX, worldY, worldZ = PlayerWorldXY()
+    add(("  findFloor: worldX=%s  worldY=%s  worldZ=%s"):format(
+        tostring(worldX), tostring(worldY), tostring(worldZ)))
 
     local names = PlayerAreaNames()
     add("  findFloor: names tried, in order: "

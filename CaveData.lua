@@ -1348,12 +1348,24 @@ HFWMF_CAVE_DATA = {
                     areaIDs = { 57 },
                     bounds  = { -9860, -9700, 41.75, 281.75 },
                     -- Real baked WMO minimap art (md_goldmine_varianta.wmo),
-                    -- composited offline by hfwm/cave_minimap.py. Single
-                    -- whole-floor tile via a synthetic FDID; see FDIDMap.lua.
-                    layerW  = 348, layerH = 257,
-                    tileW   = 348, tileH  = 257,
+                    -- composited offline by hfwm/cave_minimap.py, rotated to
+                    -- true north (MODF rotation.y - 90); dimensions grew to
+                    -- 432x401 from the rotation's bounding-box expansion.
+                    -- Single whole-floor tile via a synthetic FDID; see
+                    -- FDIDMap.lua.
+                    layerW  = 432, layerH = 401,
+                    tileW   = 432, tileH  = 401,
                     cols    = 1, rows   = 1,
                     tiles   = { 900000001 },
+                    -- Real worldZ range spanned by this floor's own WMO
+                    -- groups (hfwm/cave_minimap.py's world_z_range_for_groups),
+                    -- not the DB2 rows behind `bounds` above, which carry no
+                    -- usable Z at all (-10000/1000000 on every interior row).
+                    -- CaveTable.lua's FloorForPosition uses this to break
+                    -- ties the X/Y rectangle can't, since this floor's and
+                    -- Lower Mines' footprints overlap almost entirely in a
+                    -- vertical shaft.
+                    zMin    = 14.27, zMax = 48.92,
                 },
                 {
                     name    = "Lower Mines",
@@ -1361,12 +1373,17 @@ HFWMF_CAVE_DATA = {
                     areaIDs = { 57 },
                     bounds  = { -9880, -9710, 34.25, 289.25 },
                     -- Real baked WMO minimap art (md_goldmine_varianta.wmo),
-                    -- composited offline by hfwm/cave_minimap.py. Single
-                    -- whole-floor tile via a synthetic FDID; see FDIDMap.lua.
-                    layerW  = 348, layerH = 257,
-                    tileW   = 348, tileH  = 257,
+                    -- composited offline by hfwm/cave_minimap.py, rotated to
+                    -- true north (MODF rotation.y - 90); dimensions grew to
+                    -- 432x401 from the rotation's bounding-box expansion.
+                    -- Single whole-floor tile via a synthetic FDID; see
+                    -- FDIDMap.lua.
+                    layerW  = 432, layerH = 401,
+                    tileW   = 432, tileH  = 401,
                     cols    = 1, rows   = 1,
                     tiles   = { 900000002 },
+                    -- See the sibling floor's zMin/zMax comment above.
+                    zMin    = -0.30, zMax = 23.50,
                 },
             },
         },
