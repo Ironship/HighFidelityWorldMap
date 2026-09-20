@@ -46,6 +46,43 @@ function Commands:Handle(msg)
             ns.Cave:UpdateState()
             P("Cave map position reset.")
             return
+        elseif sub == "titledump" then
+            -- The cave window's title bar is a clone of the world map's own
+            -- (CaveRenderer's CollectTitleStrip). When it looks wrong, the
+            -- question is always "what is the map's title bar actually made
+            -- of, and where does it sit" — which no screenshot can answer and
+            -- this prints outright.
+            local r = ns.CaveRenderer:TitleStripReport()
+            if not r or not r.frameTop then
+                P("Cannot measure the map frame — open the world map first.")
+                return
+            end
+            P(("Map title strip: frame %dpx wide, %d piece%s"):format(
+                r.frameW, #r.pieces, #r.pieces == 1 and "" or "s"))
+            for i, p in ipairs(r.pieces) do
+                P(("  %d. |cffffd100%s|r %s %.0fx%.0f  top+%.0f  "
+                    .. "insets %.0f/%.0f  dx %.0f  %s:%d"):format(
+                    i, tostring(p.art), p.asBand and "[band]" or "[plaque]",
+                    p.width, p.height, p.topInset,
+                    p.leftInset, p.rightInset, p.centerDX,
+                    p.layer, p.sublevel))
+            end
+            if #r.pieces == 0 then
+                P("  |cffff4444none|r — nothing to clone, so the cave "
+                    .. "header will be left unpainted.")
+            end
+            if r.title then
+                P(("Map title text: %s  font %s  top+%.0f  h %.0f  dx %.0f")
+                    :format(tostring(r.title.text), tostring(r.title.font),
+                        r.title.topInset or 0, r.title.height,
+                        r.title.centerDX or 0))
+            end
+            local h = ns.CaveRenderer:HeaderReport()
+            if h then
+                P(("Cave header: %s (%dpx, fallback %dpx)"):format(
+                    tostring(h.source), h.titleH, h.fallbackH))
+            end
+            return
         elseif sub == "alpha" then
             local val = tonumber(args[3])
             if not val then
@@ -55,6 +92,24 @@ function Commands:Handle(msg)
             db.caveAlpha = math.max(0.2, math.min(1, val))
             ns.CaveRenderer:ApplyAlpha()
             P(("Cave map opacity: %.0f%%"):format(db.caveAlpha * 100))
+            if ns.Options.panel then ns.Options:Refresh() end
+            return
+        elseif sub == "autoopen" then
+            local want = args[3]
+            if want == "on" then db.caveAutoOpen = true
+            elseif want == "off" then db.caveAutoOpen = false
+            else db.caveAutoOpen = not db.caveAutoOpen end
+            P(("Cave map auto-open: %s"):format(
+                db.caveAutoOpen and "|cff00ff00on|r" or "|cffff4444off|r"))
+            if ns.Options.panel then ns.Options:Refresh() end
+            return
+        elseif sub == "remember" then
+            local want = args[3]
+            if want == "on" then db.caveRememberState = true
+            elseif want == "off" then db.caveRememberState = false
+            else db.caveRememberState = not db.caveRememberState end
+            P(("Cave map remember state: %s"):format(
+                db.caveRememberState and "|cff00ff00on|r" or "|cffff4444off|r"))
             if ns.Options.panel then ns.Options:Refresh() end
             return
         elseif sub == "on" or sub == "enable" then
@@ -170,6 +225,38 @@ function Commands:Handle(msg)
                 print("  (nothing found — open the map first)")
             end
             return
+        elseif sub == "big" then
+            -- `all` dumps everything under WorldMapFrame — hundreds of rows
+            -- once quest log panels etc. are open, which scrolls straight
+            -- out of chat history. This is the same survey, filtered down to
+            -- what could plausibly BE the map-frame backing: currently shown
+            -- and covering a real fraction of the map frame. The wood/parchment
+            -- backdrop has to be one of these few rows, reached or not.
+            local wmf = WorldMapFrame
+            local fw, fh = wmf and wmf:GetWidth() or 0, wmf and wmf:GetHeight() or 0
+            local frac = tonumber(args[3]) or 0.3
+            local rows = MapFrameBg:Survey()
+            local shown = {}
+            for _, r in ipairs(rows) do
+                if r.shown and fw > 0 and fh > 0
+                    and r.width >= fw * frac and r.height >= fh * frac
+                then
+                    shown[#shown + 1] = r
+                end
+            end
+            P(("map-frame survey, shown + >= %d%% of frame (%dx%d): %d/%d widget(s)"):format(
+                frac * 100, fw, fh, #shown, #rows))
+            print("  reached | alpha  size          layer/sub  owner -> region  = texture")
+            for _, r in ipairs(shown) do
+                print(("  %s | %.2f  %4dx%-4d  %s/%d  %s -> %s  = %s"):format(
+                    r.reached and "YES" or " no", r.alpha, r.width, r.height,
+                    r.layer, r.sublevel, r.owner, r.region, r.tex))
+            end
+            if #shown == 0 then
+                print("  (nothing shown at that size — try a smaller fraction, "
+                    .. "e.g. |cff999999framebg big 0.15|r)")
+            end
+            return
         elseif sub == "nuke" then
             -- Not a setting: a bisection tool. If this makes the map
             -- see-through then the backing is in the survey and the ordinary
@@ -187,14 +274,18 @@ function Commands:Handle(msg)
         local found = MapFrameBg:Describe()
         P(("map-frame backing: %d region(s), currently %s"):format(
             #found, MapFrameBg.visible and "shown" or "hidden"))
-        for i, name in ipairs(found) do
-            print(("  %d. %s"):format(i, name))
+        for i, row in ipairs(found) do
+            print(("  %d. %s  shown=%s  alpha=%.2f  weHid=%s"):format(
+                i, row.name, tostring(row.shown), row.alpha,
+                tostring(row.weHid)))
         end
         if #found == 0 then
             print("  (nothing found — open the map first)")
         end
         print("  |cff999999framebg all|r surveys the whole frame tree; "
-            .. "|cff999999framebg nuke|r hides all of it")
+            .. "|cff999999framebg big|r narrows that to what's shown and "
+            .. "large enough to be backing; |cff999999framebg nuke|r hides "
+            .. "all of it")
         return
     elseif cmd == "debug" then
         self:Debug()
@@ -214,11 +305,13 @@ function Commands:Handle(msg)
             .. table.concat(keys, " | ") .. " (no name cycles)")
         print("  /hfwm alpha N       - set opacity (0-1)")
         print("  /hfwm cave [on|off] - toggle the cave map (opt-in)")
-        print("                        show/hide, reset (position), alpha N")
+        print("                        show/hide, reset (position), alpha N,")
+        print("                        autoopen [on|off], remember [on|off]")
         print("  /hfwm baseart       - Blizzard's detail layer, and whether "
             .. "the search finds it")
         print("  /hfwm framebg       - map-frame backing Transparent hides")
-        print("                        (all = survey everything, nuke/restore)")
+        print("                        (all = survey everything, big = shown"
+            .. " + large only, nuke/restore)")
         print("  /hfwm debug         - diagnostic info + force refresh")
         return
     end
@@ -365,6 +458,54 @@ function Commands:Debug()
         end
     end
 
+    -- Cave window header geometry. Screenshots cannot distinguish a band of
+    -- the wrong height from a band drawing nothing from a stray unanchored
+    -- texture, so the numbers are printed with the two questions that matter
+    -- already answered: does the banner cover the bar, and is the title inside
+    -- the band. If either says no, that is the bug, whatever the pixels look
+    -- like.
+    local hdr = ns.CaveRenderer:HeaderReport()
+    if hdr then
+        print(("  cave header: source=%s  art=%s%s"):format(
+            tostring(hdr.source), tostring(hdr.bannerArt),
+            hdr.unverified and "  <-- UNVERIFIED" or ""))
+        local function say(label, r)
+            if not r then
+                print(("    %-8s (no rect — never anchored or not shown)")
+                    :format(label))
+                return
+            end
+            print(("    %-8s %.1f x %.1f   top=%.1f left=%.1f right=%.1f")
+                :format(label, r.w, r.h, r.top, r.left, r.right))
+        end
+        say("window", hdr.window)
+        say("bar", hdr.bar)
+        say("banner", hdr.banner)
+        say("title", hdr.title)
+        say("close", hdr.close)
+        say("content", hdr.content)
+        if hdr.bar and hdr.banner then
+            local dw = math.abs(hdr.banner.w - hdr.bar.w)
+            local dh = math.abs(hdr.banner.h - hdr.bar.h)
+            print(("    banner covers bar: %s (dw=%.1f dh=%.1f)"):format(
+                (dw <= 0.5 and dh <= 0.5) and "YES" or "NO", dw, dh))
+        end
+        if hdr.bar and hdr.title then
+            -- Inside means the text's own box sits within the band vertically.
+            -- Horizontal overflow is handled by JustifyH/WordWrap, so only the
+            -- vertical containment is a layout fault.
+            local inside = hdr.title.top <= hdr.bar.top + 0.5
+                and hdr.title.bottom >= hdr.bar.bottom - 0.5
+            print(("    title inside band: %s (title %.1f..%.1f, band %.1f..%.1f)")
+                :format(inside and "YES" or "NO",
+                    hdr.title.bottom, hdr.title.top,
+                    hdr.bar.bottom, hdr.bar.top))
+        end
+        print(("    TITLE_H=%d  BORDER_ART=%d"):format(hdr.titleH, hdr.borderArt))
+    else
+        print("  cave header: window not built yet (open a cave first)")
+    end
+
     if bestMapID and bestMapID ~= minimapMapID then
         local groupID = C_Map.GetMapGroupID(bestMapID)
         if groupID then
@@ -455,11 +596,21 @@ function Commands:Debug()
         tostring(Config.db and Config.db.caveEnabled),
         tostring(inCave), tostring(caveMapID),
         tostring(Config.caveOverlayActive)))
-    print(("        currentFloor=%s  floors=%d  pinned=%s  suppressed=%s"):format(
+    print(("        currentFloor=%s  floors=%d  pinned=%s  filterAll=%s  suppressed=%s"):format(
         tostring(Config.caveCurrentFloorMapID),
         Config.caveAllFloors and #Config.caveAllFloors or 0,
         tostring(Config.caveFloorPinned),
+        tostring(Config.caveFloorFilterAll),
         tostring(Config.caveSuppressedKey)))
+    print(("        continuousDepth=%s  pieces=%s"):format(
+        tostring(ns.CaveRenderer:IsContinuousActive()),
+        tostring(ns.CaveRenderer:IsPiecesActive())))
+    local heightWindow = ns.CaveRenderer:DebugHeightWindow()
+    if heightWindow then
+        print(("        heightWindow: top=%.2f  bottom=%.2f  zMax=%.1f  zMin=%.1f"):format(
+            heightWindow.top, heightWindow.bottom,
+            heightWindow.zMax or 0, heightWindow.zMin or 0))
+    end
     if Config.caveCurrentFloorMapID then
         print(("        title=%s"):format(
             ns.Cave:GetAreaTitle(Config.caveCurrentFloorMapID)))
@@ -499,12 +650,36 @@ function Commands:Debug()
     else
         print("        last render: none yet (no floor rendered this session)")
     end
+    -- Per-floor alpha from the continuous crossfade, when active: replaces
+    -- the plain "<-- ACTIVE" marker (which is still printed alongside it —
+    -- ACTIVE means "the slider's anchor floor", not "the only one visible")
+    -- with what's actually on screen right now.
+    local continuousInfo = ns.CaveRenderer:DebugContinuous()
     if Config.caveAllFloors then
         for i, f in ipairs(Config.caveAllFloors) do
             local marker = (f.mapID == Config.caveCurrentFloorMapID)
                 and " <-- ACTIVE" or ""
-            print(("        level %d: mapID=%d  heightIdx=%d  name=%s%s"):format(
-                i, f.mapID, f.relativeHeightIndex, f.name or "?", marker))
+            local alphaText = ""
+            if continuousInfo and continuousInfo[i] then
+                alphaText = (" alpha=%.2f"):format(continuousInfo[i].alpha or 0)
+            end
+            print(("        level %d: mapID=%d  heightIdx=%d  name=%s%s%s"):format(
+                i, f.mapID, f.relativeHeightIndex, f.name or "?", alphaText, marker))
+        end
+    end
+    -- cave-satellite-v2 Phase 2: per-piece alpha, when piece mode is active —
+    -- floors above still print (they still drive player-location/title/
+    -- suppression per the Phase 2 design), but the art actually on screen is
+    -- these pieces, each fading independently by its own real world-Z range
+    -- rather than by floor index.
+    local piecesInfo = ns.CaveRenderer:DebugPieces()
+    if piecesInfo then
+        local playerZ = ns.Cave:GetPlayerWorldZ()
+        print(("        pieces: %d rendered  playerWorldZ=%s"):format(
+            #piecesInfo, playerZ and ("%.1f"):format(playerZ) or "?"))
+        for i, grp in ipairs(piecesInfo) do
+            print(("          piece %d: zMin=%.1f  zMax=%.1f  alpha=%.2f"):format(
+                i, grp.zMin, grp.zMax, grp.alpha or 0))
         end
     end
     Config.tracing = true

@@ -113,6 +113,20 @@ function Renderer:Refresh(force)
         Config.overlayFrame:EnableMouse(false)
     end
 
+    -- A replaced canvas doesn't just need re-parenting: MapFrameBg's
+    -- Transparent-mode concealment (and BaseArt's) is keyed off specific
+    -- region objects it found and hid — WorldMapFrame.ScrollContainer.Child
+    -- .TiledBackground among them, the wood-grain placeholder the canvas
+    -- itself paints behind everything else. A *new* canvas object means a
+    -- brand new TiledBackground region that was never found, hidden or
+    -- hooked, and it stays visible until something forces a fresh
+    -- concealment pass. Without this, "canvasChanged" was silently absorbed
+    -- by the "skip if nothing changed" check below whenever the swap didn't
+    -- also change mapID/size/layerIdx — which is the ordinary case — so
+    -- Transparent could come back from a canvas swap permanently showing
+    -- Blizzard's wood backing with no further Refresh ever re-checking it.
+    local canvasChanged = (canvas ~= Config.lastCanvas)
+
     local canvasW, canvasH = canvas:GetSize()
 
     -- Determine art layer (surface vs. underwater)
@@ -135,8 +149,12 @@ function Renderer:Refresh(force)
             tostring(Config.overlayFrame:GetParent())))
     end
 
-    -- Skip if nothing changed
-    if not force and mapID == Config.lastMapID
+    -- Skip if nothing changed. canvasChanged is deliberately its own term
+    -- here rather than folded into a change to canvasW/canvasH: a replaced
+    -- canvas at the *same* size would otherwise still look unchanged to
+    -- this check (see the canvasChanged comment above) and skip the
+    -- MapFrameBg/BaseArt re-application a swap requires.
+    if not force and not canvasChanged and mapID == Config.lastMapID
        and canvasW == Config.lastCanvasW
        and canvasH == Config.lastCanvasH
        and layerIdx == Config.lastLayerIdx
@@ -145,6 +163,7 @@ function Renderer:Refresh(force)
     end
 
     Pool:ReleaseAll()
+    Config.lastCanvas    = canvas
     Config.lastMapID     = mapID
     Config.lastCanvasW   = canvasW
     Config.lastCanvasH   = canvasH
@@ -237,11 +256,22 @@ function Renderer:Refresh(force)
 
     --- Switch the overlay on, and return the background entry in force.
     ---
-    --- The background only means anything where we are drawing our own
-    --- transparent tiles. On a map with no bundled BLPs the tiles are the
-    --- client's own opaque art, so behave exactly as before — hide the detail
-    --- layer, draw no backdrop — and return nil to say the setting does not
-    --- apply here.
+    --- The *tile* half of the background setting only means anything where
+    --- we are drawing our own transparent tiles: on a map with no bundled
+    --- BLPs the tiles are the client's own opaque art regardless of which
+    --- background is selected, so this skips ApplyBackground's tile/backdrop
+    --- branches and behaves exactly as before — hide the detail layer, draw
+    --- no backdrop of our own, return nil to say that half of the setting
+    --- does not apply here.
+    ---
+    --- The map-frame-backing half is a different question, and this used to
+    --- get it wrong: it called MapFrameBg:SetVisible(true) unconditionally,
+    --- regardless of which background was actually selected. Nothing here
+    --- draws over that backing on this kind of map (no bundled tiles, no
+    --- backdrop texture), so Transparent still needs it hidden for the same
+    --- reason ApplyBackground hides it — otherwise Transparent shows
+    --- Blizzard's own wood-grain map-frame backing on every map this addon
+    --- has no replacement art for, no matter what the user picked.
     local function Activate()
         Config.overlayActive = true
         local bg
@@ -250,7 +280,7 @@ function Renderer:Refresh(force)
         else
             if Config.backdropTexture then Config.backdropTexture:Hide() end
             BaseArt:SetVisible(false)
-            MapFrameBg:SetVisible(true)
+            MapFrameBg:SetVisible(not background.seeThrough)
         end
         Exploration:SetVisible(false)
         Watchdog:Start()
@@ -322,6 +352,7 @@ end
 
 --- Force a full refresh (clears all cached state).
 function Renderer:ForceRefresh()
+    Config.lastCanvas    = nil
     Config.lastMapID     = nil
     Config.lastCanvasW   = 0
     Config.lastCanvasH   = 0

@@ -1350,6 +1350,14 @@ HFWMF_CAVE_DATA = {
             -- GetPlayerPosition uses this instead whenever it's present,
             -- falling back to the `bounds` stretch for every other place.
             -- Shared by both floors (same WMO instance/placement/canvas).
+            -- `sharedCanvas` marks that explicitly: both floors below are
+            -- the exact same physical structure, split only by depth, so
+            -- it's safe (and correct) to crossfade between them as the
+            -- depth slider moves rather than hard-swapping. Every other
+            -- multi-floor place instead falls back to a generic per-floor
+            -- "paperback" background image, which is NOT the same canvas
+            -- across floors, so it must never crossfade.
+            sharedCanvas = true,
             projection = {
                 minLocalX = -150.180939, maxLocalY = 64.272247,
                 scale = 1.993,
@@ -1359,6 +1367,48 @@ HFWMF_CAVE_DATA = {
                 yaw = 301.5,
                 placementWorldX = -9833.622502, placementWorldY = 193.516169,
             },
+            -- cave-satellite-v2 Phase 2: one baked art piece per tiled WMO
+            -- group (hfwm/cave_minimap.py's generate_fargodeep_pieces()),
+            -- each on the exact same 432x401 shared canvas as `projection`
+            -- and the two floors below, anchored at (0,0) — so it draws
+            -- and fades exactly like a floor image does, just one room at
+            -- a time instead of ~10 rooms at once. `zMin`/`zMax` here are
+            -- each piece's *own* real worldZ range (that WMO group's bbox
+            -- only, not the floor it happens to belong to), which is what
+            -- lets the depth slider fade rooms in individually rather than
+            -- in floor-sized lockstep. `floors` below is unchanged and
+            -- still drives player-location detection (FloorForPosition),
+            -- the title bar, and the old suppression keys — only the art
+            -- actually drawn on screen comes from `pieces` now.
+            pieces = {
+                { fdid = 900000010, group = 1, name = "",            zMin = 22.05, zMax = 37.00 },
+                { fdid = 900000011, group = 2, name = "ext",          zMin = 14.49, zMax = 30.84 },
+                { fdid = 900000012, group = 3, name = "entry",        zMin = 21.49, zMax = 33.39 },
+                { fdid = 900000013, group = 4, name = "mineshaft02",  zMin = -0.30, zMax = 14.75 },
+                { fdid = 900000014, group = 5, name = "mine02",       zMin = 3.36,  zMax = 16.54 },
+                { fdid = 900000015, group = 6, name = "mine10",       zMin = 26.72, zMax = 37.25 },
+                { fdid = 900000016, group = 7, name = "mine09",       zMin = 4.39,  zMax = 15.22 },
+                { fdid = 900000017, group = 8, name = "mine03a",      zMin = 23.43, zMax = 38.43 },
+                { fdid = 900000018, group = 9, name = "mine97",       zMin = 4.19,  zMax = 19.42 },
+                { fdid = 900000019, group = 10, name = "mine03",      zMin = 10.14, zMax = 23.50 },
+                { fdid = 900000020, group = 11, name = "mine08",      zMin = 4.51,  zMax = 18.96 },
+                { fdid = 900000021, group = 12, name = "mine07",      zMin = 9.56,  zMax = 21.84 },
+                { fdid = 900000022, group = 13, name = "mine98",      zMin = 3.12,  zMax = 18.08 },
+                { fdid = 900000023, group = 14, name = "mine99",      zMin = 14.27, zMax = 29.28 },
+                { fdid = 900000024, group = 15, name = "mine95",      zMin = 21.09, zMax = 34.93 },
+                { fdid = 900000025, group = 16, name = "mine06",      zMin = 36.29, zMax = 48.92 },
+                { fdid = 900000026, group = 17, name = "mine05",      zMin = 4.87,  zMax = 16.16 },
+                { fdid = 900000027, group = 18, name = "mineshaft01", zMin = 18.13, zMax = 28.31 },
+                { fdid = 900000028, group = 19, name = "mine96",      zMin = 23.79, zMax = 41.03 },
+                { fdid = 900000029, group = 20, name = "mine06a",     zMin = 25.43, zMax = 42.62 },
+                { fdid = 900000030, group = 21, name = "mine11",      zMin = 22.52, zMax = 39.91 },
+            },
+            -- Shared canvas size for `pieces` above (and, unchanged, for
+            -- the two floor tiles below): every piece and both floors are
+            -- baked on this exact same 432x401 canvas, so a piece can be
+            -- drawn/anchored with the same texture-pool code the floors
+            -- already use, with no per-piece x/y/w/h needed.
+            pieceCanvasW = 432, pieceCanvasH = 401,
             floors  = {
                 {
                     name    = "Fargodeep Mine",

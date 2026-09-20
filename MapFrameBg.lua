@@ -199,6 +199,20 @@ local function collect()
     -- texture. Nothing of ours is inside it, so the whole frame can go.
     take(WorldMapFrame and WorldMapFrame.BlackoutFrame)
 
+    -- Confirmed with `/hfwm framebg big`: on the World map (two continents
+    -- that don't fill the frame), the wood/parchment showing through
+    -- Transparent's holes is WorldMapFrame.OverscrollBG — Blizzard's own
+    -- fallback fill for whatever space the canvas leaves uncovered, texture
+    -- atlas "gamepad-mapquestlog-bgtile-2k". It sits at BACKGROUND layer, so
+    -- pass one would take it if it were one of backingHosts(), but it isn't;
+    -- and pass two's sweep does reach it but rejects it on size, because it
+    -- comes in at 697x465 against a 1035x534 frame — 67% wide, just under
+    -- isFullSize's 70% gate, so a map that doesn't quite fill its own frame
+    -- was exactly the case that gate was blind to. Taking the frame
+    -- directly, the same way BlackoutFrame is, needs neither gate: hiding it
+    -- also hides the texture on it.
+    take(WorldMapFrame and WorldMapFrame.OverscrollBG)
+
     return out
 end
 
@@ -263,10 +277,14 @@ function MapFrameBg:SetVisible(visible)
     end
 end
 
---- Human-readable list of what SetVisible would act on right now. Purely for
---- `/hfwm framebg`: if some panel is still opaque under Transparent, this is
---- what the search did and did not reach.
----@return string[]
+--- Human-readable list of what SetVisible would act on right now, each with
+--- its own actual IsShown()/GetAlpha() — not just whether the search found
+--- it. Purely for `/hfwm framebg`: "found it, hidden it, and it is still
+--- reported as shown" is a different, more specific bug than "never found
+--- it at all", and the two used to print identically here, with only the
+--- one blanket MapFrameBg.visible flag (which says what SetVisible was
+--- last *told*, not what any one region actually *is*) to go on.
+---@return table[] rows { name, shown, alpha, weHid }
 function MapFrameBg:Describe()
     local out = {}
     for _, obj in ipairs(collect()) do
@@ -275,7 +293,12 @@ function MapFrameBg:Describe()
             local tex = obj.GetTexture and obj:GetTexture()
             name = type(tex) == "string" and tex or "<unnamed>"
         end
-        out[#out + 1] = name
+        out[#out + 1] = {
+            name  = name,
+            shown = obj.IsShown and obj:IsShown() or false,
+            alpha = obj.GetAlpha and obj:GetAlpha() or -1,
+            weHid = self.hidden[obj] and true or false,
+        }
     end
     return out
 end
@@ -304,7 +327,7 @@ end
 
 --- Every texture under WorldMapFrame, deepest-last, with what it is and
 --- whether the search above reaches it.
----@return table[] rows { owner, layer, sublevel, alpha, shown, tex, reached }
+---@return table[] rows { owner, layer, sublevel, alpha, shown, width, height, tex, reached }
 function MapFrameBg:Survey()
     local reached = {}
     for _, obj in ipairs(collect()) do reached[obj] = true end
@@ -324,6 +347,8 @@ function MapFrameBg:Survey()
                     if r.GetDrawLayer then layer, sub = r:GetDrawLayer() end
                     local tex = r.GetTexture and r:GetTexture()
                     local atlas = r.GetAtlas and r:GetAtlas()
+                    local w = r.GetWidth and r:GetWidth() or 0
+                    local h = r.GetHeight and r:GetHeight() or 0
                     rows[#rows + 1] = {
                         obj      = r,
                         depth    = depth,
@@ -333,6 +358,8 @@ function MapFrameBg:Survey()
                         sublevel = tonumber(sub) or 0,
                         alpha    = r.GetAlpha and r:GetAlpha() or -1,
                         shown    = r.IsShown and r:IsShown(),
+                        width    = w,
+                        height   = h,
                         tex      = atlas or (type(tex) == "string" and tex)
                                    or (tex and ("fdid:" .. tostring(tex)))
                                    or "<colour>",
@@ -359,6 +386,8 @@ function MapFrameBg:Survey()
                             sublevel = 0,
                             alpha   = child:GetAlpha(),
                             shown   = child.IsShown and child:IsShown(),
+                            width   = child.GetWidth and child:GetWidth() or 0,
+                            height  = child.GetHeight and child:GetHeight() or 0,
                             tex     = "<frame>",
                             reached = reached[child] and true or false,
                         }

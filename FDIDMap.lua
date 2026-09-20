@@ -697,6 +697,37 @@ HFWMF_FDID_MAP = {
     -- preserve or reintroduce these two entries.
     [900000001] = "FargodeepMine\\upper",
     [900000002] = "FargodeepMine\\lower",
+
+    -- Hand-added, cave-satellite-v2 Phase 2: one baked art piece per tiled
+    -- WMO group in Fargodeep Mine (21 groups), from
+    -- hfwm/cave_minimap.py's generate_fargodeep_pieces(). These replace the
+    -- upper/lower pair above as what actually gets drawn on screen — each
+    -- piece fades in/out on its own real-world-Z window instead of the two
+    -- floors above crossfading as a unit. The two entries above are kept
+    -- for backward compatibility only; nothing new reads them. Same
+    -- regeneration warning applies: not part of generateHFWM.py's
+    -- auto-generation, must be preserved or reintroduced by hand.
+    [900000010] = "FargodeepMine\\pieces\\piece00",
+    [900000011] = "FargodeepMine\\pieces\\piece01",
+    [900000012] = "FargodeepMine\\pieces\\piece02",
+    [900000013] = "FargodeepMine\\pieces\\piece03",
+    [900000014] = "FargodeepMine\\pieces\\piece04",
+    [900000015] = "FargodeepMine\\pieces\\piece05",
+    [900000016] = "FargodeepMine\\pieces\\piece06",
+    [900000017] = "FargodeepMine\\pieces\\piece07",
+    [900000018] = "FargodeepMine\\pieces\\piece08",
+    [900000019] = "FargodeepMine\\pieces\\piece09",
+    [900000020] = "FargodeepMine\\pieces\\piece10",
+    [900000021] = "FargodeepMine\\pieces\\piece11",
+    [900000022] = "FargodeepMine\\pieces\\piece12",
+    [900000023] = "FargodeepMine\\pieces\\piece13",
+    [900000024] = "FargodeepMine\\pieces\\piece14",
+    [900000025] = "FargodeepMine\\pieces\\piece15",
+    [900000026] = "FargodeepMine\\pieces\\piece16",
+    [900000027] = "FargodeepMine\\pieces\\piece17",
+    [900000028] = "FargodeepMine\\pieces\\piece18",
+    [900000029] = "FargodeepMine\\pieces\\piece19",
+    [900000030] = "FargodeepMine\\pieces\\piece20",
 }
 
 -- No submerged (layer-2) art variants are generated for
@@ -1406,4 +1437,28 @@ HFWMF_FDID_MAP_ORIGINAL = {
     -- tiles, so both background variants share the one baked composite.
     [900000001] = "FargodeepMine\\upper",
     [900000002] = "FargodeepMine\\lower",
+
+    -- Hand-added, cave-satellite-v2 Phase 2: same per-piece art as
+    -- HFWMF_FDID_MAP above (no separate "paperback" pass for these either).
+    [900000010] = "FargodeepMine\\pieces\\piece00",
+    [900000011] = "FargodeepMine\\pieces\\piece01",
+    [900000012] = "FargodeepMine\\pieces\\piece02",
+    [900000013] = "FargodeepMine\\pieces\\piece03",
+    [900000014] = "FargodeepMine\\pieces\\piece04",
+    [900000015] = "FargodeepMine\\pieces\\piece05",
+    [900000016] = "FargodeepMine\\pieces\\piece06",
+    [900000017] = "FargodeepMine\\pieces\\piece07",
+    [900000018] = "FargodeepMine\\pieces\\piece08",
+    [900000019] = "FargodeepMine\\pieces\\piece09",
+    [900000020] = "FargodeepMine\\pieces\\piece10",
+    [900000021] = "FargodeepMine\\pieces\\piece11",
+    [900000022] = "FargodeepMine\\pieces\\piece12",
+    [900000023] = "FargodeepMine\\pieces\\piece13",
+    [900000024] = "FargodeepMine\\pieces\\piece14",
+    [900000025] = "FargodeepMine\\pieces\\piece15",
+    [900000026] = "FargodeepMine\\pieces\\piece16",
+    [900000027] = "FargodeepMine\\pieces\\piece17",
+    [900000028] = "FargodeepMine\\pieces\\piece18",
+    [900000029] = "FargodeepMine\\pieces\\piece19",
+    [900000030] = "FargodeepMine\\pieces\\piece20",
 }

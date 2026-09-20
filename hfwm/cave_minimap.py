@@ -56,6 +56,15 @@ WMO_TILE_CACHE_DIR = CACHE_ROOT / "wmo_minimap"
 FDID_FARGODEEP_UPPER = 900000001
 FDID_FARGODEEP_LOWER = 900000002
 
+# Per-piece synthetic FDIDs (Phase 2: continuous per-WMO-group fading rather
+# than a 2-floor crossfade). Base chosen with a gap after the two floor IDs
+# above so the ranges are visually distinct in FDIDMap.lua; one ID is
+# consumed per tiled WMO group, in ascending group-index order, and
+# Fargodeep has 21 tiled groups (see FARGODEEP_TILE_FDIDS below) so this
+# range only needs to reserve 900000010-900000030 — comfortably short of
+# colliding with FDID_FARGODEEP_UPPER/LOWER's block or a next dungeon's.
+FDID_FARGODEEP_PIECE_BASE = 900000010
+
 
 @dataclass
 class WmoGroup:
@@ -403,8 +412,9 @@ def build_floor_image(groups_by_index: dict[int, WmoGroup],
                        tiles: dict[int, Image.Image],
                        minx: float, maxy: float,
                        canvas_w: int, canvas_h: int,
-                       scale: float = MINIMAP_PX_PER_UNIT) -> Image.Image:
-    """Composite one floor's groups onto a shared-scale canvas.
+                       scale: float = MINIMAP_PX_PER_UNIT,
+                       bg: tuple[int, int, int, int] = (0, 0, 0, 255)) -> Image.Image:
+    """Composite one floor's (or one piece's) groups onto a shared-scale canvas.
 
     Screen axis mapping: canvas column <- WMO-local X (unflipped), canvas
     row <- WMO-local Y *negated* (north/max-Y renders at the top, i.e. row
@@ -422,8 +432,16 @@ def build_floor_image(groups_by_index: dict[int, WmoGroup],
     group's tile 1:1 at the fixed scale and size the canvas around that,
     never the other way around; resizing tiles to fit an arbitrarily-chosen
     canvas size was this script's original, wrong approach.
+
+    ``bg`` defaults to opaque black — right for a full floor image, which is
+    meant to be the only thing on screen at its sublevel and should paint
+    over whatever's behind it where it has no room art. Phase 2's per-piece
+    images are the opposite: many of them stack on the same sublevel range
+    at once (see generate_fargodeep_pieces), so each one's "no room here"
+    area must stay fully transparent (bg=(0,0,0,0)) or it would blot out
+    every other piece already composited underneath it.
     """
-    canvas = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 255))
+    canvas = Image.new("RGBA", (canvas_w, canvas_h), bg)
     for idx in group_indices:
         g = groups_by_index[idx]
         x1, _, _, _, y2, _ = g.bbox
@@ -694,6 +712,125 @@ def generate_fargodeep(scale: float = MINIMAP_PX_PER_UNIT) -> dict:
         },
         "canvas": (canvas_w, canvas_h),
         "projection": projection,
+        # Mirrors CaveData.lua's place-level `sharedCanvas = true`: both
+        # floors above are baked from this exact same composite canvas, so
+        # they're eligible for the depth-slider crossfade rather than a
+        # hard swap. Keep this in the generator so a future regen doesn't
+        # silently drop the flag from the hand-maintained Lua table.
+        "sharedCanvas": True,
+    }
+
+
+def generate_fargodeep_pieces(scale: float = MINIMAP_PX_PER_UNIT) -> dict:
+    """Bake each of Fargodeep Mine's 21 tiled WMO groups as its own piece.
+
+    Phase 1 baked two *floor* composites (upper.blp, lower.blp) and
+    crossfaded between them as the depth slider moved. The user's Phase 2
+    ask removes the floor concept from the art layer entirely: every one of
+    the WMO groups that Phase 1 flattened together into those two
+    composites should instead fade in and out *individually*, each on its
+    own real-world-Z window, so a room's paint follows the slider on its
+    own rather than in lockstep with 10+ other rooms that happen to share
+    its floor label.
+
+    The simplest correct way to get each piece positioned and rotated
+    identically to how it already sits in the validated floor composite is
+    to reuse that exact same pipeline per group instead of per floor:
+    ``build_floor_image`` already takes an arbitrary ``group_indices``
+    list (a single-group list works unchanged) and anchors that group
+    against the *place's* shared ``minx``/``maxy``/``scale``/``canvas_w``/
+    ``canvas_h`` — the same anchor every group already shares in
+    ``generate_fargodeep``, confirmed there by both floors coming out on
+    one common canvas size. Rotating each single-group canvas by the same
+    ``rotate_angle`` those floors use, the same way, lands each piece's art
+    at the same pixel position it already occupies inside the validated
+    upper/lower composites — this is not re-derived, it is the identical
+    per-group placement/rotation math generate_fargodeep already runs, just
+    stopped one group early instead of compositing groups together first.
+
+    Unlike the floor composites, each piece's canvas fills its empty area
+    with full transparency (see build_floor_image's ``bg`` parameter), not
+    opaque black: up to 21 of these stack on screen at once via WoW's own
+    texture alpha, and an opaque-black piece would blot out every other
+    piece's art already showing through underneath it. This does mean each
+    piece's BLP is canvas-sized (mostly transparent) rather than tightly
+    cropped to its own room — deliberately: keeping every piece anchored at
+    the same (0,0) on the same shared canvas lets the renderer draw and fade
+    them exactly like Phase 1 already draws/fades upper/lower, with no new
+    per-piece x/y/w/h placement math in Lua at all.
+
+    Returns the per-piece Lua fragment values (fdid, group index/name,
+    zMin/zMax) plus the FDIDMap.lua entries and the shared canvas size,
+    mirroring generate_fargodeep's return shape.
+    """
+    root_bytes = fetch_wmo_root(FARGODEEP_WMO_FDID)
+    groups = parse_wmo_groups(root_bytes, FARGODEEP_TILE_FDIDS)
+    by_index = {g.index: g for g in groups}
+
+    tiled_idx = sorted(i for i in by_index if by_index[i].tile_fdid is not None)
+    tiles = {i: fetch_tile(by_index[i].tile_fdid) for i in tiled_idx}
+
+    xs = [by_index[i].bbox[0] for i in tiled_idx] + \
+         [by_index[i].bbox[3] for i in tiled_idx]
+    ys = [by_index[i].bbox[1] for i in tiled_idx] + \
+         [by_index[i].bbox[4] for i in tiled_idx]
+    minx, maxy = min(xs), max(ys)
+    # Same derivation as generate_fargodeep: size the (pre-rotation) canvas
+    # off where each tile's native-resolution rectangle actually lands, not
+    # bbox span * scale, so no tile clips.
+    canvas_w = max(round((by_index[i].bbox[0] - minx) * scale) + tiles[i].width
+                   for i in tiled_idx)
+    canvas_h = max(round((maxy - by_index[i].bbox[4]) * scale) + tiles[i].height
+                   for i in tiled_idx)
+
+    placement = fetch_wmo_world_placement(
+        FARGODEEP_ADT_OBJ0_FDID, FARGODEEP_WMO_FDID, FARGODEEP_MODF_UNIQUE_ID)
+    placement_yaw = placement.rotation[1]
+    rotate_angle = world_align_rotation_degrees(placement_yaw)
+
+    out_dir = WORLDMAP_DIR / "FargodeepMine" / "pieces"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    piece_imgs: dict[int, Image.Image] = {}
+    piece_z: dict[int, tuple[float, float]] = {}
+    for i in tiled_idx:
+        img = build_floor_image(
+            by_index, [i], tiles, minx, maxy, canvas_w, canvas_h, scale,
+            bg=(0, 0, 0, 0))
+        img = img.rotate(rotate_angle, expand=True, fillcolor=(0, 0, 0, 0))
+        piece_imgs[i] = img
+        piece_z[i] = world_z_range_for_groups(by_index, [i], placement)
+
+    # Same union-pad safety net generate_fargodeep uses: expand=True can
+    # round each single-group canvas's rotated bounding box to a slightly
+    # different (w, h) even though every one started from the identical
+    # pre-rotation canvas size, so pad every piece to the union.
+    out_w = max(im.width for im in piece_imgs.values())
+    out_h = max(im.height for im in piece_imgs.values())
+    for i, img in piece_imgs.items():
+        if img.size != (out_w, out_h):
+            padded = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 0))
+            padded.paste(img, (0, 0))
+            piece_imgs[i] = padded
+
+    pieces = []
+    fdid_map_entries = {}
+    for order, i in enumerate(tiled_idx):
+        fdid = FDID_FARGODEEP_PIECE_BASE + order
+        rel = f"FargodeepMine\\pieces\\piece{order:02d}"
+        (out_dir / f"piece{order:02d}.blp").write_bytes(
+            encode_blp2_bgra(piece_imgs[i]))
+        fdid_map_entries[fdid] = rel
+        zmin, zmax = piece_z[i]
+        pieces.append({
+            "fdid": fdid, "order": order, "group": i,
+            "name": by_index[i].name, "zMin": zmin, "zMax": zmax,
+        })
+
+    return {
+        "pieces": pieces,
+        "fdid_map_entries": fdid_map_entries,
+        "canvas": (out_w, out_h),
     }
 
 
@@ -722,3 +859,18 @@ if __name__ == "__main__":
     print(f"  rotatedW = {p['rotatedW']}, rotatedH = {p['rotatedH']},")
     print(f"  yaw = {p['yaw']},")
     print(f"  placementWorldX = {p['placementWorldX']:.6f}, placementWorldY = {p['placementWorldY']:.6f},")
+    print(f"\nsharedCanvas = {result['sharedCanvas']},")
+
+    pieces_result = generate_fargodeep_pieces()
+    print("\n\n== per-piece (Phase 2) ==")
+    print("canvas:", pieces_result["canvas"])
+    print("\n-- pieces (CaveData.lua place.pieces) --")
+    for piece in pieces_result["pieces"]:
+        print(f"  {{ fdid = {piece['fdid']}, group = {piece['group']}, "
+              f"name = \"{piece['name']}\", "
+              f"zMin = {piece['zMin']:.2f}, zMax = {piece['zMax']:.2f} }},")
+    print("\n-- FDIDMap.lua entries (pieces) --")
+    for fdid, rel in pieces_result["fdid_map_entries"].items():
+        print(f'    [{fdid}] = "{rel}",')
+    pw, ph = pieces_result["canvas"]
+    print(f"\npieceCanvasW = {pw}, pieceCanvasH = {ph},")

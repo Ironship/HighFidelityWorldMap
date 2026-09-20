@@ -28,26 +28,89 @@ local PANEL_TITLE = "High Fidelity World Map Forever"
 -- Small widget helpers
 -------------------------------------------------------------------------------
 
---- Flat dark panel with a 1px border, used for the dropdown and its menu.
-local function StyleBox(frame, r, g, b, a)
+--- The game's own tooltip backdrop, for compact button-scale widgets (the
+--- fallback dropdown button and its menu) where the thicker dialog border
+--- below would be too big to tile cleanly. Reused as the literal Blizzard
+--- global when present; the previous insets here were 2.5, short of the
+--- real global's 5 — worth correcting since an inset narrower than the
+--- true one lets the border overlap the background instead of sitting
+--- cleanly on the frame edge.
+local TOOLTIP_BACKDROP = BACKDROP_TOOLTIP_16_16_9999 or {
+    bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile     = true,
+    tileSize = 16,
+    edgeSize = 16,
+    insets   = { left = 5, right = 5, top = 5, bottom = 5 },
+}
+
+--- The game's own dialog-box border — the thick ornate gold-scroll frame
+--- used on popup dialogs, the Game Menu, and confirmation windows. This is
+--- the "metal border" look proper, used for the standalone options window
+--- (BuildWindow) to match CaveRenderer's window; see its DIALOG_BACKDROP
+--- comment for the same file-path reasoning.
+local DIALOG_BACKDROP = {
+    bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+    tile     = true,
+    tileSize = 32,
+    edgeSize = 32,
+    insets   = { left = 11, right = 12, top = 12, bottom = 11 },
+}
+
+--- Bronze/gold hand-drawn fallback for a client old enough to lack
+--- BackdropTemplate entirely (pre-8.0) — kept only so nothing goes fully
+--- borderless on such a client, not the default treatment any more.
+local BORDER_BRONZE = { 0.45, 0.34, 0.16, 1 }
+local BORDER_GOLD    = { 0.80, 0.64, 0.32, 1 }
+
+local function StyleBoxFallback(frame, r, g, b, a)
     local bg = frame:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints(frame)
-    bg:SetColorTexture(r or 0.06, g or 0.06, b or 0.07, a or 0.95)
+    bg:SetColorTexture(r or 0.07, g or 0.055, b or 0.03, a or 0.95)
 
     for _, edge in ipairs({
-        { "TOPLEFT", "TOPRIGHT", 0, 0, nil, 1 },
-        { "BOTTOMLEFT", "BOTTOMRIGHT", 0, 0, nil, 1 },
-        { "TOPLEFT", "BOTTOMLEFT", 0, 0, 1, nil },
-        { "TOPRIGHT", "BOTTOMRIGHT", 0, 0, 1, nil },
+        { "TOPLEFT", "TOPRIGHT", 0, 0, nil, 1, 0, -1 },
+        { "BOTTOMLEFT", "BOTTOMRIGHT", 0, 0, nil, 1, 0, 1 },
+        { "TOPLEFT", "BOTTOMLEFT", 0, 0, 1, nil, 1, 0 },
+        { "TOPRIGHT", "BOTTOMRIGHT", 0, 0, 1, nil, -1, 0 },
     }) do
-        local line = frame:CreateTexture(nil, "BORDER")
-        line:SetColorTexture(0.35, 0.35, 0.38, 1)
-        line:SetPoint(edge[1], frame, edge[1])
-        line:SetPoint(edge[2], frame, edge[2])
-        if edge[5] then line:SetWidth(edge[5]) end
-        if edge[6] then line:SetHeight(edge[6]) end
+        local outer = frame:CreateTexture(nil, "BORDER", nil, 0)
+        outer:SetColorTexture(unpack(BORDER_BRONZE))
+        outer:SetPoint(edge[1], frame, edge[1])
+        outer:SetPoint(edge[2], frame, edge[2])
+        if edge[5] then outer:SetWidth(edge[5]) end
+        if edge[6] then outer:SetHeight(edge[6]) end
+
+        local inner = frame:CreateTexture(nil, "BORDER", nil, 1)
+        inner:SetColorTexture(unpack(BORDER_GOLD))
+        inner:SetPoint(edge[1], frame, edge[1], edge[7], edge[8])
+        inner:SetPoint(edge[2], frame, edge[2], edge[7], edge[8])
+        if edge[5] then inner:SetWidth(edge[5]) end
+        if edge[6] then inner:SetHeight(edge[6]) end
     end
     return bg
+end
+
+--- Give `frame` a real Blizzard border: the thick dialog-box gold scroll
+--- when `useDialogBorder` is true (for full-size windows), otherwise the
+--- slimmer tooltip border sized for buttons and menus. See CaveRenderer's
+--- StyleBox for why mixing BackdropTemplateMixin in by hand works even
+--- though these frames aren't created with "BackdropTemplate".
+local function StyleBox(frame, r, g, b, a, useDialogBorder)
+    if not frame.SetBackdrop and BackdropTemplateMixin then
+        Mixin(frame, BackdropTemplateMixin)
+    end
+    if frame.SetBackdrop then
+        frame:SetBackdrop(useDialogBorder and DIALOG_BACKDROP or TOOLTIP_BACKDROP)
+        frame:SetBackdropColor(r or 0.05, g or 0.05, b or 0.05, a or 0.9)
+        -- Same BORDER_GOLD tint as CaveRenderer's StyleBox — left untinted
+        -- this read silver rather than the addon's gold, on both border
+        -- textures.
+        frame:SetBackdropBorderColor(unpack(BORDER_GOLD))
+        return frame
+    end
+    return StyleBoxFallback(frame, r, g, b, a)
 end
 
 local function Label(parent, text, font)
@@ -224,7 +287,7 @@ local function BuildOwnDropdown(parent)
     menu:SetFrameStrata("FULLSCREEN_DIALOG")
     menu:SetToplevel(true)
     menu:Hide()
-    StyleBox(menu, 0.04, 0.04, 0.05, 0.98)
+    StyleBox(menu, 0.05, 0.04, 0.025, 0.98)
 
     local rows = {}
     local ROW_H = 22
@@ -239,7 +302,9 @@ local function BuildOwnDropdown(parent)
         text:SetText(active.label)
         for _, row in ipairs(rows) do
             local on = row.bg.key == active.key
-            row.label:SetText((on and "|cff33ccff" or "|cffffffff")
+            -- Gold for the selected background, plain white otherwise — the
+            -- same convention as everywhere else in this addon's UI now.
+            row.label:SetText((on and "|cffffd200" or "|cffffffff")
                 .. row.bg.label .. "|r")
             row.check:SetShown(on)
         end
@@ -253,9 +318,9 @@ local function BuildOwnDropdown(parent)
 
         local hl = row:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints(row)
-        hl:SetColorTexture(0.2, 0.4, 0.6, 0.45)
+        hl:SetColorTexture(0.6, 0.48, 0.18, 0.45)
 
-        local check = Label(row, "|cff33ccff*|r", "GameFontNormal")
+        local check = Label(row, "|cffffd200*|r", "GameFontNormal")
         check:SetPoint("LEFT", row, "LEFT", 6, 0)
 
         local label = Label(row, bg.label, "GameFontHighlight")
@@ -335,7 +400,12 @@ function Options:BuildPanel()
 
     local panel = CreateFrame("Frame")
     panel.name = PANEL_TITLE
-    panel:SetSize(560, 450)
+    -- Tall enough for the cave section's two extra checkboxes and their
+    -- descriptions (added alongside "(beta)"); a frame doesn't clip its
+    -- children by default, but the client's own canvas and BuildWindow's
+    -- standalone frame below both size themselves from this, so a panel
+    -- too short for its content would just run past their bottom edge.
+    panel:SetSize(560, 560)
     panel:Hide()
 
     local title = Label(panel, PANEL_TITLE, "GameFontNormalLarge")
@@ -408,13 +478,16 @@ function Options:BuildPanel()
         ns.Renderer:ForceRefresh()
     end)
 
-    -- Cave map
+    -- Cave map (beta)
     --
     -- Its own heading rather than another line of checkboxes at the top: it
     -- is a separate window with its own behaviour, not a variation on how the
     -- world map is drawn, and grouping it with the background options would
-    -- suggest otherwise.
-    local caveHeading = Label(panel, "Cave map", "GameFontNormal")
+    -- suggest otherwise. "(beta)" because the client has no real API for any
+    -- of this — CaveTable.lua's whole job is standing in for the interior
+    -- maps C_Map doesn't have — so it is worth flagging as the newest,
+    -- least-tested part of the addon.
+    local caveHeading = Label(panel, "Cave map (beta)", "GameFontNormal")
     caveHeading:SetPoint("TOPLEFT", slider, "BOTTOMLEFT", 0, -30)
 
     local caveCheck = CreateFrameTry("CheckButton", "HFWMForeverCaveCheck",
@@ -424,9 +497,9 @@ function Options:BuildPanel()
     local caveCheckText = caveCheck.Text or caveCheck.text
         or SubElement(caveCheck, "Text", "Text")
     if caveCheckText then
-        caveCheckText:SetText("Show a cave map when I'm indoors")
+        caveCheckText:SetText("Enable the Cave Maps")
     else
-        caveCheckText = Label(panel, "Show a cave map when I'm indoors",
+        caveCheckText = Label(panel, "Enable the Cave Maps",
             "GameFontHighlight")
         caveCheckText:SetPoint("LEFT", caveCheck, "RIGHT", 2, 0)
     end
@@ -447,17 +520,68 @@ function Options:BuildPanel()
 
     local caveDesc = Label(panel,
         "|cff999999Caves, mines and dungeon interiors have their own map, "
-        .. "which the zone map above them cannot show. With this on, walking "
-        .. "into one opens a small window over the world map — draggable, "
-        .. "closable, with a depth slider for multi-level dungeons.|r",
+        .. "which the zone map above them cannot show. With this on, this "
+        .. "addon can open a small window over the world map for them "
+        .. "instead — draggable, closable, with a depth slider for "
+        .. "multi-level dungeons. The two options below decide when that "
+        .. "window shows itself; a small icon above the map's side-panel "
+        .. "button always reopens it on demand.|r",
         "GameFontHighlightSmall")
     caveDesc:SetPoint("TOPLEFT", caveCheck, "BOTTOMLEFT", 6, -2)
     caveDesc:SetWidth(500)
     caveDesc:SetJustifyH("LEFT")
 
+    -- Open automatically
+    local caveAutoOpenCheck = CreateFrameTry("CheckButton",
+        "HFWMForeverCaveAutoOpenCheck", panel,
+        "InterfaceOptionsCheckButtonTemplate", "UICheckButtonTemplate")
+    caveAutoOpenCheck:SetPoint("TOPLEFT", caveDesc, "BOTTOMLEFT", -6, -10)
+    caveAutoOpenCheck:SetSize(26, 26)
+    local caveAutoOpenText = caveAutoOpenCheck.Text or caveAutoOpenCheck.text
+        or SubElement(caveAutoOpenCheck, "Text", "Text")
+    if caveAutoOpenText then
+        caveAutoOpenText:SetText("Open automatically upon entering a cave")
+    else
+        caveAutoOpenText = Label(panel,
+            "Open automatically upon entering a cave", "GameFontHighlight")
+        caveAutoOpenText:SetPoint("LEFT", caveAutoOpenCheck, "RIGHT", 2, 0)
+    end
+    caveAutoOpenCheck:SetScript("OnClick", function(btn)
+        Config.db.caveAutoOpen = btn:GetChecked() and true or false
+    end)
+
+    -- Remember state
+    local caveRememberCheck = CreateFrameTry("CheckButton",
+        "HFWMForeverCaveRememberCheck", panel,
+        "InterfaceOptionsCheckButtonTemplate", "UICheckButtonTemplate")
+    caveRememberCheck:SetPoint(
+        "TOPLEFT", caveAutoOpenCheck, "BOTTOMLEFT", 0, -4)
+    caveRememberCheck:SetSize(26, 26)
+    local caveRememberText = caveRememberCheck.Text or caveRememberCheck.text
+        or SubElement(caveRememberCheck, "Text", "Text")
+    if caveRememberText then
+        caveRememberText:SetText("Remember state")
+    else
+        caveRememberText = Label(panel, "Remember state", "GameFontHighlight")
+        caveRememberText:SetPoint("LEFT", caveRememberCheck, "RIGHT", 2, 0)
+    end
+    caveRememberCheck:SetScript("OnClick", function(btn)
+        Config.db.caveRememberState = btn:GetChecked() and true or false
+    end)
+
+    local caveRememberDesc = Label(panel,
+        "|cff999999Instead of the setting above, reopen the map only if it "
+        .. "was still open the last time you closed one — and leave it "
+        .. "shut if you had closed it. Takes over from Open Automatically "
+        .. "whenever the two would disagree.|r",
+        "GameFontHighlightSmall")
+    caveRememberDesc:SetPoint("TOPLEFT", caveRememberCheck, "BOTTOMLEFT", 6, -2)
+    caveRememberDesc:SetWidth(500)
+    caveRememberDesc:SetJustifyH("LEFT")
+
     local caveSlider = CreateFrameTry("Slider", "HFWMForeverCaveAlphaSlider",
         panel, "OptionsSliderTemplate", "UISliderTemplate")
-    caveSlider:SetPoint("TOPLEFT", caveDesc, "BOTTOMLEFT", -6, -28)
+    caveSlider:SetPoint("TOPLEFT", caveRememberDesc, "BOTTOMLEFT", -6, -28)
     caveSlider:SetWidth(220)
     caveSlider:SetOrientation("HORIZONTAL")
     caveSlider:SetMinMaxValues(0.2, 1)
@@ -491,16 +615,19 @@ function Options:BuildPanel()
     end
     local hint = Label(panel,
         "|cff999999Also available from chat: /hfwm bg "
-            .. table.concat(keys, "|") .. "  |  /hfwm cave on|off|r",
+            .. table.concat(keys, "|")
+            .. "  |  /hfwm cave on|off|autoopen|remember|r",
         "GameFontHighlightSmall")
     hint:SetPoint("TOPLEFT", caveSlider, "BOTTOMLEFT", 0, -28)
 
-    panel.enable     = enable
-    panel.dropdown   = dropdown
-    panel.bgDesc     = bgDesc
-    panel.slider     = slider
-    panel.caveCheck  = caveCheck
-    panel.caveSlider = caveSlider
+    panel.enable            = enable
+    panel.dropdown          = dropdown
+    panel.bgDesc            = bgDesc
+    panel.slider            = slider
+    panel.caveCheck         = caveCheck
+    panel.caveAutoOpenCheck = caveAutoOpenCheck
+    panel.caveRememberCheck = caveRememberCheck
+    panel.caveSlider        = caveSlider
 
     -- An open list outlives the panel it belongs to: the legacy menu and the
     -- new one both parent themselves high up so they are not clipped, so
@@ -544,6 +671,9 @@ function Options:Refresh()
         ("Opacity: %d%%"):format((Config.db.alpha or 1) * 100))
 
     panel.caveCheck:SetChecked(Config.db.caveEnabled and true or false)
+    panel.caveAutoOpenCheck:SetChecked(Config.db.caveAutoOpen and true or false)
+    panel.caveRememberCheck:SetChecked(
+        Config.db.caveRememberState and true or false)
 
     local caveAlpha = Config:CaveAlpha()
     panel.caveSlider._syncing = true
@@ -551,15 +681,24 @@ function Options:Refresh()
     panel.caveSlider._syncing = false
     panel.caveSlider.textLabel:SetText(
         ("Cave map opacity: %d%%"):format(caveAlpha * 100))
-    -- The opacity of a window you have turned off is not a live setting.
-    -- Enable/Disable rather than SetEnabled: the former has been on Slider
-    -- since vanilla, the latter is a mixin method of uncertain vintage here.
+    -- Nothing below the master checkbox is a live setting when it's off.
+    -- Enable/Disable rather than SetEnabled: the former has been on
+    -- Slider/CheckButton since vanilla, the latter is a mixin method of
+    -- uncertain vintage here.
     if Config.db.caveEnabled then
         panel.caveSlider:Enable()
         panel.caveSlider:SetAlpha(1)
+        panel.caveAutoOpenCheck:Enable()
+        panel.caveAutoOpenCheck:SetAlpha(1)
+        panel.caveRememberCheck:Enable()
+        panel.caveRememberCheck:SetAlpha(1)
     else
         panel.caveSlider:Disable()
         panel.caveSlider:SetAlpha(0.4)
+        panel.caveAutoOpenCheck:Disable()
+        panel.caveAutoOpenCheck:SetAlpha(0.4)
+        panel.caveRememberCheck:Disable()
+        panel.caveRememberCheck:SetAlpha(0.4)
     end
 end
 
@@ -573,7 +712,9 @@ function Options:BuildWindow()
     if self.window then return self.window end
 
     local win = CreateFrame("Frame", "HFWMForeverOptionsWindow", UIParent)
-    win:SetSize(580, 480)
+    -- Matches BuildPanel's taller size (see its own comment) plus the same
+    -- ~20px margin the original 480 left over its 450.
+    win:SetSize(580, 590)
     win:SetPoint("CENTER")
     win:SetFrameStrata("DIALOG")
     win:SetToplevel(true)
@@ -583,7 +724,7 @@ function Options:BuildWindow()
     win:SetScript("OnDragStart", win.StartMoving)
     win:SetScript("OnDragStop", win.StopMovingOrSizing)
     win:Hide()
-    StyleBox(win, 0.03, 0.03, 0.04, 0.96)
+    StyleBox(win, 0.06, 0.05, 0.03, 0.96, true)
 
     local close = CreateFrameTry("Button", nil, win, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", win, "TOPRIGHT", 2, 2)

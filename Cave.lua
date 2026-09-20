@@ -219,6 +219,30 @@ ClientSource = {
         if not pos then return nil end
         return pos:GetXY()
     end,
+
+    --- C_Map has no notion of floors sharing a baked canvas — every real
+    --- dungeon floor is its own distinct art layer — so the client source
+    --- never offers continuous crossfade.
+    ContinuousDepth = function()
+        return false
+    end,
+
+    --- cave-satellite-v2 Phase 2: C_Map has no notion of individually-fading
+    --- sub-floor art pieces either — every real dungeon floor is one whole
+    --- art layer — so the client source never offers any.
+    Pieces = function()
+        return nil
+    end,
+
+    PieceCanvasSize = function()
+        return nil, nil
+    end,
+
+    --- Not needed from this source: nothing baked exists for the client to
+    --- fade by real elevation, so there is nothing for this value to drive.
+    PlayerWorldZ = function()
+        return nil
+    end,
 }
 
 BakedSource = {
@@ -229,8 +253,15 @@ BakedSource = {
     --- The fallback is not cosmetic: the poller compares this value between
     --- ticks to decide whether anything has changed, so returning nil for the
     --- whole outdoor world would leave it blind to the player crossing zones.
+    ---
+    --- Passes the floor already on screen through as FindPlayerFloor's
+    --- tie-break hint, for places whose floors' footprints overlap too much
+    --- for position alone to ever tell apart (Fargodeep Mine's shaft) — see
+    --- FloorForPosition's comment. Without it every ambiguous poll would
+    --- re-guess independently and could flip-flop, or worse, lock onto
+    --- whichever floor wins the guess and never leave it.
     CurrentFloor = function()
-        local floorID = ns.CaveTable:FindPlayerFloor()
+        local floorID = ns.CaveTable:FindPlayerFloor(Config.caveCurrentFloorMapID)
         if floorID then return floorID end
         return C_Map.GetBestMapForUnit("player")
     end,
@@ -267,6 +298,22 @@ BakedSource = {
 
     PlayerPosition = function(floorID)
         return ns.CaveTable:GetPlayerPosition(floorID)
+    end,
+
+    ContinuousDepth = function(floorID)
+        return ns.CaveTable:HasSharedCanvas(floorID)
+    end,
+
+    Pieces = function(floorID)
+        return ns.CaveTable:GetPieces(floorID)
+    end,
+
+    PieceCanvasSize = function(floorID)
+        return ns.CaveTable:GetPieceCanvasSize(floorID)
+    end,
+
+    PlayerWorldZ = function()
+        return ns.CaveTable:GetPlayerWorldZ()
     end,
 }
 
@@ -400,6 +447,50 @@ end
 function Cave:GetPlayerMapXY(floorMapID)
     if not floorMapID then return nil end
     return self:GetSource().PlayerPosition(floorMapID)
+end
+
+--- Should CaveRenderer crossfade this floor's place continuously as the
+--- depth slider moves, rather than hard-swapping floor art? True only for
+--- places whose floors are baked from one shared, aligned canvas (currently
+--- just Fargodeep Mine). Always false from the client source, which has no
+--- such concept.
+function Cave:HasContinuousDepth(floorMapID)
+    if not floorMapID then return false end
+    local source = self:GetSource()
+    return source.ContinuousDepth and source.ContinuousDepth(floorMapID) or false
+end
+
+--- cave-satellite-v2 Phase 2: this floor's place's per-piece art list (see
+--- CaveTable:GetPieces), or nil from the client source and from any baked
+--- place that has no per-piece bake yet. CaveRenderer checks this instead
+--- of (or ahead of) HasContinuousDepth once a place has one: pieces are the
+--- finer-grained replacement for the whole-floor crossfade, not an addition
+--- to it.
+---@param floorMapID number|nil
+---@return table|nil pieces
+function Cave:GetPieces(floorMapID)
+    if not floorMapID then return nil end
+    local source = self:GetSource()
+    return source.Pieces and source.Pieces(floorMapID) or nil
+end
+
+--- The shared canvas size backing GetPieces's list, or nil alongside it.
+---@param floorMapID number|nil
+---@return number|nil canvasW, number|nil canvasH
+function Cave:GetPieceCanvasSize(floorMapID)
+    if not floorMapID then return nil end
+    local source = self:GetSource()
+    if not source.PieceCanvasSize then return nil end
+    return source.PieceCanvasSize(floorMapID)
+end
+
+--- The player's real worldZ (height), for fading the pin against whichever
+--- piece the slider says is at the player's own elevation. nil from the
+--- client source, which has nothing baked to fade against.
+---@return number|nil worldZ
+function Cave:GetPlayerWorldZ()
+    local source = self:GetSource()
+    return source.PlayerWorldZ and source.PlayerWorldZ() or nil
 end
 
 -------------------------------------------------------------------------------
@@ -627,6 +718,10 @@ function Cave:SuppressCurrent()
     -- moment between the window opening and the click landing.
     local mapID = playerMapID or Config.caveCurrentFloorMapID
     Config.caveSuppressedKey = mapID and GroupKey(mapID) or nil
+    -- Only an explicit close counts as "last visible = false" for the
+    -- Remember State option below — walking out of a cave that was still
+    -- showing is not the player choosing to hide it.
+    if Config.db then Config.db.caveLastVisible = false end
 end
 
 --- Forget the suppression, so the next poll opens the window again.
@@ -644,6 +739,14 @@ function Cave:ForceShow()
     if not inCave then return false end
     Config.caveAllFloors = self:BuildFloorList(playerMapID)
     ns.CaveRenderer:ShowCave(playerMapID)
+    -- Belt-and-suspenders: UpdateState's next poll would clear this anyway,
+    -- but the reopen icon (if this was called by clicking it) should vanish
+    -- the instant the window comes back, not up to POLL_INTERVAL later.
+    ns.CaveRenderer:SetReopenAvailable(false)
+    -- The player asked for it open, so that is what Remember State should
+    -- reproduce next time — whether this was the reopen icon, /hfwm cave
+    -- show, or anything else that lands here.
+    if Config.db then Config.db.caveLastVisible = true end
     return true
 end
 
@@ -657,29 +760,69 @@ end
 function Cave:UpdateState()
     if not Config.db or not Config.db.enabled or not Config.db.caveEnabled then
         if Config.caveOverlayActive then ns.CaveRenderer:HideCave() end
+        ns.CaveRenderer:SetReopenAvailable(false)
         return
     end
 
     local inCave, playerMapID = self:IsPlayerInCave()
     if not inCave then
-        -- Out of the cave: drop both the suppression and the pinned floor, so
-        -- walking back in is a clean slate.
+        -- Out of the cave: drop the suppression, the per-visit open/closed
+        -- decision, and the pinned floor, so walking back in — to this cave
+        -- or a different one — is unconditionally a clean slate.
+        -- caveDecidedKey in particular has to go here even though
+        -- caveAllFloors (below) sometimes doesn't: see its own comment in
+        -- Config.lua for why leaning on caveAllFloors alone as "have I
+        -- already handled this visit" was the bug where Open Automatically
+        -- off, or Remember State closed, silently stopped mattering after
+        -- the first leave-and-return.
         Config.caveSuppressedKey = nil
+        Config.caveDecidedKey    = nil
         if Config.caveOverlayActive then ns.CaveRenderer:HideCave() end
+        ns.CaveRenderer:SetReopenAvailable(false)
         return
     end
 
-    if Config.caveSuppressedKey == GroupKey(playerMapID) then
-        if Config.caveOverlayActive then ns.CaveRenderer:HideCave() end
-        return
+    local groupKey = GroupKey(playerMapID)
+
+    -- A group we haven't already decided for is a new visit — the one
+    -- moment to decide whether it opens on its own, before falling into the
+    -- suppression check below. Remember State, when on, wins over Open
+    -- Automatically: it is the more specific of the two ("do what I did
+    -- last time" beats "always/never"). A "no" from either one is applied
+    -- the exact same way the close button is — pre-suppress this visit's
+    -- group key — so every branch below (the reopen icon, ForceShow undoing
+    -- it) already handles it correctly without needing to know *why* it's
+    -- suppressed.
+    if Config.caveDecidedKey ~= groupKey then
+        Config.caveDecidedKey = groupKey
+        local openByDefault
+        if Config.db.caveRememberState then
+            openByDefault = Config.db.caveLastVisible ~= false
+        else
+            openByDefault = Config.db.caveAutoOpen ~= false
+        end
+        Config.caveSuppressedKey = (not openByDefault) and groupKey or nil
     end
 
     -- Rebuild the floor list when the player has moved into a cave whose
-    -- floors we do not already have.
+    -- floors we do not already have. Independent of the decision above —
+    -- this can be stale on its own (e.g. a saved window position restored
+    -- before the player ever walked anywhere) without that meaning the
+    -- open/closed decision needs re-running too.
     if not FloorListCovers(Config.caveAllFloors, playerMapID) then
         Config.caveAllFloors   = self:BuildFloorList(playerMapID)
         Config.caveFloorPinned = false
     end
+
+    if Config.caveSuppressedKey == groupKey then
+        if Config.caveOverlayActive then ns.CaveRenderer:HideCave() end
+        -- Closed, but there is a cave right here to reopen: this is the one
+        -- state the reopen icon exists for.
+        ns.CaveRenderer:SetReopenAvailable(true)
+        return
+    end
+
+    ns.CaveRenderer:SetReopenAvailable(false)
 
     -- Follow the player between floors, unless they have taken the depth
     -- slider off automatic.
@@ -690,6 +833,11 @@ function Cave:UpdateState()
     if Config.caveCurrentFloorMapID ~= playerMapID
        or not Config.caveOverlayActive then
         ns.CaveRenderer:ShowCave(playerMapID)
+        -- This is the "opened on its own" path (auto-open, or Remember
+        -- State finding the last visit open) as well as the ordinary
+        -- follow-the-player floor switch. Both are "visible now", which is
+        -- exactly what Remember State needs recorded.
+        Config.db.caveLastVisible = true
     end
 end
 
@@ -713,6 +861,7 @@ local function OnPollUpdate(_, elapsed)
     -- unreliable on this client.
     if not WorldMapFrame:GetMapID() then
         if Config.caveOverlayActive then ns.CaveRenderer:HideCave() end
+        ns.CaveRenderer:SetReopenAvailable(false)
         return
     end
 

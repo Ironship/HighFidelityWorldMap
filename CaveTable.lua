@@ -120,6 +120,23 @@ function CaveTable:Load()
                 -- art is the plain unrotated bounds-stretch, which
                 -- GetPlayerPosition treats as "use the old formula".
                 projection = src.projection,
+                -- True only when every floor below is baked from the exact
+                -- same composite canvas (currently just Fargodeep Mine; see
+                -- CaveData.lua). Lets CaveRenderer crossfade this place's
+                -- floors continuously as the depth slider moves instead of
+                -- hard-swapping between them. Absent/false is the safe
+                -- default for every place using the generic per-floor
+                -- "paperback" background, which must never crossfade.
+                sharedCanvas = src.sharedCanvas,
+                -- cave-satellite-v2 Phase 2: individually-fading art pieces
+                -- (one per WMO group), each on the same pieceCanvasW/H
+                -- canvas as every floor below. Absent on every place that
+                -- has no per-piece bake yet (everything but Fargodeep Mine
+                -- today), which the renderer treats as "fall back to
+                -- whole-floor crossfade or hard-swap" exactly as before.
+                pieces = src.pieces,
+                pieceCanvasW = src.pieceCanvasW,
+                pieceCanvasH = src.pieceCanvasH,
                 floors  = {},
                 -- Suppression is keyed on this, so it has to be stable across
                 -- a session and distinct from any C_Map group key. The place's
@@ -203,15 +220,30 @@ end
 ---
 --- UnitPosition returns y, x, z, instanceID — Y first, which is easy to get
 --- backwards and produces a pin that is plausibly wrong rather than obviously
---- wrong, so it is unpacked in one place only. Z is passed through too, for
---- FloorForPosition's zMin/zMax tie-break — existing callers that only take
---- the first two return values (worldX, worldY) are unaffected.
----@return number|nil worldX, number|nil worldY, number|nil worldZ
+--- wrong, so it is unpacked in one place only.
+---
+--- z is read and then thrown away unconditionally. It is not just
+--- unreliable on this client — confirmed live at obviously different real
+--- elevations (in and out of Fargodeep Mine, top floor and bottom) — it is
+--- documented (warcraft.wiki.gg/wiki/API_UnitPosition) as a permanent
+--- placeholder that is *always* 0, addon-side, on every version of the
+--- game, with no workaround: HereBeDragons, the library other addons reach
+--- for to avoid exactly this kind of hand-rolled position math, doesn't
+--- expose a Z either, for the same reason — there is nothing behind
+--- UnitPosition for it to expose. A real elevation was never coming through
+--- this call. Keeping it would mean a literal 0 silently wins ContainsZ's
+--- tie-break in FloorForPosition against whichever floor's baked zMin/zMax
+--- happens to straddle 0 (Lower Mines here), locking floor detection and the
+--- elevation marker onto that one floor forever regardless of where the
+--- player actually is. Discarding it instead lets the rectangle test — and
+--- ultimately the manual depth slider — take over, same as any other place
+--- with no baked Z data at all.
+---@return number|nil worldX, number|nil worldY
 local function PlayerWorldXY()
     if not UnitPosition then return nil end
-    local ok, y, x, z = pcall(UnitPosition, "player")
+    local ok, y, x = pcall(UnitPosition, "player")
     if not ok or not x or not y then return nil end
-    return x, y, z
+    return x, y
 end
 
 --- Does this world-space rectangle contain (worldX, worldY)?
@@ -276,9 +308,14 @@ end
 --- shallowest, with the depth slider as how the player says otherwise.
 --- That is not a consolation prize — it is the reason the slider is the
 --- feature's main control rather than a nicety.
+--- `preferredFloorID` is the floor currently on screen, for the case
+--- neither Z nor the rectangles can settle: see the ambiguous-match branch
+--- below. Optional — every existing caller that omits it keeps today's
+--- behaviour exactly.
 ---@param place table
+---@param preferredFloorID number|nil
 ---@return table floor
-local function FloorForPosition(place)
+local function FloorForPosition(place, preferredFloorID)
     local first = place.floors[1]
     if #place.floors == 1 then return first end
 
@@ -300,9 +337,10 @@ local function FloorForPosition(place)
     end
     if zHit then return zHit end
 
-    local best, bestArea
+    local matches, best, bestArea = {}, nil, nil
     for _, floor in ipairs(place.floors) do
         if Contains(floor.bounds, worldX, worldY) then
+            matches[#matches + 1] = floor
             local area = RectArea(floor.bounds)
             -- Smallest containing rectangle wins: a floor whose footprint is
             -- the whole cave says less about where the player is than one cut
@@ -312,6 +350,21 @@ local function FloorForPosition(place)
             end
         end
     end
+
+    -- More than one floor's rectangle claims this position — Fargodeep's
+    -- upper and lower floors overlap almost entirely in the shaft, which is
+    -- exactly the case the Z tie-break above exists for, and it just came up
+    -- empty. Forcing the smallest-rectangle guess here would flip-flop to a
+    -- specific floor and then freeze there, wrong half the time the player
+    -- is actually on the other one. Staying on whatever floor is already
+    -- showing — if it's one of the genuine candidates — isn't a guess, it's
+    -- deferring to the slider, same as this function's fallback always has.
+    if #matches > 1 and preferredFloorID then
+        for _, floor in ipairs(matches) do
+            if floor.id == preferredFloorID then return floor end
+        end
+    end
+
     return best or first
 end
 
@@ -351,15 +404,17 @@ end
 ---   (see its comment), which made the rectangle test fail everywhere,
 ---   independent of this gate — so the gate was never the problem, for
 ---   Fargodeep or anything else, and stays unconditional.
+---@param preferredFloorID number|nil the floor currently on screen, passed
+---  straight through to FloorForPosition for its ambiguous-match fallback
 ---@return number|nil floorID
-function CaveTable:FindPlayerFloor()
+function CaveTable:FindPlayerFloor(preferredFloorID)
     if not loaded then return nil end
 
     local mapID, inInstance = CurrentMapID()
 
     if inInstance then
         local place = mapID and placeByInstance[mapID]
-        if place then return FloorForPosition(place).id end
+        if place then return FloorForPosition(place, preferredFloorID).id end
         -- An instance with no baked table entry: nothing to draw, and
         -- falling through to the name match would only find an unrelated
         -- micro dungeon that happens to share a room name.
@@ -381,7 +436,7 @@ function CaveTable:FindPlayerFloor()
                 if not worldX or not place.bounds then
                     -- No position or no rectangle: the name and being indoors
                     -- are all there is, so take it.
-                    return FloorForPosition(place).id
+                    return FloorForPosition(place, preferredFloorID).id
                 end
                 if Contains(place.bounds, worldX, worldY) then
                     local area = RectArea(place.bounds)
@@ -397,7 +452,7 @@ function CaveTable:FindPlayerFloor()
         if best then break end
     end
 
-    return best and FloorForPosition(best).id or nil
+    return best and FloorForPosition(best, preferredFloorID).id or nil
 end
 
 --- Line-by-line replay of FindPlayerFloor's decision, for /hfwm debug.
@@ -502,6 +557,51 @@ function CaveTable:SamePlace(a, b)
     return fa.place == fb.place
 end
 
+--- Does this floor's place bake every floor from the same aligned canvas
+--- (currently only Fargodeep Mine)? CaveRenderer uses this to decide whether
+--- the depth slider crossfades floors continuously or hard-swaps them.
+function CaveTable:HasSharedCanvas(floorID)
+    local floor = self:GetFloor(floorID)
+    return floor and floor.place.sharedCanvas and true or false
+end
+
+--- cave-satellite-v2 Phase 2: this floor's place's per-piece art list, or
+--- nil when this place has no per-piece bake (see CaveData.lua's `pieces`
+--- and hfwm/cave_minimap.py's generate_fargodeep_pieces). Each entry is
+--- `{ fdid, group, name, zMin, zMax }` — a whole-canvas piece anchored at
+--- (0,0) exactly like a floor tile, differing only in how much of that
+--- canvas its own art actually covers. CaveRenderer uses this list, not
+--- `floors`, to decide what to draw once it's present; `floors` continues
+--- to drive player-location detection and the title bar regardless.
+---@param floorID number|nil
+---@return table|nil pieces
+function CaveTable:GetPieces(floorID)
+    local floor = self:GetFloor(floorID)
+    return floor and floor.place.pieces or nil
+end
+
+--- The shared canvas size backing `GetPieces`'s list, or nil alongside it.
+---@param floorID number|nil
+---@return number|nil canvasW, number|nil canvasH
+function CaveTable:GetPieceCanvasSize(floorID)
+    local floor = self:GetFloor(floorID)
+    if not floor then return nil end
+    return floor.place.pieceCanvasW, floor.place.pieceCanvasH
+end
+
+--- The player's real worldZ (height), independent of any floor's own
+--- zMin/zMax window — cave-satellite-v2 Phase 2 needs this raw value to
+--- fade the player pin against whichever *piece* the slider says is at
+--- the player's own elevation, rather than against a floor-index
+--- distance. Reuses the same UnitPosition read PlayerWorldXY and
+--- FloorForPosition already trust; see PlayerWorldXY's own comment for
+--- why Z is threaded through in one place only.
+---@return number|nil worldZ
+function CaveTable:GetPlayerWorldZ()
+    local _, _, worldZ = PlayerWorldXY()
+    return worldZ
+end
+
 --- The place's name, which is the window's titlebar. Distinct from the floor
 --- name on purpose: the floors of Gnomeregan are called things like "Launch
 --- Bay", so a title taken from the floor would never say "Gnomeregan".
@@ -511,7 +611,7 @@ function CaveTable:GetPlaceName(floorID)
 end
 
 --- Like Cave:BuildFloorList: every floor of the place, topmost first.
----@return table[] floors  [{ mapID, name, relativeHeightIndex }, ...]
+---@return table[] floors  [{ mapID, name, relativeHeightIndex, zMin, zMax }, ...]
 function CaveTable:BuildFloorList(floorID)
     local floor = self:GetFloor(floorID)
     if not floor then return nil end
@@ -525,6 +625,14 @@ function CaveTable:BuildFloorList(floorID)
             mapID = f.id,
             name  = f.name or ("Level " .. i),
             relativeHeightIndex = #all - i,
+            -- Real worldZ range, when this floor was generated with one
+            -- (see CaveData.lua's Fargodeep entries) — carried through
+            -- so CaveRenderer's floor picker can scope a per-piece place's
+            -- pieces and depth-slider range to one floor at a time. nil on
+            -- every floor with no such data, same as the field it's copied
+            -- from.
+            zMin = f.zMin,
+            zMax = f.zMax,
         }
     end
     return out

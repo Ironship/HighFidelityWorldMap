@@ -20,6 +20,42 @@ Config.DEFAULTS = {
     -- `/hfwm cave off`.
     caveEnabled = true,
     caveAlpha   = 0.95,
+
+    -- Cave map (beta): how the window decides to show itself, as opposed to
+    -- whether the feature exists at all (caveEnabled above).
+    --
+    -- caveAutoOpen: the plain rule when Remember State (below) is off —
+    -- show the window the instant a tracked cave is entered, same as this
+    -- addon has always done. Off means it waits at the reopen icon instead,
+    -- every time, until clicked.
+    --
+    -- caveRememberState: instead of the fixed rule above, reproduce
+    -- whichever of open/closed the player left it as last time — set
+    -- automatically as caveLastVisible below, never through Options
+    -- directly. Wins over caveAutoOpen when both would otherwise apply,
+    -- since "what I did last time" is the more specific instruction.
+    --
+    -- caveLastVisible: true means the last thing to happen to the window
+    -- was it being shown (auto-opened, Remember-State-opened, or the
+    -- reopen icon/ForceShow); false means the player explicitly closed it
+    -- (the X button, or /hfwm cave hide). Only read when caveRememberState
+    -- is on, but tracked unconditionally so turning Remember State on for
+    -- the first time already has something real to go on.
+    caveAutoOpen      = true,
+    caveRememberState = false,
+    caveLastVisible   = true,
+
+    -- Cave map height window: the real-world elevation range that stays
+    -- visible as a per-piece place's rooms (currently just Fargodeep Mine)
+    -- are drawn, expressed as two fractions of that place's own aggregate
+    -- [zMin, zMax] span (0 = the bottom of the span, 1 = the top). The user
+    -- drags this directly as a rectangle on the cave map's own depth
+    -- slider (see CaveRenderer's height-window widget) rather than through
+    -- a separate Options control. Defaulting to the full 0..1 span means a
+    -- first-time user sees every piece at once, which is the loosest
+    -- setting asked for.
+    caveHeightWindowTop    = 1.0,
+    caveHeightWindowBottom = 0.0,
 }
 -- The db also carries `caveWindowPoint` — { point, relPoint, x, y, toMap } —
 -- written by CaveRenderer when the window is dragged. It is deliberately not
@@ -35,6 +71,60 @@ function Config:CaveAlpha()
     local a = self.db and self.db.caveAlpha or self.DEFAULTS.caveAlpha
     if type(a) ~= "number" then a = self.DEFAULTS.caveAlpha end
     return math.max(0.2, math.min(1, a))
+end
+
+-------------------------------------------------------------------------------
+-- Cave height window
+--
+-- The rectangle CaveRenderer's height-window widget drags directly on the
+-- cave map's own depth slider: not a single point, but a top and bottom
+-- fraction (each 0..1 against the currently-shown place's aggregate
+-- [zMin, zMax]) bounding the real-world elevation range a per-piece
+-- place's rooms stay visible within. Dragging an edge resizes the window
+-- (narrows or widens the range); dragging the body moves it as a unit.
+-------------------------------------------------------------------------------
+
+--- The smallest gap kept between the top and bottom fractions, so the
+--- window can never collapse to nothing and become ungrabbable.
+Config.HEIGHT_WINDOW_MIN_SPAN = 0.04
+
+--- Current window bounds, clamped to 0..1 and ordered (top >= bottom).
+---@return number top, number bottom
+function Config:CaveHeightWindow()
+    local top    = self.db and self.db.caveHeightWindowTop
+    local bottom = self.db and self.db.caveHeightWindowBottom
+    if type(top) ~= "number" then top = self.DEFAULTS.caveHeightWindowTop end
+    if type(bottom) ~= "number" then
+        bottom = self.DEFAULTS.caveHeightWindowBottom
+    end
+    top    = math.max(0, math.min(1, top))
+    bottom = math.max(0, math.min(1, bottom))
+    if top < bottom then top, bottom = bottom, top end
+    return top, bottom
+end
+
+--- Persist new window bounds. Order-independent (swapped if `top < bottom`)
+--- and enforces HEIGHT_WINDOW_MIN_SPAN by pushing out whichever edge the
+--- caller did *not* just move — e.g. dragging the top handle down onto the
+--- bottom one stops at the minimum span rather than dragging the bottom
+--- edge down with it. Callers still need to push the change out to
+--- anything already on screen — see CaveRenderer's height-window widget.
+---@param top number
+---@param bottom number
+function Config:SetCaveHeightWindow(top, bottom)
+    top    = math.max(0, math.min(1, top or 1))
+    bottom = math.max(0, math.min(1, bottom or 0))
+    if top < bottom then top, bottom = bottom, top end
+    if top - bottom < self.HEIGHT_WINDOW_MIN_SPAN then
+        if bottom + self.HEIGHT_WINDOW_MIN_SPAN <= 1 then
+            top = bottom + self.HEIGHT_WINDOW_MIN_SPAN
+        else
+            bottom = top - self.HEIGHT_WINDOW_MIN_SPAN
+        end
+    end
+    if not self.db then return end
+    self.db.caveHeightWindowTop    = top
+    self.db.caveHeightWindowBottom = bottom
 end
 
 -------------------------------------------------------------------------------
@@ -203,6 +293,7 @@ Config.overlayFrame    = nil   -- Frame parented to the map canvas
 Config.backdropTexture = nil   -- flat colour drawn under the tiles (Renderer)
 Config.overlayActive   = false
 Config.refreshPending  = false
+Config.lastCanvas      = nil   -- WorldMapFrame.ScrollContainer.Child identity
 Config.lastCanvasW     = 0
 Config.lastCanvasH     = 0
 Config.lastMapID       = nil
@@ -217,7 +308,23 @@ Config.caveOverlayActive     = false
 Config.caveCurrentFloorMapID = nil   -- floor on screen right now
 Config.caveAllFloors         = nil   -- [{mapID, name, relativeHeightIndex}, ...]
 Config.caveFloorPinned       = false -- user drove the depth slider; stop following them
+-- The floor dropdown's own state (see CaveRenderer's floor-picker section):
+-- true (the default) layers every floor together exactly as before this
+-- control existed; false scopes both the rendered art and the depth
+-- slider's range to Config.caveCurrentFloorMapID alone. Reset to true
+-- whenever the window closes, same as caveFloorPinned, so re-entering a
+-- cave is always a clean "All" slate.
+Config.caveFloorFilterAll    = true
 Config.caveSuppressedKey     = nil   -- map group the user closed; don't reopen it
+-- Map group Cave:UpdateState has already run the Open Automatically /
+-- Remember State decision for, this visit. Deliberately its own flag
+-- rather than reusing "does caveAllFloors already cover this floor" —
+-- that stays populated (and so looks like "already handled") even after
+-- leaving a cave the settings kept closed, since HideCave (which clears
+-- it) is only ever called on a cave that was actually shown. Cleared
+-- unconditionally on every "player is not in a cave" tick, same moment as
+-- caveSuppressedKey, so a stale value can never survive to the next visit.
+Config.caveDecidedKey        = nil
 Config.caveDisplayedMapID    = nil   -- world-map UiMapID displayed (change detection)
 Config.lastPlayerMapID       = nil   -- GetBestMapForUnit cache (change detection)
 
