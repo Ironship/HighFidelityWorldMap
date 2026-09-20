@@ -124,16 +124,21 @@ ClientSource = {
     --- detect a cave but to tell standing in a mine from standing on the hill
     --- above it, once the name has already said which mine — see
     --- CaveTable.lua's FindPlayerFloor, which gates on it unconditionally.
+    ---
+    --- Second return, `confident`: always true. Both APIs consulted here are
+    --- direct client answers about the player's real position, never a
+    --- guess or a deferral to whatever floor is already on screen — unlike
+    --- the baked source below, this one has nothing to be unconfident about.
     CurrentFloor = function()
         local best = C_Map.GetBestMapForUnit("player")
-        if IsClientInteriorMap(best) then return best end
+        if IsClientInteriorMap(best) then return best, true end
 
         if C_Minimap and C_Minimap.GetUiMapID then
             local mini = C_Minimap.GetUiMapID()
-            if IsClientInteriorMap(mini) then return mini end
+            if IsClientInteriorMap(mini) then return mini, true end
         end
 
-        return best
+        return best, true
     end,
 
     IsInterior = IsClientInteriorMap,
@@ -260,10 +265,18 @@ BakedSource = {
     --- FloorForPosition's comment. Without it every ambiguous poll would
     --- re-guess independently and could flip-flop, or worse, lock onto
     --- whichever floor wins the guess and never leave it.
+    ---
+    --- Second return, `confident`: passed straight through from
+    --- FindPlayerFloor — false exactly when that tie-break hint (or the
+    --- smallest-rectangle fallback) is what answered, rather than real
+    --- position data. The C_Map fallback below is its own last resort, not
+    --- a location fix on any baked floor, so it is unconditionally false
+    --- too.
     CurrentFloor = function()
-        local floorID = ns.CaveTable:FindPlayerFloor(Config.caveCurrentFloorMapID)
-        if floorID then return floorID end
-        return C_Map.GetBestMapForUnit("player")
+        local floorID, confident =
+            ns.CaveTable:FindPlayerFloor(Config.caveCurrentFloorMapID)
+        if floorID then return floorID, confident end
+        return C_Map.GetBestMapForUnit("player"), false
     end,
 
     IsInterior = function(floorID)
@@ -371,7 +384,17 @@ local function IsInteriorMap(mapID)
 end
 
 --- The map/floor ID the player is physically standing on.
----@return number|nil
+---
+--- Second return, `confident`: true when this is a real position fix
+--- rather than a guess or a deferral to whatever floor is already being
+--- shown — see BakedSource.CurrentFloor / FloorForPosition's own comments
+--- for when it isn't. Every existing caller predates this and only reads
+--- the first return, which keeps their behaviour (follow the player,
+--- defer to the slider when ambiguous) exactly as it was; a caller has to
+--- opt in to the second value to change how it treats an ambiguous
+--- answer.
+---@return number|nil floorID
+---@return boolean confident
 function Cave:GetCurrentFloorMapID()
     return self:GetSource().CurrentFloor()
 end

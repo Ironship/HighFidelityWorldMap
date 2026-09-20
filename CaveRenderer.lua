@@ -2327,34 +2327,43 @@ end
 -------------------------------------------------------------------------------
 --- Shown at the player's real position on whichever floor
 --- ns.Cave:GetCurrentFloorMapID() resolves as current — but only when that
---- matches the floor picker's own selection. With the picker on "All"
+--- matches the floor picker's own selection *and* the resolution actually
+--- says so with confidence. With the picker on "All"
 --- (Config.caveFloorFilterAll), every floor is layered together and there
 --- is no single floor to be wrong about, so the pin always shows, same as
 --- before this gate existed. With one floor picked out
 --- (Config.caveCurrentFloorMapID), a pin drawn on a floor the player isn't
---- standing on would be a lie, so it hides instead.
+--- standing on would be a lie, so it hides instead — but only once
+--- GetCurrentFloorMapID's second return says the mismatch is real.
 ---
---- This is a different signal than the one an earlier version of this
---- comment warned off: that was about *elevation* — UnitPosition's Z is a
---- documented, permanent placeholder that is always 0 on every version of
---- the game (see PlayerWorldXY in CaveTable.lua) — which is hopeless for
---- telling apart floors stacked in the same shaft, like Fargodeep Mine's.
---- GetCurrentFloorMapID() doesn't lean on that: it resolves from the
---- player's real X/Y (CaveTable.lua's FindPlayerFloor), with the floor
---- already on screen used only as a tie-break hint for places whose
---- footprints overlap too much for position alone (that same Fargodeep
---- shaft). That tie-break also means this gate fails safe on the ambiguous
---- cases it can't resolve: it favours whatever floor is already picked
---- rather than flickering the pin off.
+--- That second return exists because of a case this gate got wrong before
+--- it existed: Fargodeep Mine's upper and lower floors overlap almost
+--- entirely in the shaft, and with no working elevation signal
+--- (UnitPosition's Z is a documented, permanent placeholder that is always
+--- 0 — see PlayerWorldXY in CaveTable.lua) there is no way to tell them
+--- apart from position alone. FindPlayerFloor's ambiguous-match fallback
+--- (CaveTable.lua's FloorForPosition) handles that by deferring to
+--- whichever floor is already on screen — which is exactly
+--- Config.caveCurrentFloorMapID, the same value this gate compares
+--- against. Comparing the two directly made the check tautological: it
+--- always matched, so the pin never hid in Fargodeep no matter which
+--- floor was picked or where the player actually was. `confident` is
+--- false on exactly that deferral (and on the smallest-rectangle
+--- fallback, another guess rather than a fix), so gating on it as well
+--- keeps the hide/show behaviour for places position genuinely
+--- discriminates between floors — Gnomeregan's four levels, say — without
+--- resurrecting Fargodeep's false negatives.
 local function UpdatePlayerPin()
     if not playerPin then return end
 
-    local playerFloorMapID = ns.Cave:GetCurrentFloorMapID()
+    local playerFloorMapID, confident = ns.Cave:GetCurrentFloorMapID()
     if not playerFloorMapID then playerPin:Hide() return end
 
-    if not Config.caveFloorFilterAll and Config.caveCurrentFloorMapID
+    if confident and not Config.caveFloorFilterAll
+            and Config.caveCurrentFloorMapID
             and playerFloorMapID ~= Config.caveCurrentFloorMapID then
-        -- A specific floor is picked and it isn't this one.
+        -- A specific floor is picked, it isn't this one, and we actually
+        -- know that rather than guessing.
         playerPin:Hide()
         return
     end

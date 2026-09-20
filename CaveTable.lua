@@ -312,15 +312,28 @@ end
 --- neither Z nor the rectangles can settle: see the ambiguous-match branch
 --- below. Optional — every existing caller that omits it keeps today's
 --- behaviour exactly.
+---
+--- The second return, `confident`, is true only when *position* (Z or the
+--- rectangle test) actually discriminated between this place's floors —
+--- false whenever the answer instead came from deferring to
+--- `preferredFloorID` or from the smallest-rectangle tie-break, since
+--- neither of those is really locating the player, just picking something
+--- non-disruptive to show. Callers that only care about "which floor's art
+--- to draw" (the depth slider following the player) can ignore it exactly
+--- as before; a caller that means to assert "the player really is on floor
+--- X" — e.g. hiding the map pin on every *other* floor — must not act on a
+--- `false` one, or it ends up hiding/showing based on a coin flip dressed
+--- up as an answer.
 ---@param place table
 ---@param preferredFloorID number|nil
 ---@return table floor
+---@return boolean confident
 local function FloorForPosition(place, preferredFloorID)
     local first = place.floors[1]
-    if #place.floors == 1 then return first end
+    if #place.floors == 1 then return first, true end
 
     local worldX, worldY, worldZ = PlayerWorldXY()
-    if not worldX then return first end
+    if not worldX then return first, false end
 
     local zHit
     for _, floor in ipairs(place.floors) do
@@ -335,7 +348,7 @@ local function FloorForPosition(place, preferredFloorID)
             zHit = floor
         end
     end
-    if zHit then return zHit end
+    if zHit then return zHit, true end
 
     local matches, best, bestArea = {}, nil, nil
     for _, floor in ipairs(place.floors) do
@@ -351,6 +364,14 @@ local function FloorForPosition(place, preferredFloorID)
         end
     end
 
+    if #matches == 1 then
+        -- Exactly one floor's rectangle claims this position: the
+        -- rectangles *did* discriminate, same as the Z tie-break above.
+        return matches[1], true
+    end
+
+    -- Zero or multiple matches: position alone couldn't settle it.
+    --
     -- More than one floor's rectangle claims this position — Fargodeep's
     -- upper and lower floors overlap almost entirely in the shaft, which is
     -- exactly the case the Z tie-break above exists for, and it just came up
@@ -361,11 +382,11 @@ local function FloorForPosition(place, preferredFloorID)
     -- deferring to the slider, same as this function's fallback always has.
     if #matches > 1 and preferredFloorID then
         for _, floor in ipairs(matches) do
-            if floor.id == preferredFloorID then return floor end
+            if floor.id == preferredFloorID then return floor, false end
         end
     end
 
-    return best or first
+    return best or first, false
 end
 
 --- Every name the client currently offers for where the player is, most
@@ -407,21 +428,26 @@ end
 ---@param preferredFloorID number|nil the floor currently on screen, passed
 ---  straight through to FloorForPosition for its ambiguous-match fallback
 ---@return number|nil floorID
+---@return boolean confident  see FloorForPosition's own doc for what this
+---  means; always false alongside a nil floorID.
 function CaveTable:FindPlayerFloor(preferredFloorID)
-    if not loaded then return nil end
+    if not loaded then return nil, false end
 
     local mapID, inInstance = CurrentMapID()
 
     if inInstance then
         local place = mapID and placeByInstance[mapID]
-        if place then return FloorForPosition(place, preferredFloorID).id end
+        if place then
+            local floor, confident = FloorForPosition(place, preferredFloorID)
+            return floor.id, confident
+        end
         -- An instance with no baked table entry: nothing to draw, and
         -- falling through to the name match would only find an unrelated
         -- micro dungeon that happens to share a room name.
-        return nil
+        return nil, false
     end
 
-    if IsOutdoors and IsOutdoors() then return nil end
+    if IsOutdoors and IsOutdoors() then return nil, false end
 
     local worldX, worldY = PlayerWorldXY()
 
@@ -436,7 +462,9 @@ function CaveTable:FindPlayerFloor(preferredFloorID)
                 if not worldX or not place.bounds then
                     -- No position or no rectangle: the name and being indoors
                     -- are all there is, so take it.
-                    return FloorForPosition(place, preferredFloorID).id
+                    local floor, confident =
+                        FloorForPosition(place, preferredFloorID)
+                    return floor.id, confident
                 end
                 if Contains(place.bounds, worldX, worldY) then
                     local area = RectArea(place.bounds)
@@ -452,7 +480,9 @@ function CaveTable:FindPlayerFloor(preferredFloorID)
         if best then break end
     end
 
-    return best and FloorForPosition(best, preferredFloorID).id or nil
+    if not best then return nil, false end
+    local floor, confident = FloorForPosition(best, preferredFloorID)
+    return floor.id, confident
 end
 
 --- Line-by-line replay of FindPlayerFloor's decision, for /hfwm debug.
