@@ -28,9 +28,16 @@ any other high-fidelity art tile — so ``CaveRenderer.lua`` needs no new
 code, only a ``tiles`` entry that resolves through ``FDID_MAP`` to a
 bundled file instead of a live Blizzard FDID.
 
-Scope: Fargodeep Mine only, as the first proof. ``DUNGEONS`` below is
-where a second micro-dungeon's WMO would be added once this one is
-confirmed in-game.
+Scope: every parsing/compositing primitive below (``parse_wmo_groups``,
+``parse_modf_placements``, ``build_floor_image``, ``world_to_local_
+projection``, etc.) is generic — none of it reads a Fargodeep-specific
+value directly. What *is* still per-mine is a small handful of raw
+FileDataIDs (which WMO, which ADT, which minimap tiles) that identify
+Fargodeep's own placement in the world; those are collected into a
+``MineSpec`` below. ``MINES`` is the registry a second micro-dungeon
+gets added to once its own IDs are known — see ``ECHO_RIDGE`` for a
+stub showing exactly which values are still missing and how to find
+them.
 """
 
 from __future__ import annotations
@@ -117,6 +124,159 @@ FARGODEEP_TILE_FDIDS: dict[int, int] = {
     7: 214618, 8: 214619, 9: 214620, 10: 214621, 11: 214622, 12: 214623,
     13: 214624, 14: 214625, 15: 214626, 16: 214627, 17: 214628, 18: 214629,
     19: 214630, 20: 214631, 21: 214632,
+}
+
+
+@dataclass
+class MineSpec:
+    """Everything ``generate_mine_floors``/``generate_mine_pieces`` need to
+    bake one micro-dungeon's satellite-view art.
+
+    This is the parameterisation of what used to be five Fargodeep-only
+    module globals (``FARGODEEP_WMO_FDID`` and friends, still above —
+    ``FARGODEEP`` below just wraps them). Adding a second mine means
+    filling in one more of these, not writing new baking code.
+    """
+    key: str                     # WorldMap/<key>/ output folder, e.g. "FargodeepMine"
+    wmo_fdid: int | None         # root WMO file (world/wmo/dungeon/.../x.wmo)
+    tile_fdids: dict[int, int]   # WMO group index -> its minimap tile FDID
+    adt_obj0_fdid: int | None    # the _obj0.adt that places wmo_fdid in the world
+    modf_unique_id: int | None   # MODF uniqueId, in case more than one MODF
+                                  # record in that ADT places this same wmo_fdid
+    modf_name_set: int | None    # cross-check against WMOAreaTable's NameSetID
+    floor_fdid_base: int         # synthetic FDID(s) for the whole-floor composite(s)
+    piece_fdid_base: int         # synthetic FDID base for the per-room pieces
+    single_floor: bool = False   # True: one floor, no crossfade/sharedCanvas
+
+
+# Fargodeep Mine — fully populated, in production (see CaveData.lua's
+# "Fargodeep Mine" entry). Wraps the constants above rather than
+# retyping them, so there is exactly one place each number lives.
+FARGODEEP = MineSpec(
+    key="FargodeepMine",
+    wmo_fdid=FARGODEEP_WMO_FDID,
+    tile_fdids=FARGODEEP_TILE_FDIDS,
+    adt_obj0_fdid=FARGODEEP_ADT_OBJ0_FDID,
+    modf_unique_id=FARGODEEP_MODF_UNIQUE_ID,
+    modf_name_set=FARGODEEP_MODF_NAME_SET,
+    floor_fdid_base=FDID_FARGODEEP_UPPER,  # consumes this id and the next (lower)
+    piece_fdid_base=FDID_FARGODEEP_PIECE_BASE,
+    single_floor=False,
+)
+
+# Echo Ridge Mine — progress so far (from a live WMOAreaTable.csv export,
+# build 1.60.1.69913): AreaTableID 34 rows give WMOID=84, NameSetID=3.
+# WMOID 84 is the *base* md_goldmine.wmo (not the "_varianta" model
+# Fargodeep uses, WMOID 996 -- see FARGODEEP_WMO_FDID's comment) -- the
+# same base model already noted there as being reused by several other
+# mines. NameSetID 3 matches Fargodeep's own placement, consistent with
+# both being the same WMO family. Still needed: the base model's own
+# FileDataID (not 110773 -- that's the varianta model), its per-group
+# minimap tile FDIDs, and the ADT placing it (candidate ADT tile (32, 48)
+# on Map 0 "Azeroth", from running CaveData.lua's bounds {-8686, -8500,
+# -306, -27} through world_to_tile on both axes -- (32, 47) as a fallback
+# since the Y span straddles that tile's boundary).
+#
+# AreaTable 34, uiMapID 426 (CaveData.lua already has a
+# generic single-floor entry for it, baked by hfwm/microdungeon.py from
+# this build's own real MicroDungeon world-map art). It has only one
+# floor, so single_floor=True: there is no crossfade/sharedCanvas question
+# for it, only the per-room `pieces` treatment Fargodeep's Phase 2 added.
+#
+# The five fields below are None/empty because — unlike everything else in
+# this file — they cannot be pulled from any table this project already
+# fetches. They have to be looked up once, by hand, exactly the way
+# Fargodeep's were (see FARGODEEP_WMO_FDID's comment above for the worked
+# example); each step below is that same recipe applied to this mine:
+#
+#   1. wmo_fdid       - wago.tools -> DB2 -> WMOAreaTable, filtered to
+#                        AreaTableID 34. Note the WMOID/NameSetID columns,
+#                        then resolve that WMOID to an actual root .wmo
+#                        FileDataID via wago.tools' file browser or the
+#                        wow-listfile (github.com/wowdev/wow-listfile) —
+#                        Fargodeep's WMOID (996) turned out to be
+#                        md_goldmine_varianta.wmo, FDID 110773; expect a
+#                        similarly-named dungeon wmo here, not necessarily
+#                        the same file or even the same base model.
+#   2. adt_obj0_fdid  - CaveData.lua's existing bounds for this place
+#                        ({-8686, -8500, -306, -27}) run through
+#                        hfwm/coordinates.py's world_to_tile on both axes
+#                        to get the covering ADT's column/row, then the
+#                        matching world/maps/<continent>/<continent>_
+#                        <col>_<row>_obj0.adt resolved to a FileDataID
+#                        the same way FARGODEEP_ADT_OBJ0_FDID was.
+#   3. modf_unique_id
+#   4. modf_name_set  - fetch that _obj0.adt and run parse_modf_placements()
+#                        (this file) against wmo_fdid from step 1 to find
+#                        the matching record; its uniqueId and nameSet are
+#                        these two fields. nameSet should match
+#                        WMOAreaTable's NameSetID from step 1 — if it
+#                        doesn't, it's the wrong placement.
+#   5. tile_fdids     - once wmo_fdid's own path is known, call
+#                        fetch_wmo_root + parse_wmo_groups() (this file) to
+#                        enumerate its MOGI groups, then resolve each
+#                        tiled group's minimap tile FDID the same way
+#                        FARGODEEP_TILE_FDIDS was: world/minimaps/wmo/
+#                        dungeon/<wmoName>/<wmoName>_<group:03d>_00_00.blp
+#                        against the listfile.
+#
+# None of this is guessable from inside this repo, and none of it should
+# be trusted un-checked once filled in: Fargodeep's rotation math
+# (world_align_rotation_degrees) is cross-validated against Fargodeep's
+# own live /hfwm debug captures specifically, not against this mine's —
+# so treat a first attempt here as provisional until the same in-game
+# check confirms the cave's orientation and player-pin position look
+# right. Once the five fields above are filled in, run
+# ``python -m hfwm.cave_minimap echoridge`` and paste its output into
+# CaveData.lua / FDIDMap.lua the same way Fargodeep's was.
+#
+# Update (from a live community-listfile.csv, same build): wmo_fdid and
+# tile_fdids resolved cleanly — "world/wmo/dungeon/md_goldmine/md_goldmine
+# .wmo" (the bare name, WMOID 84, matching WMOAreaTable) is FDID 110750,
+# and its own minimap tiles are the *only* "md_goldmine_NNN_00_00.blp"
+# entries with no variant suffix: groups 000-008, FDIDs 214595-214603,
+# nine in a row with no gap. That strongly implies 9 tiled groups
+# numbered from 0 (unlike Fargodeep's varianta, which skips an untiled
+# group 0 and numbers tiles from 1) — but this is only a hypothesis from
+# the listfile; the real group count/order still needs confirming
+# against the WMO file's own MOHD/MOGI chunks once fetched, same as
+# everything parse_wmo_groups() checks for Fargodeep.
+#
+# Fully resolved (from the actual WMO + both candidate ADTs, fetched from
+# cache and parsed with this file's own parse_wmo_groups/parse_modf_
+# placements): the WMO really does have 10 groups, exactly 9 of them
+# (0-8, flags 0x2000) tiled -- matching FDIDs 214595-214603 one-for-one,
+# confirming the tile_fdids guessed from the listfile above needed no
+# changes. Group 9 (flags 0x8, "interior02") is the untiled antiportal/
+# entrance group, the same role Fargodeep's untiled group plays.
+#
+# Both candidate ADTs (778023 and 778028) carry the *same* MODF record
+# for this WMO -- uniqueId 71448, pos (17198.39, 91.62, 25712.89), yaw
+# 325.0, nameSet 3 (matching WMOAreaTable exactly) -- because the
+# placement really does straddle the tile (32,47)/(32,48) seam, as
+# guessed from the bounds earlier. Either FDID works identically;
+# 778028 is kept as primary. Running this position through the same
+# raw-x/z -> world correction Fargodeep's derivation validates
+# (placementWorldX = 32*TILESIZE - pz, placementWorldY = 32*TILESIZE -
+# px) lands at (-8646.22, -131.72) -- inside CaveData.lua's existing
+# bounds {-8686, -8500, -306, -27} on both axes, the same cross-check
+# Fargodeep's own placement was validated with.
+ECHO_RIDGE = MineSpec(
+    key="EchoRidgeMine",
+    wmo_fdid=110750,
+    tile_fdids={i: 214595 + i for i in range(9)},
+    adt_obj0_fdid=778028,
+    modf_unique_id=71448,
+    modf_name_set=3,
+    floor_fdid_base=900000100,   # first free block after Fargodeep's piece range
+    piece_fdid_base=900000200,   # (900000010-900000030) and floor range (...01-02)
+    single_floor=True,
+)
+
+# Registry __main__ dispatches on — see the bottom of this file.
+MINES: dict[str, MineSpec] = {
+    "fargodeep": FARGODEEP,
+    "echoridge": ECHO_RIDGE,
 }
 
 
@@ -600,25 +760,55 @@ def world_to_local_projection(placement: WmoPlacement,
     }
 
 
-def generate_fargodeep(scale: float = MINIMAP_PX_PER_UNIT) -> dict:
-    """Fetch, parse, composite and encode Fargodeep Mine's two floors.
+def _require_discovered(spec: MineSpec) -> None:
+    """Fail fast, before any network call, if *spec* is still a stub.
+
+    Raises rather than letting ``fetch_wmo_root(None)`` etc. blow up deep
+    inside a confusing traceback — see ECHO_RIDGE's comment above for what
+    to fill in and how.
+    """
+    missing = [
+        field for field, value in (
+            ("wmo_fdid", spec.wmo_fdid),
+            ("adt_obj0_fdid", spec.adt_obj0_fdid),
+            ("modf_unique_id", spec.modf_unique_id),
+            ("modf_name_set", spec.modf_name_set),
+        ) if value is None
+    ] + (["tile_fdids"] if not spec.tile_fdids else [])
+    if missing:
+        raise ValueError(
+            f"MineSpec {spec.key!r} is missing {', '.join(missing)} — see "
+            f"the comment above its definition in this file for how to "
+            f"look them up before generating anything for it."
+        )
+
+
+def generate_mine_floors(spec: MineSpec, scale: float = MINIMAP_PX_PER_UNIT) -> dict:
+    """Fetch, parse, composite and encode *spec*'s floor(s).
 
     ``scale`` is Blizzard's own fixed minimap-baking scale (px/world-unit),
     not a target size to fit — see MINIMAP_PX_PER_UNIT. The canvas is
     *derived* from it (span * scale), never chosen first and fitted to.
 
-    Writes ``WorldMap/FargodeepMine/{upper,lower}.blp`` and returns the Lua
-    fragment values (layerW/layerH/tileW/tileH/cols/rows/tiles, and the
-    synthetic FDID -> relative-path pairs for FDIDMap.lua) needed to wire
-    them into CaveData.lua and FDIDMap.lua.
+    Writes ``WorldMap/<spec.key>/<floor>.blp`` (``upper``/``lower`` for a
+    two-floor place, just ``floor`` when ``spec.single_floor``) and returns
+    the Lua fragment values (layerW/layerH/tileW/tileH/cols/rows/tiles, and
+    the synthetic FDID -> relative-path pairs for FDIDMap.lua) needed to
+    wire them into CaveData.lua and FDIDMap.lua.
     """
-    root_bytes = fetch_wmo_root(FARGODEEP_WMO_FDID)
-    groups = parse_wmo_groups(root_bytes, FARGODEEP_TILE_FDIDS)
+    _require_discovered(spec)
+    root_bytes = fetch_wmo_root(spec.wmo_fdid)
+    groups = parse_wmo_groups(root_bytes, spec.tile_fdids)
     by_index = {g.index: g for g in groups}
 
-    lower_idx, upper_idx = split_floors_by_height(groups)
-
     tiled_idx = [g.index for g in groups if g.tile_fdid is not None]
+
+    if spec.single_floor:
+        floors = {"floor": sorted(tiled_idx)}
+    else:
+        lower_idx, upper_idx = split_floors_by_height(groups)
+        floors = {"upper": upper_idx, "lower": lower_idx}
+
     tiles = {i: fetch_tile(by_index[i].tile_fdid) for i in tiled_idx}
 
     xs = [by_index[i].bbox[0] for i in tiled_idx] + \
@@ -636,93 +826,107 @@ def generate_fargodeep(scale: float = MINIMAP_PX_PER_UNIT) -> dict:
                    for i in tiled_idx)
     canvas_h = max(round((maxy - by_index[i].bbox[4]) * scale) + tiles[i].height
                    for i in tiled_idx)
-    # Pre-rotation canvas size, kept for the projection block below — both
-    # floors share this exact (canvas_w, canvas_h) at this point in the
-    # function, before either gets rotated/padded.
+    # Pre-rotation canvas size, kept for the projection block below — every
+    # floor shares this exact (canvas_w, canvas_h) at this point in the
+    # function, before any of them get rotated/padded.
     pre_rotate_w, pre_rotate_h = canvas_w, canvas_h
 
-    out_dir = WORLDMAP_DIR / "FargodeepMine"
+    out_dir = WORLDMAP_DIR / spec.key
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    upper_img = build_floor_image(
-        by_index, upper_idx, tiles, minx, maxy, canvas_w, canvas_h, scale)
-    lower_img = build_floor_image(
-        by_index, lower_idx, tiles, minx, maxy, canvas_w, canvas_h, scale)
+    images = {
+        name: build_floor_image(
+            by_index, idx, tiles, minx, maxy, canvas_w, canvas_h, scale)
+        for name, idx in floors.items()
+    }
 
-    # Rotate both floors into world/true-north-up orientation. Same yaw
-    # for both: they're two floors of one WMO instance, placed as a unit
+    # Rotate every floor into world/true-north-up orientation. Same yaw for
+    # all of them: they're floor(s) of one WMO instance, placed as a unit
     # (see world_align_rotation_degrees's docstring for why this step
     # exists and where the angle comes from).
     placement = fetch_wmo_world_placement(
-        FARGODEEP_ADT_OBJ0_FDID, FARGODEEP_WMO_FDID, FARGODEEP_MODF_UNIQUE_ID)
+        spec.adt_obj0_fdid, spec.wmo_fdid, spec.modf_unique_id)
     placement_yaw = placement.rotation[1]
     rotate_angle = world_align_rotation_degrees(placement_yaw)
 
     # Real per-floor worldZ ranges for CaveTable.lua's floor-selection tie
     # break — see world_z_range_for_groups's docstring for why the DB2-baked
     # bounds can't provide this themselves.
-    lower_z_range = world_z_range_for_groups(by_index, lower_idx, placement)
-    upper_z_range = world_z_range_for_groups(by_index, upper_idx, placement)
-    upper_img = upper_img.rotate(rotate_angle, expand=True, fillcolor=(0, 0, 0, 255))
-    lower_img = lower_img.rotate(rotate_angle, expand=True, fillcolor=(0, 0, 0, 255))
-    # expand=True can size the two floors' canvases slightly differently
+    z_ranges = {
+        name: world_z_range_for_groups(by_index, idx, placement)
+        for name, idx in floors.items()
+    }
+    images = {
+        name: img.rotate(rotate_angle, expand=True, fillcolor=(0, 0, 0, 255))
+        for name, img in images.items()
+    }
+    # expand=True can size each floor's canvas slightly differently
     # (rotating a WxH box by a non-multiple-of-90 angle rounds bounding
     # dimensions independently) even though they were built on one shared
-    # WxH canvas beforehand; pad both to the union so layerW/layerH stays
-    # single-valued, same as CaveData.lua expects one size per place.
-    out_w = max(upper_img.width, lower_img.width)
-    out_h = max(upper_img.height, lower_img.height)
-    if upper_img.size != (out_w, out_h):
-        padded = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 255))
-        padded.paste(upper_img, (0, 0))
-        upper_img = padded
-    if lower_img.size != (out_w, out_h):
-        padded = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 255))
-        padded.paste(lower_img, (0, 0))
-        lower_img = padded
+    # WxH canvas beforehand; pad all of them to the union so layerW/layerH
+    # stays single-valued, same as CaveData.lua expects one size per place.
+    out_w = max(img.width for img in images.values())
+    out_h = max(img.height for img in images.values())
+    for name, img in images.items():
+        if img.size != (out_w, out_h):
+            padded = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 255))
+            padded.paste(img, (0, 0))
+            images[name] = padded
     canvas_w, canvas_h = out_w, out_h
 
-    (out_dir / "upper.blp").write_bytes(encode_blp2_bgra(upper_img))
-    (out_dir / "lower.blp").write_bytes(encode_blp2_bgra(lower_img))
+    for name, img in images.items():
+        (out_dir / f"{name}.blp").write_bytes(encode_blp2_bgra(img))
 
     # World<->pixel projection for CaveTable.lua's GetPlayerPosition — see
     # world_align_rotation_degrees's docstring for the rotation half of this
-    # and world_to_local_projection() below for the placement half. Both
-    # floors share every one of these values (same WMO instance, same
-    # composite pipeline, same shared pre-rotation canvas), so this is one
-    # block at the *place* level, not duplicated per floor.
+    # and world_to_local_projection() below for the placement half. Every
+    # floor shares each of these values (same WMO instance, same composite
+    # pipeline, same shared pre-rotation canvas), so this is one block at
+    # the *place* level, not duplicated per floor.
     projection = world_to_local_projection(
         placement, minx, maxy, scale, pre_rotate_w, pre_rotate_h,
         rotate_angle, canvas_w, canvas_h)
 
-    common = dict(layerW=canvas_w, layerH=canvas_h,
-                  tileW=canvas_w, tileH=canvas_h, cols=1, rows=1)
-    return {
-        "upper": {**common, "tiles": [FDID_FARGODEEP_UPPER],
-                  "groups": sorted(upper_idx),
-                  "names": [by_index[i].name for i in sorted(upper_idx)],
-                  "zMin": upper_z_range[0], "zMax": upper_z_range[1]},
-        "lower": {**common, "tiles": [FDID_FARGODEEP_LOWER],
-                  "groups": sorted(lower_idx),
-                  "names": [by_index[i].name for i in sorted(lower_idx)],
-                  "zMin": lower_z_range[0], "zMax": lower_z_range[1]},
-        "fdid_map_entries": {
-            FDID_FARGODEEP_UPPER: "FargodeepMine\\upper",
-            FDID_FARGODEEP_LOWER: "FargodeepMine\\lower",
-        },
-        "canvas": (canvas_w, canvas_h),
-        "projection": projection,
-        # Mirrors CaveData.lua's place-level `sharedCanvas = true`: both
-        # floors above are baked from this exact same composite canvas, so
-        # they're eligible for the depth-slider crossfade rather than a
-        # hard swap. Keep this in the generator so a future regen doesn't
-        # silently drop the flag from the hand-maintained Lua table.
-        "sharedCanvas": True,
+    # Two floors share consecutive synthetic FDIDs starting at
+    # floor_fdid_base (upper, then lower) to match how FARGODEEP_UPPER/
+    # _LOWER were already laid out; a single floor just consumes the one.
+    floor_names = list(floors)
+    fdids = {
+        name: spec.floor_fdid_base + i for i, name in enumerate(floor_names)
     }
 
+    common = dict(layerW=canvas_w, layerH=canvas_h,
+                  tileW=canvas_w, tileH=canvas_h, cols=1, rows=1)
+    result = {
+        name: {**common, "tiles": [fdids[name]],
+               "groups": sorted(idx),
+               "names": [by_index[i].name for i in sorted(idx)],
+               "zMin": z_ranges[name][0], "zMax": z_ranges[name][1]}
+        for name, idx in floors.items()
+    }
+    result["fdid_map_entries"] = {
+        fdid: f"{spec.key}\\{name}" for name, fdid in fdids.items()
+    }
+    result["canvas"] = (canvas_w, canvas_h)
+    result["projection"] = projection
+    # Mirrors CaveData.lua's place-level `sharedCanvas = true`: true only
+    # when there's more than one floor baked from this exact same
+    # composite canvas, making them eligible for the depth-slider
+    # crossfade rather than a hard swap. Always false for a single-floor
+    # place — there's nothing to crossfade with. Keep this in the
+    # generator so a future regen doesn't silently drop/add the flag by
+    # hand in CaveData.lua.
+    result["sharedCanvas"] = len(floors) > 1
+    return result
 
-def generate_fargodeep_pieces(scale: float = MINIMAP_PX_PER_UNIT) -> dict:
-    """Bake each of Fargodeep Mine's 21 tiled WMO groups as its own piece.
+
+def generate_fargodeep(scale: float = MINIMAP_PX_PER_UNIT) -> dict:
+    """Back-compat alias — see ``generate_mine_floors``."""
+    return generate_mine_floors(FARGODEEP, scale)
+
+
+def generate_mine_pieces(spec: MineSpec, scale: float = MINIMAP_PX_PER_UNIT) -> dict:
+    """Bake each of *spec*'s tiled WMO groups as its own piece.
 
     Phase 1 baked two *floor* composites (upper.blp, lower.blp) and
     crossfaded between them as the depth slider moved. The user's Phase 2
@@ -761,10 +965,11 @@ def generate_fargodeep_pieces(scale: float = MINIMAP_PX_PER_UNIT) -> dict:
 
     Returns the per-piece Lua fragment values (fdid, group index/name,
     zMin/zMax) plus the FDIDMap.lua entries and the shared canvas size,
-    mirroring generate_fargodeep's return shape.
+    mirroring generate_mine_floors's return shape.
     """
-    root_bytes = fetch_wmo_root(FARGODEEP_WMO_FDID)
-    groups = parse_wmo_groups(root_bytes, FARGODEEP_TILE_FDIDS)
+    _require_discovered(spec)
+    root_bytes = fetch_wmo_root(spec.wmo_fdid)
+    groups = parse_wmo_groups(root_bytes, spec.tile_fdids)
     by_index = {g.index: g for g in groups}
 
     tiled_idx = sorted(i for i in by_index if by_index[i].tile_fdid is not None)
@@ -775,20 +980,20 @@ def generate_fargodeep_pieces(scale: float = MINIMAP_PX_PER_UNIT) -> dict:
     ys = [by_index[i].bbox[1] for i in tiled_idx] + \
          [by_index[i].bbox[4] for i in tiled_idx]
     minx, maxy = min(xs), max(ys)
-    # Same derivation as generate_fargodeep: size the (pre-rotation) canvas
-    # off where each tile's native-resolution rectangle actually lands, not
-    # bbox span * scale, so no tile clips.
+    # Same derivation as generate_mine_floors: size the (pre-rotation)
+    # canvas off where each tile's native-resolution rectangle actually
+    # lands, not bbox span * scale, so no tile clips.
     canvas_w = max(round((by_index[i].bbox[0] - minx) * scale) + tiles[i].width
                    for i in tiled_idx)
     canvas_h = max(round((maxy - by_index[i].bbox[4]) * scale) + tiles[i].height
                    for i in tiled_idx)
 
     placement = fetch_wmo_world_placement(
-        FARGODEEP_ADT_OBJ0_FDID, FARGODEEP_WMO_FDID, FARGODEEP_MODF_UNIQUE_ID)
+        spec.adt_obj0_fdid, spec.wmo_fdid, spec.modf_unique_id)
     placement_yaw = placement.rotation[1]
     rotate_angle = world_align_rotation_degrees(placement_yaw)
 
-    out_dir = WORLDMAP_DIR / "FargodeepMine" / "pieces"
+    out_dir = WORLDMAP_DIR / spec.key / "pieces"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     piece_imgs: dict[int, Image.Image] = {}
@@ -801,7 +1006,7 @@ def generate_fargodeep_pieces(scale: float = MINIMAP_PX_PER_UNIT) -> dict:
         piece_imgs[i] = img
         piece_z[i] = world_z_range_for_groups(by_index, [i], placement)
 
-    # Same union-pad safety net generate_fargodeep uses: expand=True can
+    # Same union-pad safety net generate_mine_floors uses: expand=True can
     # round each single-group canvas's rotated bounding box to a slightly
     # different (w, h) even though every one started from the identical
     # pre-rotation canvas size, so pad every piece to the union.
@@ -816,8 +1021,8 @@ def generate_fargodeep_pieces(scale: float = MINIMAP_PX_PER_UNIT) -> dict:
     pieces = []
     fdid_map_entries = {}
     for order, i in enumerate(tiled_idx):
-        fdid = FDID_FARGODEEP_PIECE_BASE + order
-        rel = f"FargodeepMine\\pieces\\piece{order:02d}"
+        fdid = spec.piece_fdid_base + order
+        rel = f"{spec.key}\\pieces\\piece{order:02d}"
         (out_dir / f"piece{order:02d}.blp").write_bytes(
             encode_blp2_bgra(piece_imgs[i]))
         fdid_map_entries[fdid] = rel
@@ -834,12 +1039,17 @@ def generate_fargodeep_pieces(scale: float = MINIMAP_PX_PER_UNIT) -> dict:
     }
 
 
-if __name__ == "__main__":
-    result = generate_fargodeep()
+def generate_fargodeep_pieces(scale: float = MINIMAP_PX_PER_UNIT) -> dict:
+    """Back-compat alias — see ``generate_mine_pieces``."""
+    return generate_mine_pieces(FARGODEEP, scale)
+
+
+def _print_floors_result(spec: MineSpec, result: dict) -> None:
     print("canvas:", result["canvas"])
-    for floor in ("upper", "lower"):
-        f = result[floor]
-        print(f"\n-- {floor} --")
+    for floor_name in [k for k in result if k not in
+                        ("fdid_map_entries", "canvas", "projection", "sharedCanvas")]:
+        f = result[floor_name]
+        print(f"\n-- {floor_name} --")
         print(f"  groups: {f['groups']}")
         print(f"  names:  {f['names']}")
         print(f"  layerW = {f['layerW']}, layerH = {f['layerH']},")
@@ -861,7 +1071,8 @@ if __name__ == "__main__":
     print(f"  placementWorldX = {p['placementWorldX']:.6f}, placementWorldY = {p['placementWorldY']:.6f},")
     print(f"\nsharedCanvas = {result['sharedCanvas']},")
 
-    pieces_result = generate_fargodeep_pieces()
+
+def _print_pieces_result(pieces_result: dict) -> None:
     print("\n\n== per-piece (Phase 2) ==")
     print("canvas:", pieces_result["canvas"])
     print("\n-- pieces (CaveData.lua place.pieces) --")
@@ -874,3 +1085,23 @@ if __name__ == "__main__":
         print(f'    [{fdid}] = "{rel}",')
     pw, ph = pieces_result["canvas"]
     print(f"\npieceCanvasW = {pw}, pieceCanvasH = {ph},")
+
+
+if __name__ == "__main__":
+    import sys
+
+    key = sys.argv[1] if len(sys.argv) > 1 else "fargodeep"
+    if key not in MINES:
+        print(f"Unknown mine {key!r}. Known: {', '.join(MINES)}", file=sys.stderr)
+        sys.exit(2)
+    spec = MINES[key]
+
+    try:
+        floors_result = generate_mine_floors(spec)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+    _print_floors_result(spec, floors_result)
+
+    pieces_result = generate_mine_pieces(spec)
+    _print_pieces_result(pieces_result)

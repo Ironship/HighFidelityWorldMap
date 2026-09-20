@@ -20,6 +20,11 @@
 --     leaves the world map visible around it. A cave stretched to the shape
 --     of the canvas is unreadable.
 --   * Draggable, with the position remembered across sessions.
+--   * The art inside the window can also be zoomed and panned in its own
+--     right — mouse wheel over the content area zooms toward the cursor,
+--     left-drag over it pans — independently of the window's own position
+--     and of whatever the world map underneath is doing. See the "Zoom &
+--     pan" section below.
 --
 -- Multi-level caves get a vertical depth slider down the right-hand side,
 -- one notch per floor, top floor at the top. The slider is the only widget
@@ -121,6 +126,28 @@ local MAP_FRACTION_H = 0.58
 local MIN_CONTENT  = 200
 local MAX_CONTENT  = 640
 
+-- Zoom range for the content area's own picture (see the "Zoom & pan"
+-- section below). 1 is exactly the fit LayoutWindow already computes —
+-- the whole cave visible, nothing cropped — so it doubles as "no zoom" and
+-- as the floor no amount of zooming out can go past: there is nothing
+-- beyond the fitted view to reveal. MAX_ZOOM is capped well short of the
+-- point where the base layer's own tile resolution would be stretched into
+-- an obviously blurry blob — this magnifies the art that's already drawn
+-- rather than fetching a sharper source layer (see ArtLayer below).
+local MIN_ZOOM  = 1
+local MAX_ZOOM  = 4
+-- Multiplicative step per wheel notch, so a handful of notches carries the
+-- user from MIN_ZOOM to MAX_ZOOM at a comfortable rate rather than a single
+-- jarring jump or a fifty-notch crawl.
+local ZOOM_STEP = 1.25
+-- How far the cursor has to move, in content-local pixels, before ZoomBy
+-- treats it as "moved" and re-samples a new zoom anchor rather than
+-- reusing the one from the last notch — see the module comment above
+-- zoomAnchorX. Comfortably above the sub-pixel jitter GetCursorPosition
+-- can report while the physical mouse hasn't moved at all, comfortably
+-- below any deliberate mouse movement.
+local ZOOM_ANCHOR_EPSILON = 1.5
+
 local PIN_TEXTURE = "Interface\\Minimap\\MinimapArrow"
 local PIN_SIZE    = 26
 
@@ -148,11 +175,46 @@ local closeBtn      -- the x, in the top-right corner
 local titleText     -- area name
 local floorText     -- "Level 2 of 4 — The Deadmines"
 local content       -- clipping frame the tiles and the pin live in
+local canvasScale   -- child of content: zoomed/panned, holds tiles + pin
 local backdropTex   -- flat dark fill behind the tiles
 local playerPin
 local sliderCol     -- gutter frame, hidden on single-floor caves
 local sliderTrack   -- the notched track (a Slider, for real drag behaviour)
 local notches       -- { {tick=Texture, hit=Button}, ... }
+
+-- Zoom/pan runtime state (see the "Zoom & pan" section below, just above
+-- EnsureWindow). `zoomScale` and `panX`/`panY` describe canvasScale's
+-- current transform and deliberately persist across floor switches and
+-- window relayouts within the same cave — both funnel through ShowCave,
+-- and resetting these on every call would throw away the user's zoom the
+-- instant they touched the depth slider or resized the map. HideCave
+-- resets them, so a freshly opened cave — this one again, or a different
+-- one entirely — always starts at fit-to-window.
+--
+-- `contentDrag`, when non-nil, is `{ startX, startY, startPanX, startPanY }`
+-- for a pan drag in progress — the same hand-polled pattern as
+-- `heightWindowDrag` below (OnMouseDown to start, OnUpdate plus a live
+-- IsMouseButtonDown check to follow and to notice release).
+local zoomScale    = MIN_ZOOM
+local panX, panY   = 0, 0
+local contentDrag
+
+-- `zoomAnchorX`/`zoomAnchorY`: the canvas-local point (see ContentCursorXY
+-- for the coordinate convention) that ZoomBy is currently zooming toward
+-- centering. Set from wherever the cursor is the first time it's needed,
+-- then deliberately *not* recomputed on every notch — see ZoomBy's own
+-- comment for why re-sampling "what's under the cursor" fresh each notch,
+-- while the cursor sits still and the picture moves underneath it, is
+-- exactly what made a stationary scroll drift onto a different part of
+-- the map. `zoomAnchorCursorX`/`zoomAnchorCursorY` are the cursor position
+-- the anchor was last sampled at, purely so the next notch can tell
+-- whether the cursor has actually moved since. All four go back to nil
+-- whenever the anchor would no longer mean anything — the content area
+-- being resized (LayoutWindow) or the cave window closing (HideCave) —
+-- so the next notch always samples fresh rather than centering a point
+-- left over from a different layout.
+local zoomAnchorX, zoomAnchorY
+local zoomAnchorCursorX, zoomAnchorCursorY
 
 -- Floor picker (dropdown), top-right of the content frame — see the "Floor
 -- picker" section below. A real UIDropDownMenuTemplate frame, built lazily;
@@ -239,7 +301,10 @@ local lastRenderInfo = nil
 local function PoolAcquire(group)
     local tex = tremove(cavePool)
     if not tex then
-        tex = content:CreateTexture(nil, "ARTWORK", nil, 3)
+        -- On canvasScale, not `content` directly: see the "Zoom & pan"
+        -- section below EnsureReopenButton — this is what makes the tile
+        -- grid zoom and pan instead of sitting fixed in the viewport.
+        tex = canvasScale:CreateTexture(nil, "ARTWORK", nil, 3)
     end
     tex:SetVertexColor(1, 1, 1, 1)
     tex:Show()
@@ -1172,12 +1237,26 @@ local function LayoutNotches(floors, currentMapID)
     local trackH = contentH
     if trackH <= 0 then return end
 
+    -- A single floor has nothing to notch *between* -- this only runs at
+    -- all for a single-floor place when it has active pieces (see
+    -- SyncSlider's own n <= 1 guard), where the height-window rectangle is
+    -- the sole control on the track. A lone centred tick there marks
+    -- nothing and just clutters a clean track, so hide whatever notches
+    -- exist from a previous, multi-floor place and stop rather than
+    -- drawing one.
+    if n <= 1 then
+        for i = 1, #notches do
+            notches[i]:Hide()
+        end
+        return
+    end
+
     local inset  = SLIDER_INSET
     local usable = trackH - inset * 2
 
     for i, floor in ipairs(floors) do
         local notch  = GetOrCreateNotch(i)
-        local frac   = (n > 1) and ((IndexToValue(i) - 1) / (n - 1)) or 0.5
+        local frac   = (IndexToValue(i) - 1) / (n - 1)
         local offset = inset + usable * frac   -- measured up from the bottom
         local active = (floor.mapID == currentMapID)
 
@@ -1205,7 +1284,18 @@ end
 --- between floors rather than snapping to each one in turn.
 local function SyncSlider(floors, currentMapID, continuous)
     local n = floors and #floors or 0
-    if n <= 1 then
+    -- A single floor with no active pieces has nothing to slide between at
+    -- all -- the ordinary case, and every generic single-floor mine in the
+    -- game hits it. But a single floor *with* pieces (Echo Ridge Mine, and
+    -- any future single-floor cave-satellite-v2 place) still has a real
+    -- piece elevation range worth scrubbing through by hand via the height
+    -- window (see SyncHeightWindow/EnsureHeightWindow) -- `continuous` is
+    -- already `continuousActive or piecesActive` from the caller, so it is
+    -- true in exactly that case. Everything below already tolerates n == 1:
+    -- SetMinMaxValues(1, 1) just freezes the (hidden, once pieces are
+    -- active -- see SyncHeightWindow) thumb, and LayoutNotches falls back
+    -- to a single centred notch when n <= 1.
+    if n <= 1 and not continuous then
         if sliderCol then sliderCol:Hide() end
         return
     end
@@ -1756,6 +1846,163 @@ function CaveRenderer:SetReopenAvailable(available)
     end
 end
 
+-------------------------------------------------------------------------------
+-- Zoom & pan
+--
+-- canvasScale is a plain child frame of `content`, sized to match it
+-- exactly (see LayoutWindow) and holding every piece of the actual cave
+-- picture: the tile/piece textures RenderTiles and RenderContinuousPieces
+-- draw, and the player pin. Neither of those functions knows zoom exists —
+-- they still size and place everything against plain contentW/contentH
+-- pixels, exactly as before this section existed. The magnification and
+-- the shift are applied in exactly one place, ApplyCanvasTransform, via
+-- canvasScale:SetScale and its own anchor offset from `content`'s TOPLEFT:
+-- a texture inside canvasScale at logical position (x, y) with size (w, h)
+-- ends up on screen at (panX + x*zoomScale, panY + y*zoomScale) sized
+-- (w*zoomScale, h*zoomScale), simply from the chain of effective scales —
+-- no per-tile math anywhere else has to change for that to be true.
+--
+-- `content` still clips its children (see EnsureWindow), and that clip is
+-- based on content's own fixed on-screen rect regardless of what canvasScale
+-- is doing inside it, so a zoomed-in, panned canvasScale is cropped to the
+-- window's content area for free rather than needing a second clip frame.
+-------------------------------------------------------------------------------
+
+--- Cursor position in content-local pixels: 0,0 at content's own TOPLEFT,
+--- x growing right, y growing *down* as an increasingly negative number —
+--- the same convention RenderTiles already anchors every tile with (see
+--- `-(row * tilePxH * scaleY)` there), so a point measured here lines up
+--- with the tile grid without a sign flip anywhere in this section.
+--- Returns 0, 0 if content has no resolved rect yet (nothing shown, or
+--- shown for the first time this frame).
+local function ContentCursorXY()
+    if not content then return 0, 0 end
+    local scale = content:GetEffectiveScale()
+    if not scale or scale == 0 then return 0, 0 end
+    local x, y = GetCursorPosition()
+    x, y = x / scale, y / scale
+    local left, top = content:GetLeft(), content:GetTop()
+    if not left or not top then return 0, 0 end
+    return x - left, y - top
+end
+
+--- Keep canvasScale from panning far enough that the flat backdrop shows
+--- through inside the content viewport. At zoomScale 1 both bounds collapse
+--- to 0 — no pan is possible, which is correct: there is nothing beyond the
+--- fitted view to reveal.
+local function ClampPan()
+    local maxX = 0
+    local minX = contentW * (1 - zoomScale)
+    panX = math.max(minX, math.min(maxX, panX))
+
+    local minY = 0
+    local maxY = contentH * (zoomScale - 1)
+    panY = math.max(minY, math.min(maxY, panY))
+end
+
+--- Push zoomScale/panX/panY onto canvasScale — the only place either value
+--- is actually read into the frame tree. Every other function in this
+--- section only ever changes the numbers and calls this (normally right
+--- after ClampPan).
+local function ApplyCanvasTransform()
+    if not canvasScale then return end
+    canvasScale:SetScale(zoomScale)
+    canvasScale:ClearAllPoints()
+    canvasScale:SetPoint("TOPLEFT", content, "TOPLEFT", panX, panY)
+end
+
+--- Change zoom by `factor` (>1 in, <1 out), driving the picture toward
+--- centering whichever canvas point the cursor is anchored to — see the
+--- module comment above zoomAnchorX for what "anchored to" means and why.
+---
+--- The two things this deliberately does *not* do, both tried first:
+---
+---   - Keep the exact pixel under the cursor pinned in place (the "browser
+---     zoom" behaviour). Mathematically stable, but it never moves the
+---     clicked point toward the centre at all — it stays exactly where the
+---     cursor is, which for a click near an edge of a window this small
+---     reads as the *rest* of the picture rushing past it rather than the
+---     clicked thing settling into view.
+---   - Recompute "what's under the cursor" fresh on every notch and try to
+---     centre *that*. This is the one that actually shipped for a bit, and
+---     it has a real bug with the cursor held still: the first notch moves
+---     the clicked content most of the way to centre, which means the
+---     *second* notch's fresh cursor sample lands on a different part of
+---     the canvas than the first one did (the picture moved, the cursor
+---     didn't), and centres *that* instead — so a stationary scroll visibly
+---     hunts across the map from notch to notch instead of drilling into
+---     one spot, exactly backwards from "keep the mouse still and zoom in
+---     on that object."
+---
+--- The fix behind zoomAnchorX/zoomAnchorY: sample the canvas point under
+--- the cursor once, the first notch after the cursor lands somewhere new,
+--- and keep re-using that same point — not the cursor's live position —
+--- for every notch until the cursor actually moves. Centering a *fixed*
+--- canvas point at a *given* zoom is a direct formula with no dependency
+--- on the pan that was in effect a moment ago (unlike either alternative
+--- above), so back-to-back notches can't get stuck against a clamp or
+--- drift onto the wrong content: each one just asks "where does zoomAnchorX
+--- land at this new scale" and answers it fresh.
+---@param factor number
+local function ZoomBy(factor)
+    if not content or not canvasScale then return end
+    if contentW <= 0 or contentH <= 0 then return end
+    local newScale = math.max(MIN_ZOOM, math.min(MAX_ZOOM, zoomScale * factor))
+    if newScale == zoomScale then return end
+
+    local cx, cy = ContentCursorXY()
+    -- Only re-sample the anchor if the cursor moved since it was last set —
+    -- see the module comment above zoomAnchorX.
+    if not zoomAnchorX
+        or math.abs(cx - zoomAnchorCursorX) > ZOOM_ANCHOR_EPSILON
+        or math.abs(cy - zoomAnchorCursorY) > ZOOM_ANCHOR_EPSILON
+    then
+        zoomAnchorX, zoomAnchorY = (cx - panX) / zoomScale, (cy - panY) / zoomScale
+        zoomAnchorCursorX, zoomAnchorCursorY = cx, cy
+    end
+
+    -- See ContentCursorXY for the sign convention (0,0 at content's own
+    -- top-left, y increasingly negative downward) — centerY is negative
+    -- for the same reason.
+    local centerX, centerY = contentW / 2, -contentH / 2
+    zoomScale = newScale
+    panX = centerX - zoomScale * zoomAnchorX
+    panY = centerY - zoomScale * zoomAnchorY
+
+    ClampPan()
+    ApplyCanvasTransform()
+end
+
+--- Start tracking a drag of the map picture itself. Left button, same as
+--- the window's own drag-to-move — the two never compete for it, because
+--- the window's drag is registered on `window` while this one is registered
+--- on `content`, and content sits on top over the art, so a press there
+--- reaches this handler first and never falls through to the window's.
+local function BeginContentPan()
+    local cx, cy = ContentCursorXY()
+    contentDrag = { startX = cx, startY = cy, startPanX = panX, startPanY = panY }
+end
+
+--- Polled every frame `content` is shown — the same hand-polled pattern as
+--- HeightWindowDragUpdate above, and for the same reason: release is
+--- detected from a live IsMouseButtonDown check rather than an OnMouseUp,
+--- so a fast drag that carries the cursor off of `content` before the
+--- button lifts still stops cleanly instead of sticking the pan to the
+--- cursor.
+local function ContentPanUpdate()
+    if not contentDrag then return end
+    if not IsMouseButtonDown("LeftButton") then
+        contentDrag = nil
+        return
+    end
+
+    local cx, cy = ContentCursorXY()
+    panX = contentDrag.startPanX + (cx - contentDrag.startX)
+    panY = contentDrag.startPanY + (cy - contentDrag.startY)
+    ClampPan()
+    ApplyCanvasTransform()
+end
+
 local function EnsureWindow()
     if window then return end
 
@@ -1770,7 +2017,6 @@ local function EnsureWindow()
         self:StopMovingOrSizing()
         SavePosition()
     end)
-    window:SetScript("OnMouseWheel", function(_, dir) StepFloor(-dir) end)
     window:Hide()
     StyleBox(window, 0.06, 0.05, 0.03, 0.95)
 
@@ -1882,7 +2128,32 @@ local function EnsureWindow()
     backdropTex:SetAllPoints(content)
     backdropTex:SetColorTexture(0.05, 0.04, 0.03, 1)
 
-    playerPin = content:CreateTexture(nil, "OVERLAY", nil, 7)
+    -- Zoom/pan canvas — see the "Zoom & pan" section above EnsureWindow.
+    -- Sized to match `content` exactly (LayoutWindow keeps the two in sync);
+    -- ApplyCanvasTransform is what actually moves and scales it.
+    canvasScale = CreateFrame("Frame", nil, content)
+    canvasScale:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+
+    -- Mouse wheel over the art zooms toward the cursor; left-drag over it
+    -- pans. Both are handled here, on `content`, rather than on `window`
+    -- (which still owns its own drag-to-move via the title bar and border):
+    -- content sits on top of the art and under the title bar, so a press
+    -- inside it never reaches window's own drag handler, and a press
+    -- outside it (the header, the border) is untouched by either of these.
+    content:EnableMouse(true)
+    content:EnableMouseWheel(true)
+    content:SetScript("OnMouseWheel", function(_, dir)
+        ZoomBy(dir > 0 and ZOOM_STEP or (1 / ZOOM_STEP))
+    end)
+    content:SetScript("OnMouseDown", function(_, button)
+        if button == "LeftButton" then BeginContentPan() end
+    end)
+    content:SetScript("OnUpdate", ContentPanUpdate)
+
+    -- On canvasScale, not `content`: the pin marks the player's real
+    -- position on the underlying map, so it has to zoom and pan with the
+    -- art rather than stay fixed in the viewport.
+    playerPin = canvasScale:CreateTexture(nil, "OVERLAY", nil, 7)
     playerPin:SetTexture(PIN_TEXTURE)
     playerPin:SetSize(PIN_SIZE, PIN_SIZE)
     playerPin:Hide()
@@ -1924,10 +2195,16 @@ end
 --- more than one layer, and the extra ones are *zoom detail* levels: the same
 --- map extent re-cut at a higher tile resolution, each carrying the canvas
 --- scale range it applies to. The world map canvas swaps between them as it
---- zooms. This window does not zoom — it is a small fixed panel — so layer 1,
---- the full-extent base layer, is the one it wants. A detail layer would cost
---- several times the textures to draw the same picture at a size that cannot
---- show the difference.
+--- zooms. This window's own zoom (see the "Zoom & pan" section above
+--- EnsureWindow) magnifies whichever layer is already drawn rather than
+--- swapping to a sharper one as the user zooms in — layer 1, the full-extent
+--- base layer, is still the one it asks for, at every zoom level. Wiring
+--- RenderTiles up to re-fetch and re-lay-out a detail layer's own tiles each
+--- time zoomScale crosses one of its thresholds is a real option for later;
+--- today it would multiply the tile count for art this addon doesn't control
+--- the resolution of to begin with (see the FDID/bundled-art fallback
+--- below), in exchange for sharpness only visible past MAX_ZOOM's midpoint —
+--- so the simpler fixed-layer-then-magnify approach is what ships.
 ---
 --- Renderer.lua's IsSubmerged() swap to layer 2 is a separate mechanism:
 --- Vashj'ir's paired surface and underwater art, which is Cataclysm-only and
@@ -1975,7 +2252,11 @@ local function LayoutWindow(floorMapID)
         w = maxH * aspect
     end
 
-    local hasSlider = FloorCount() > 1
+    -- A single-floor place with active pieces (Echo Ridge Mine, e.g.) still
+    -- gets the gutter: SyncSlider shows it for exactly that case too (see
+    -- its own comment), and this must agree or the column it shows would
+    -- have no room reserved for it and overhang the window's right edge.
+    local hasSlider = FloorCount() > 1 or piecesActive
     -- +2 for the gap sliderCol is anchored with below, so the gutter is wide
     -- enough to hold the whole column instead of letting it overhang the
     -- right border by that gap.
@@ -1997,6 +2278,22 @@ local function LayoutWindow(floorMapID)
     -- anchors, which is what let the interior drift out past the border.
     contentW, contentH = w, h
     content:SetSize(w, h)
+    -- canvasScale tracks content's own size exactly, so RenderTiles and
+    -- RenderContinuousPieces can read canvasScale:GetSize() for the plain,
+    -- zoom-unaware pixel math they've always done — and, since w/h can
+    -- change floor to floor (each art layer has its own aspect ratio) or on
+    -- a world map resize, the previous pan is re-clamped against the new
+    -- size rather than left pointing at a now-invalid offset.
+    if canvasScale then
+        canvasScale:SetSize(w, h)
+        ClampPan()
+        ApplyCanvasTransform()
+        -- zoomAnchorX/Y (see ZoomBy) are canvas-local coordinates measured
+        -- against *this* w/h; a resize invalidates them, so the next wheel
+        -- notch samples a fresh anchor instead of centering a point that
+        -- meant something under the old layout.
+        zoomAnchorX, zoomAnchorY = nil, nil
+    end
     -- Height: the header band (titleH, measured off the map's own title strip),
     -- the art, the footer readout, then the bottom border inset. Only *one*
     -- BORDER_INSET — the top one is subsumed by the header band, since the bar
@@ -2053,11 +2350,15 @@ local function UpdatePlayerPin()
         return
     end
 
-    local w, h = content:GetSize()
+    -- canvasScale, not content: the pin is parented there (see EnsureWindow)
+    -- so it zooms and pans with the art instead of staying fixed in the
+    -- viewport, but the two share the same logical size (LayoutWindow keeps
+    -- them in sync), so this fractional math is unchanged.
+    local w, h = canvasScale:GetSize()
     if w <= 0 or h <= 0 then playerPin:Hide() return end
 
     playerPin:ClearAllPoints()
-    playerPin:SetPoint("CENTER", content, "TOPLEFT", x * w, -(y * h))
+    playerPin:SetPoint("CENTER", canvasScale, "TOPLEFT", x * w, -(y * h))
     -- WoW facing and Texture:SetRotation both turn counter-clockwise for
     -- positive values, so facing is used as-is. Negating it, as this used
     -- to, was the bug an in-game check caught: north/south are their own
@@ -2101,9 +2402,12 @@ end
 --- (the continuous crossfade path); omitted for the ordinary single-floor
 --- render, which drives every tile via `activeCaveTiles` as a whole.
 function CaveRenderer:RenderTiles(floorMapID, sublevel, group)
-    if not content then return end
+    if not content or not canvasScale then return end
 
-    local canvasW, canvasH = content:GetSize()
+    -- canvasScale, not content: same logical size (LayoutWindow keeps them
+    -- in sync) but this is the frame the tiles actually get parented to and
+    -- anchored against below, and canvasScale is what zoom/pan transforms.
+    local canvasW, canvasH = canvasScale:GetSize()
     if canvasW <= 0 or canvasH <= 0 then return end
 
     local layerIdx, layer = ArtLayer(floorMapID)
@@ -2162,7 +2466,7 @@ function CaveRenderer:RenderTiles(floorMapID, sublevel, group)
             local tex = PoolAcquire(group)
             tex:SetDrawLayer("ARTWORK", sublevel or 3)
             tex:SetSize(artTileW * scaleX, artTileH * scaleY)
-            tex:SetPoint("TOPLEFT", content, "TOPLEFT",
+            tex:SetPoint("TOPLEFT", canvasScale, "TOPLEFT",
                 col * tilePxW * scaleX, -(row * tilePxH * scaleY))
             tex:SetTexCoord(0, artTileW / tilePxW, 0, artTileH / tilePxH)
             tex:SetTexture(src)
@@ -2309,13 +2613,14 @@ end
 ---@param pieceCanvasH number|nil
 ---@return boolean anyDrew
 function CaveRenderer:RenderContinuousPieces(pieces, pieceCanvasW, pieceCanvasH)
-    if not content then return false end
+    if not content or not canvasScale then return false end
     if not pieceCanvasW or pieceCanvasW <= 0
        or not pieceCanvasH or pieceCanvasH <= 0 then
         return false
     end
 
-    local canvasW, canvasH = content:GetSize()
+    -- canvasScale, not content — see the same note in RenderTiles above.
+    local canvasW, canvasH = canvasScale:GetSize()
     if canvasW <= 0 or canvasH <= 0 then return false end
 
     local FDID_MAP  = Config:GetTileMap(Config:GetBackground())
@@ -2342,7 +2647,7 @@ function CaveRenderer:RenderContinuousPieces(pieces, pieceCanvasW, pieceCanvasH)
         local tex = PoolAcquire()
         tex:SetDrawLayer("ARTWORK", sublevel)
         tex:SetSize(canvasW, canvasH)
-        tex:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+        tex:SetPoint("TOPLEFT", canvasScale, "TOPLEFT", 0, 0)
         tex:SetTexture(src)
 
         continuousPieceGroups[order] = {
@@ -2408,16 +2713,23 @@ function CaveRenderer:ShowCave(floorMapID)
     -- data, supersedes the whole-floor crossfade below — it is the
     -- finer-grained replacement for it, not an addition to it, so the two
     -- are mutually exclusive (see the module-state comment above
-    -- continuousPieceGroups). Both need more than one floor to have
-    -- anything to fade between; a single-floor place is just RenderTiles.
-    local pieces, pieceCanvasW, pieceCanvasH
-    if n > 1 then
-        pieces = ns.Cave:GetPieces(floorMapID)
-        -- Floor picker (see FilterPiecesByFloor): scoped to one floor's own
-        -- pieces when the picker isn't set to "All", which is also what
-        -- narrows piecesZMin/piecesZMax — and therefore the depth slider's
-        -- whole range — to that floor alone.
-        pieces = FilterPiecesByFloor(pieces, floors, floorMapID)
+    -- continuousPieceGroups). Fetched regardless of floor count: a
+    -- single-floor place can have pieces too (Echo Ridge Mine does — this
+    -- used to read `if n > 1 then`, on the since-outdated assumption that
+    -- only a multi-floor place ever would). FilterPiecesByFloor is already
+    -- a safe no-op without multiple floors to distinguish between — its
+    -- own first check returns `pieces` unchanged whenever
+    -- Config.caveFloorFilterAll is true, which it stays at by default when
+    -- there's only one floor (SyncFloorPicker hides the picker itself in
+    -- that case, but never touches the filter flag).
+    local pieces = ns.Cave:GetPieces(floorMapID)
+    -- Floor picker (see FilterPiecesByFloor): scoped to one floor's own
+    -- pieces when the picker isn't set to "All", which is also what
+    -- narrows piecesZMin/piecesZMax — and therefore the depth slider's
+    -- whole range — to that floor alone.
+    pieces = FilterPiecesByFloor(pieces, floors, floorMapID)
+    local pieceCanvasW, pieceCanvasH
+    if pieces then
         pieceCanvasW, pieceCanvasH = ns.Cave:GetPieceCanvasSize(floorMapID)
     end
     piecesActive = (pieces ~= nil and #pieces > 0)
@@ -2520,6 +2832,15 @@ function CaveRenderer:HideCave()
     piecesActive                 = false
     piecesZMin, piecesZMax       = nil, nil
     heightWindowDrag             = nil
+    -- Back to fit-to-window: see the module comment above zoomScale/panX/
+    -- panY for why ShowCave itself never resets these, but a closed (and
+    -- possibly later reopened, possibly on a different cave entirely)
+    -- window should not remember a zoom level from a previous visit.
+    zoomScale                    = MIN_ZOOM
+    panX, panY                   = 0, 0
+    contentDrag                  = nil
+    zoomAnchorX, zoomAnchorY     = nil, nil
+    ApplyCanvasTransform()
     if windowBody then windowBody:Hide() end
     if floorPicker then floorPicker:Hide() end
     if CloseDropDownMenus then pcall(CloseDropDownMenus) end

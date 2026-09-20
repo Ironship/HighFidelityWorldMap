@@ -135,6 +135,22 @@ function Commands:Handle(msg)
         end
         if ns.Options.panel then ns.Options:Refresh() end
         return
+    elseif cmd == "remember" then
+        local want = args[2]
+        if want == "on" then
+            db.rememberMapZoomPan = true
+        elseif want == "off" then
+            db.rememberMapZoomPan = false
+        else
+            db.rememberMapZoomPan = not db.rememberMapZoomPan
+        end
+        if not db.rememberMapZoomPan then
+            ns.MapMemory:Clear()
+        end
+        P(("Remember map zoom+pan: %s"):format(
+            db.rememberMapZoomPan and "|cff00ff00on|r" or "|cffff4444off|r"))
+        if ns.Options.panel then ns.Options:Refresh() end
+        return
     elseif cmd == "bg" or cmd == "background" then
         local want = args[2] or ""
         -- Only what this install can actually draw: "original" needs the
@@ -304,6 +320,8 @@ function Commands:Handle(msg)
         print("  /hfwm bg [NAME]     - map background: "
             .. table.concat(keys, " | ") .. " (no name cycles)")
         print("  /hfwm alpha N       - set opacity (0-1)")
+        print("  /hfwm remember [on|off] - remember world map zoom+pan "
+            .. "across close/reopen")
         print("  /hfwm cave [on|off] - toggle the cave map (opt-in)")
         print("                        show/hide, reset (position), alpha N,")
         print("                        autoopen [on|off], remember [on|off]")

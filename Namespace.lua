@@ -19,6 +19,7 @@ ns.Options     = {}
 ns.Cave        = {}
 ns.CaveTable   = {}
 ns.CaveRenderer = {}
+ns.MapMemory   = {}
 
 -- Convenience printer (accessible everywhere via ns.P)
 ns.P = function(msg) print("|cff33ccffHFWM-F:|r " .. msg) end

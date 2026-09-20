@@ -401,11 +401,12 @@ function Options:BuildPanel()
     local panel = CreateFrame("Frame")
     panel.name = PANEL_TITLE
     -- Tall enough for the cave section's two extra checkboxes and their
-    -- descriptions (added alongside "(beta)"); a frame doesn't clip its
+    -- descriptions (added alongside "(beta)") plus the remember-zoom-and-pan
+    -- checkbox and its description above them; a frame doesn't clip its
     -- children by default, but the client's own canvas and BuildWindow's
     -- standalone frame below both size themselves from this, so a panel
     -- too short for its content would just run past their bottom edge.
-    panel:SetSize(560, 560)
+    panel:SetSize(560, 670)
     panel:Hide()
 
     local title = Label(panel, PANEL_TITLE, "GameFontNormalLarge")
@@ -478,6 +479,43 @@ function Options:BuildPanel()
         ns.Renderer:ForceRefresh()
     end)
 
+    -- Remember map zoom + pan
+    --
+    -- What the separate PersistentWorldMap addon is built entirely around,
+    -- folded in here as a single checkbox: keep the world map at whatever
+    -- zoom and pan position it was left at instead of resetting to the
+    -- current zone on every reopen. See MapMemory.lua.
+    local rememberCheck = CreateFrameTry("CheckButton",
+        "HFWMForeverRememberMapCheck", panel,
+        "InterfaceOptionsCheckButtonTemplate", "UICheckButtonTemplate")
+    rememberCheck:SetPoint("TOPLEFT", slider, "BOTTOMLEFT", -2, -30)
+    rememberCheck:SetSize(26, 26)
+    local rememberCheckText = rememberCheck.Text or rememberCheck.text
+        or SubElement(rememberCheck, "Text", "Text")
+    if rememberCheckText then
+        rememberCheckText:SetText("Remember map zoom+pan")
+    else
+        rememberCheckText = Label(panel, "Remember map zoom+pan",
+            "GameFontHighlight")
+        rememberCheckText:SetPoint("LEFT", rememberCheck, "RIGHT", 2, 0)
+    end
+    rememberCheck:SetScript("OnClick", function(btn)
+        Config.db.rememberMapZoomPan = btn:GetChecked() and true or false
+        if not Config.db.rememberMapZoomPan and ns.MapMemory then
+            ns.MapMemory:Clear()
+        end
+    end)
+
+    local rememberDesc = Label(panel,
+        "|cff999999Keeps the world map at whatever zoom and pan you left it "
+        .. "at, instead of resetting to your current zone every time you "
+        .. "reopen it — the same thing the Persistent World Map addon does. "
+        .. "On by default.|r",
+        "GameFontHighlightSmall")
+    rememberDesc:SetPoint("TOPLEFT", rememberCheck, "BOTTOMLEFT", 6, -2)
+    rememberDesc:SetWidth(500)
+    rememberDesc:SetJustifyH("LEFT")
+
     -- Cave map (beta)
     --
     -- Its own heading rather than another line of checkboxes at the top: it
@@ -488,7 +526,7 @@ function Options:BuildPanel()
     -- maps C_Map doesn't have — so it is worth flagging as the newest,
     -- least-tested part of the addon.
     local caveHeading = Label(panel, "Cave map (beta)", "GameFontNormal")
-    caveHeading:SetPoint("TOPLEFT", slider, "BOTTOMLEFT", 0, -30)
+    caveHeading:SetPoint("TOPLEFT", rememberDesc, "BOTTOMLEFT", -6, -20)
 
     local caveCheck = CreateFrameTry("CheckButton", "HFWMForeverCaveCheck",
         panel, "InterfaceOptionsCheckButtonTemplate", "UICheckButtonTemplate")
@@ -616,7 +654,8 @@ function Options:BuildPanel()
     local hint = Label(panel,
         "|cff999999Also available from chat: /hfwm bg "
             .. table.concat(keys, "|")
-            .. "  |  /hfwm cave on|off|autoopen|remember|r",
+            .. "  |  /hfwm cave on|off|autoopen|remember  |  "
+            .. "/hfwm remember on|off|r",
         "GameFontHighlightSmall")
     hint:SetPoint("TOPLEFT", caveSlider, "BOTTOMLEFT", 0, -28)
 
@@ -624,6 +663,7 @@ function Options:BuildPanel()
     panel.dropdown          = dropdown
     panel.bgDesc            = bgDesc
     panel.slider            = slider
+    panel.rememberCheck     = rememberCheck
     panel.caveCheck         = caveCheck
     panel.caveAutoOpenCheck = caveAutoOpenCheck
     panel.caveRememberCheck = caveRememberCheck
@@ -670,6 +710,9 @@ function Options:Refresh()
     panel.slider.textLabel:SetText(
         ("Opacity: %d%%"):format((Config.db.alpha or 1) * 100))
 
+    panel.rememberCheck:SetChecked(
+        Config.db.rememberMapZoomPan and true or false)
+
     panel.caveCheck:SetChecked(Config.db.caveEnabled and true or false)
     panel.caveAutoOpenCheck:SetChecked(Config.db.caveAutoOpen and true or false)
     panel.caveRememberCheck:SetChecked(
@@ -714,7 +757,7 @@ function Options:BuildWindow()
     local win = CreateFrame("Frame", "HFWMForeverOptionsWindow", UIParent)
     -- Matches BuildPanel's taller size (see its own comment) plus the same
     -- ~20px margin the original 480 left over its 450.
-    win:SetSize(580, 590)
+    win:SetSize(580, 700)
     win:SetPoint("CENTER")
     win:SetFrameStrata("DIALOG")
     win:SetToplevel(true)

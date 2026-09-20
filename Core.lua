@@ -8,6 +8,7 @@
 -- /hfwm options     – open the options panel
 -- /hfwm alpha 0-1   – set overlay opacity
 -- /hfwm cave        – the cave map window (on|off|show|hide|reset|alpha N)
+-- /hfwm remember    – remember world map zoom+pan across close/reopen
 -- /hfwm debug       – print diagnostic info for current map
 -------------------------------------------------------------------------------
 local addonName, ns = ...
@@ -20,6 +21,7 @@ local Commands    = ns.Commands
 local Options     = ns.Options
 local Cave        = ns.Cave
 local CaveRenderer = ns.CaveRenderer
+local MapMemory   = ns.MapMemory
 local P           = ns.P
 
 -------------------------------------------------------------------------------
@@ -78,6 +80,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         end)
 
         Cave:Start()
+        MapMemory:Start()
 
         Commands:Register()
         -- After Commands, so a Lua error while probing the client's options

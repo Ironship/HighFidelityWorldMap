@@ -56,6 +56,15 @@ Config.DEFAULTS = {
     -- setting asked for.
     caveHeightWindowTop    = 1.0,
     caveHeightWindowBottom = 0.0,
+
+    -- Remember map zoom + pan: keep the world map at whatever zoom and pan
+    -- position it was left at, instead of the client's own behaviour of
+    -- resetting to the current zone every time the map is reopened — the
+    -- same job PersistentWorldMap does, folded in here as a single
+    -- opt-out rather than a separate addon. On by default for the same
+    -- reason caveEnabled is: a feature worth having is worth having on
+    -- unless the player says otherwise. See MapMemory.lua.
+    rememberMapZoomPan = true,
 }
 -- The db also carries `caveWindowPoint` — { point, relPoint, x, y, toMap } —
 -- written by CaveRenderer when the window is dragged. It is deliberately not

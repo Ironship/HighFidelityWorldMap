@@ -728,6 +728,30 @@ HFWMF_FDID_MAP = {
     [900000028] = "FargodeepMine\\pieces\\piece18",
     [900000029] = "FargodeepMine\\pieces\\piece19",
     [900000030] = "FargodeepMine\\pieces\\piece20",
+
+    -- Hand-added: real baked WMO minimap art for Echo Ridge Mine,
+    -- extracted from world/wmo/dungeon/md_goldmine/md_goldmine.wmo (the
+    -- base model, FDID 110750 -- NOT Fargodeep's "_varianta" model) via
+    -- hfwm/cave_minimap.py. Not part of generateHFWM.py's
+    -- auto-generation; a future regeneration run must preserve or
+    -- reintroduce this entry.
+    [900000100] = "EchoRidgeMine\\floor",
+
+    -- Hand-added, cave-satellite-v2: one baked art piece per tiled WMO
+    -- group in Echo Ridge Mine (9 groups), from hfwm/cave_minimap.py's
+    -- generate_mine_pieces(). This replaces the floor entry above as
+    -- what actually gets drawn on screen, the same way Fargodeep's
+    -- pieces replace its upper/lower pair. Same regeneration warning
+    -- applies.
+    [900000200] = "EchoRidgeMine\\pieces\\piece00",
+    [900000201] = "EchoRidgeMine\\pieces\\piece01",
+    [900000202] = "EchoRidgeMine\\pieces\\piece02",
+    [900000203] = "EchoRidgeMine\\pieces\\piece03",
+    [900000204] = "EchoRidgeMine\\pieces\\piece04",
+    [900000205] = "EchoRidgeMine\\pieces\\piece05",
+    [900000206] = "EchoRidgeMine\\pieces\\piece06",
+    [900000207] = "EchoRidgeMine\\pieces\\piece07",
+    [900000208] = "EchoRidgeMine\\pieces\\piece08",
 }
 
 -- No submerged (layer-2) art variants are generated for
@@ -1461,4 +1485,21 @@ HFWMF_FDID_MAP_ORIGINAL = {
     [900000028] = "FargodeepMine\\pieces\\piece18",
     [900000029] = "FargodeepMine\\pieces\\piece19",
     [900000030] = "FargodeepMine\\pieces\\piece20",
+
+    -- Hand-added: same Echo Ridge Mine cave art as HFWMF_FDID_MAP above.
+    -- No separate "paperback" art pass exists yet for indoor WMO minimap
+    -- tiles, so both background variants share the one baked composite.
+    [900000100] = "EchoRidgeMine\\floor",
+
+    -- Hand-added, cave-satellite-v2: same per-piece art as
+    -- HFWMF_FDID_MAP above (no separate "paperback" pass for these either).
+    [900000200] = "EchoRidgeMine\\pieces\\piece00",
+    [900000201] = "EchoRidgeMine\\pieces\\piece01",
+    [900000202] = "EchoRidgeMine\\pieces\\piece02",
+    [900000203] = "EchoRidgeMine\\pieces\\piece03",
+    [900000204] = "EchoRidgeMine\\pieces\\piece04",
+    [900000205] = "EchoRidgeMine\\pieces\\piece05",
+    [900000206] = "EchoRidgeMine\\pieces\\piece06",
+    [900000207] = "EchoRidgeMine\\pieces\\piece07",
+    [900000208] = "EchoRidgeMine\\pieces\\piece08",
 }

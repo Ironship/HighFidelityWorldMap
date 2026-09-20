@@ -1317,20 +1317,53 @@ HFWMF_CAVE_DATA = {
             groupID = 0,
             areaIDs = { 34 },
             bounds  = { -8686, -8500, -306, -27 },
+            -- World<->pixel projection for the player pin/arrow, baked by
+            -- hfwm/cave_minimap.py's world_to_local_projection the same
+            -- way Fargodeep's is (see that place's own comment above for
+            -- the full derivation). `bounds` above is a linear stretch
+            -- that only works for unrotated, edge-to-edge art; this
+            -- place's own art (world/wmo/dungeon/md_goldmine/md_goldmine
+            -- .wmo, FDID 110750) is rotated to true north the same way
+            -- Fargodeep's is, so CaveTable.lua's GetPlayerPosition uses
+            -- this instead of the `bounds` stretch.
+            projection = {
+                minLocalX = -142.481842, maxLocalY = 38.491970,
+                scale = 1.993,
+                preRotW = 341, preRotH = 164,
+                rotateAngle = 235.0,
+                rotatedW = 331, rotatedH = 374,
+                yaw = 325.0,
+                placementWorldX = -8646.220159, placementWorldY = -131.720159,
+            },
+            -- cave-satellite-v2: one baked art piece per tiled WMO group,
+            -- each on this same 331x374 canvas, anchored at (0,0) -- the
+            -- same scheme as Fargodeep's own `pieces`, just for a single
+            -- floor instead of two, so there is no `sharedCanvas`
+            -- question here (that flag only matters for crossfading
+            -- between floors baked from the same canvas).
+            pieces = {
+                { fdid = 900000200, group = 0, name = "",               zMin = 84.91, zMax = 102.30 },
+                { fdid = 900000201, group = 1, name = "",               zMin = 83.60, zMax = 101.08 },
+                { fdid = 900000202, group = 2, name = "junction01",     zMin = 82.60, zMax = 96.56 },
+                { fdid = 900000203, group = 3, name = "cavein01",       zMin = 87.14, zMax = 98.25 },
+                { fdid = 900000204, group = 4, name = "left10",         zMin = 84.92, zMax = 98.08 },
+                { fdid = 900000205, group = 5, name = "new03",          zMin = 86.45, zMax = 96.47 },
+                { fdid = 900000206, group = 6, name = "gnollgarrison01",zMin = 87.42, zMax = 98.78 },
+                { fdid = 900000207, group = 7, name = "smallroom04",    zMin = 90.13, zMax = 107.44 },
+                { fdid = 900000208, group = 8, name = "left11",         zMin = 85.77, zMax = 98.66 },
+            },
+            pieceCanvasW = 331, pieceCanvasH = 374,
             floors  = {
                 {
                     name    = "Echo Ridge Mine",
                     uiMapID = 426,
                     areaIDs = { 34 },
                     bounds  = { -8686, -8500, -306, -27 },
-                    layerW  = 1002, layerH = 668,
-                    tileW   = 256, tileH  = 256,
-                    cols    = 4, rows   = 3,
-                    tiles   = {
-                        604067, 604071, 604072, 604073,
-                        604074, 604075, 604076, 604077,
-                        604078, 604068, 604069, 604070,
-                    },
+                    layerW  = 331, layerH = 374,
+                    tileW   = 331, tileH  = 374,
+                    cols    = 1, rows   = 1,
+                    tiles   = { 900000100 },
+                    zMin    = 82.60, zMax = 107.44,
                 },
             },
         },
