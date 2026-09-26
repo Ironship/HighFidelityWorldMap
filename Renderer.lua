@@ -194,14 +194,6 @@ function Renderer:Refresh(force)
     local cols    = math.ceil(layerW / tilePxW)
     local rows    = math.ceil(layerH / tilePxH)
 
-    -- Resolve tile source
-    local fdids = C_Map.GetMapArtLayerTextures(mapID, layerIdx)
-    if not fdids or #fdids == 0 then
-        if trace then P("  BAIL: no FDIDs from C_Map") end
-        RestoreDefaults()
-        return
-    end
-
     -- The background decides which tile set to draw, not just what goes
     -- behind it: Original has its own raw dump under WorldMap/Original/ and
     -- therefore its own lookup table. Everything else draws the bundled
@@ -213,19 +205,56 @@ function Renderer:Refresh(force)
     local FDID_BASE    = Config.FDID_BASE
 
     local tileSource = {}
-    local useBundled = FDID_MAP[fdids[1]] ~= nil
+    local useBundled = false
+    local useNative  = false
+
+    -- Native-resolution Type=Zone maps (see hfwm/db2.py's
+    -- _native_zone_geometry) bypass Blizzard's fixed art-layer geometry
+    -- entirely: our own bundled grid is finer than anything a Classic-era
+    -- UiMapArtStyleLayer can describe for these, so cols/rows/tile size/
+    -- layer size all come from the pipeline's own output instead of
+    -- C_Map.GetMapArtLayers, and the tile source is built straight from a
+    -- path prefix rather than looked up per Blizzard FileDataID.
+    local nativeZone = Config:GetNativeZone(mapID, background)
+    if nativeZone then
+        layerW, layerH = nativeZone.layerW, nativeZone.layerH
+        tilePxW, tilePxH = nativeZone.tileW, nativeZone.tileH
+        cols, rows = nativeZone.cols, nativeZone.rows
+        for i = 1, cols * rows do
+            tileSource[i] = FDID_BASE .. nativeZone.path .. i
+        end
+        useBundled, useNative = true, true
+    end
+
+    -- Resolve tile source (legacy path: only when this map has no native
+    -- geometry above — continent/world maps, or a native zone whose art
+    -- wasn't actually built, in which case this safely falls back to
+    -- Blizzard's own client art rather than erroring).
+    local fdids
+    if not useNative then
+        fdids = C_Map.GetMapArtLayerTextures(mapID, layerIdx)
+        if not fdids or #fdids == 0 then
+            if trace then P("  BAIL: no FDIDs from C_Map") end
+            RestoreDefaults()
+            return
+        end
+        useBundled = FDID_MAP[fdids[1]] ~= nil
+    end
 
     if trace then
-        P(("  fdids=%d  firstFDID=%d  useBundled=%s  background=%s  "
+        P(("  useNative=%s  fdids=%s  useBundled=%s  background=%s  "
            .. "tileMap_size=%d"):format(
-            #fdids, fdids[1], tostring(useBundled), background.key,
+            tostring(useNative), fdids and #fdids or "n/a",
+            tostring(useBundled), background.key,
             background.tiles == "original"
                 and (Config._fdidMapOriginalSize or -1)
                 or (Config._fdidMapSize or -1)))
     end
     local useSubmerged = false
 
-    if useBundled and FDID_MAP_SUB[fdids[1]] then
+    if useNative then
+        -- tileSource already built above.
+    elseif useBundled and FDID_MAP_SUB[fdids[1]] then
         local playerMap = C_Map.GetBestMapForUnit("player")
         local inVashjir = playerMap and Config.VASHJIR_MAPS[playerMap]
         if not (inVashjir and not submerged) then
@@ -235,14 +264,16 @@ function Renderer:Refresh(force)
         useBundled = false
     end
 
-    if useBundled then
-        local lookup = useSubmerged and FDID_MAP_SUB or FDID_MAP
-        for i, fdid in ipairs(fdids) do
-            local rel = lookup[fdid]
-            tileSource[i] = rel and (FDID_BASE .. rel) or fdid
+    if not useNative then
+        if useBundled then
+            local lookup = useSubmerged and FDID_MAP_SUB or FDID_MAP
+            for i, fdid in ipairs(fdids) do
+                local rel = lookup[fdid]
+                tileSource[i] = rel and (FDID_BASE .. rel) or fdid
+            end
+        else
+            tileSource = fdids
         end
-    else
-        tileSource = fdids
     end
 
     if trace then

@@ -55,7 +55,11 @@ from .constants import (
     MAID_FIELD_MINIMAP,
     MINIMAP_DB_CACHE,
     MINIMAP_DB_CACHE_TTL_DAYS,
+    MINIMAP_TILE_PX,
+    NATIVE_ZONE_TILE_PX,
     PROVENANCE_FILE,
+    TILE_WORLD_SIZE,
+    UI_MAP_TYPE_ZONE,
     WDT_CACHE_DIR,
     db2_url,
 )
@@ -242,6 +246,65 @@ def _build_art_geometry(
     print(f"    {len(geometry)} arts with complete layer-0 geometry",
           flush=True)
     return geometry
+
+
+# ---------------------------------------------------------------------------
+# Native-resolution zone geometry (see constants.NATIVE_ZONE_TILE_PX)
+# ---------------------------------------------------------------------------
+
+def _native_zone_layer_dims(regions: list[dict]) -> tuple[float, float]:
+    """Native-resolution art-layer size for a Type=Zone map.
+
+    Enough pixels to render every region at exactly the minimap's own
+    source density (``MINIMAP_TILE_PX`` per ``TILE_WORLD_SIZE`` yards) — no
+    upscale, no downscale. Mirrors the axis mapping ``zone.py`` already
+    uses when placing a region into the layer: horizontal (layer_w) is fed
+    by world Y (``loc_left``/``loc_right``), vertical (layer_h) by world X
+    (``loc_top``/``loc_bottom``).
+
+    A region occupies only its own ``ui_min/max`` sub-rect of the full
+    layer, so the layer size implied by *that* region alone is its own
+    pixel span divided by the fraction of the layer it covers. Multi-region
+    zones take the max across regions, so every region ends up at least at
+    native density (a region whose own implied layer is smaller than
+    another's just ends up slightly denser than native, never softer).
+    """
+    native_pp = MINIMAP_TILE_PX / TILE_WORLD_SIZE  # px per world yard
+    layer_w = 0.0
+    layer_h = 0.0
+    for reg in regions:
+        span_y = reg["loc_left"] - reg["loc_right"]
+        span_x = reg["loc_top"] - reg["loc_bottom"]
+        ui_w = reg["ui_max_x"] - reg["ui_min_x"]
+        ui_h = reg["ui_max_y"] - reg["ui_min_y"]
+        if span_y > 0 and ui_w > 1e-6:
+            layer_w = max(layer_w, span_y * native_pp / ui_w)
+        if span_x > 0 and ui_h > 1e-6:
+            layer_h = max(layer_h, span_x * native_pp / ui_h)
+    return layer_w, layer_h
+
+
+def _native_zone_geometry(
+    ui_map_type: int, layer_w: int, layer_h: int, regions: list[dict],
+) -> dict | None:
+    """Return native ``{cols, rows, layer_w, layer_h, tile_w, tile_h}`` for
+    a Type=Zone map, or ``None`` when Blizzard's own fixed layer is already
+    at or above native density (e.g. the 512x512 city maps) — going bigger
+    there would upscale rather than preserve detail, so the fixed layer is
+    left alone.
+    """
+    if ui_map_type != UI_MAP_TYPE_ZONE:
+        return None
+    native_w, native_h = _native_zone_layer_dims(regions)
+    if native_w <= layer_w and native_h <= layer_h:
+        return None
+    cols = max(1, -(-round(native_w) // NATIVE_ZONE_TILE_PX))
+    rows = max(1, -(-round(native_h) // NATIVE_ZONE_TILE_PX))
+    return {
+        "cols": cols, "rows": rows,
+        "layer_w": round(native_w), "layer_h": round(native_h),
+        "tile_w": NATIVE_ZONE_TILE_PX, "tile_h": NATIVE_ZONE_TILE_PX,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -450,11 +513,16 @@ def _build_zone_db(
         key = base if base not in used else f"{base}{uid}"
         used.add(key)
 
+        ui_map_type = ui_types.get(uid, 0)
+        native = _native_zone_geometry(
+            ui_map_type, geo["layer_w"], geo["layer_h"], regions,
+        )
+
         zones[key] = {
             "folder": key,
             "area_name": ui_names[uid],
             "ui_map_id": uid,
-            "ui_map_type": ui_types.get(uid, 0),
+            "ui_map_type": ui_map_type,
             "ui_map_art_id": art_id,
             "cols": geo["cols"],
             "rows": geo["rows"],
@@ -463,6 +531,7 @@ def _build_zone_db(
             "tile_w": geo["tile_w"],
             "tile_h": geo["tile_h"],
             "tile_fdids": geo["tile_fdids"],
+            "native": native,
             "regions": regions,
         }
 
@@ -524,6 +593,14 @@ def _write_provenance(
                 "grid": f"{z['cols']}x{z['rows']}",
                 "layer": f"{z['layer_w']}x{z['layer_h']}",
                 "tile": f"{z['tile_w']}x{z['tile_h']}",
+                "native_grid": (
+                    f"{z['native']['cols']}x{z['native']['rows']}"
+                    if z.get("native") else None
+                ),
+                "native_layer": (
+                    f"{z['native']['layer_w']}x{z['native']['layer_h']}"
+                    if z.get("native") else None
+                ),
                 "regions": [
                     {
                         "map_id": reg["map_id"],

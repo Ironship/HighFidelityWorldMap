@@ -537,14 +537,23 @@ def main() -> None:
             print("  ERROR: no zones matched --zones.", file=sys.stderr)
             sys.exit(1)
 
-    grids = Counter(f"{z['cols']}x{z['rows']}" for z in zone_db.values())
+    def _grid(z: dict) -> str:
+        g = z.get("native")
+        return f"{g['cols']}x{g['rows']}" if g else f"{z['cols']}x{z['rows']}"
+
+    def _tiles(z: dict) -> int:
+        g = z.get("native")
+        return g["cols"] * g["rows"] if g else z["cols"] * z["rows"]
+
+    grids = Counter(_grid(z) for z in zone_db.values())
     needed_fdids = {
         fdid
         for z in zone_db.values()
         for reg in z["regions"]
         for fdid in reg["tiles"].values()
     }
-    out_tiles = sum(z["cols"] * z["rows"] for z in zone_db.values())
+    out_tiles = sum(_tiles(z) for z in zone_db.values())
+    native_zones = sum(1 for z in zone_db.values() if z.get("native"))
 
     print(f"\nZones:     {len(zone_db)}", flush=True)
     print(f"Grids:     "
@@ -552,18 +561,25 @@ def main() -> None:
           flush=True)
     print(f"Src tiles: {len(needed_fdids)} unique minimap textures",
           flush=True)
-    print(f"Out tiles: {out_tiles} BLPs", flush=True)
+    print(f"Out tiles: {out_tiles} BLPs"
+          + (f" ({native_zones} zone(s) at native minimap resolution)"
+             if native_zones else ""),
+          flush=True)
 
     if args.dry_run:
         print(flush=True)
         for folder in sorted(zone_db):
             z = zone_db[folder]
+            native = z.get("native")
+            grid = f"{native['cols']}x{native['rows']}" if native else f"{z['cols']}x{z['rows']}"
+            layer = (f"{native['layer_w']}x{native['layer_h']}" if native
+                     else f"{z['layer_w']}x{z['layer_h']}")
             src = sum(len(r["tiles"]) for r in z["regions"])
             print(
-                f"  {folder:34s} {z['cols']}x{z['rows']} "
-                f"{z['layer_w']}x{z['layer_h']:<5} "
+                f"  {folder:34s} {grid:>7} "
+                f"{layer:<11} "
                 f"{len(z['regions'])} region(s)  {src:4d} src tiles  "
-                f"[{z['area_name']}]",
+                f"{'[native] ' if native else ''}[{z['area_name']}]",
             )
         if args.caves:
             print(f"\n  Would also rebuild {CAVE_DATA_FILE.name} "

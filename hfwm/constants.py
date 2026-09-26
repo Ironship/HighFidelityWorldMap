@@ -235,6 +235,30 @@ EXPECTED_ART_LAYER_DIMS = {
 }
 
 # ---------------------------------------------------------------------------
+# Native-resolution zone maps (see hfwm/db2.py's _native_zone_layer_dims and
+# hfwm/zone.py's use of zone_info["native"])
+# ---------------------------------------------------------------------------
+# Classic-era UiMapArtStyleLayer gives every outdoor UiMap — zone, continent
+# and world alike — the same tiny fixed layer (EXPECTED_ART_LAYER_DIMS
+# above), typically 1002x668. Stitching a zone's minimap tiles (512px per
+# 533.33yd WDT tile) down to fit that box is exactly the downscale that
+# makes the world map blurrier than the minimap: the client then stretches
+# those same fixed tiles back up as the player zooms in.
+#
+# For Type=Zone maps (UI_MAP_TYPE_ZONE below) the pipeline instead sizes the
+# art layer to whatever the region's own world-space extent needs at the
+# minimap's own source density — no upscale, no downscale, hence "native".
+# Continent and world maps keep Blizzard's fixed layer: a continent's world
+# extent at this density is the multi-GB-canvas case _effective_tile_px
+# already guards against, and the scope here is zone maps only.
+#
+# Tiles are re-sliced at this size rather than the DB2's own TileWidth/
+# TileHeight — 256px is Blizzard's own convention (EXPECTED_ART_LAYER_DIMS
+# tiles are 256px too) and keeps BLP2 tile byte size identical to what the
+# addon already ships.
+NATIVE_ZONE_TILE_PX = 256
+
+# ---------------------------------------------------------------------------
 # Cache TTLs (days)
 # ---------------------------------------------------------------------------
 MINIMAP_DB_CACHE_TTL_DAYS = 30

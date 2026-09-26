@@ -23,6 +23,7 @@ CaveTable.lua
 Cave.lua
 CaveRenderer.lua
 MapMemory.lua
+ZoomLevels.lua
 Commands.lua
 Options.lua
 Core.lua

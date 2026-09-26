@@ -402,11 +402,12 @@ function Options:BuildPanel()
     panel.name = PANEL_TITLE
     -- Tall enough for the cave section's two extra checkboxes and their
     -- descriptions (added alongside "(beta)") plus the remember-zoom-and-pan
-    -- checkbox and its description above them; a frame doesn't clip its
-    -- children by default, but the client's own canvas and BuildWindow's
-    -- standalone frame below both size themselves from this, so a panel
-    -- too short for its content would just run past their bottom edge.
-    panel:SetSize(560, 670)
+    -- and additional-zoom-levels checkboxes and their descriptions above
+    -- them; a frame doesn't clip its children by default, but the client's
+    -- own canvas and BuildWindow's standalone frame below both size
+    -- themselves from this, so a panel too short for its content would just
+    -- run past their bottom edge.
+    panel:SetSize(560, 750)
     panel:Hide()
 
     local title = Label(panel, PANEL_TITLE, "GameFontNormalLarge")
@@ -516,6 +517,40 @@ function Options:BuildPanel()
     rememberDesc:SetWidth(500)
     rememberDesc:SetJustifyH("LEFT")
 
+    -- Additional zoom levels
+    --
+    -- Off by default: it changes how far the client's own zoom control
+    -- reaches, which is a bigger behaviour change than anything else this
+    -- panel defaults to on. See ZoomLevels.lua.
+    local zoomCheck = CreateFrameTry("CheckButton",
+        "HFWMForeverZoomCheck", panel,
+        "InterfaceOptionsCheckButtonTemplate", "UICheckButtonTemplate")
+    zoomCheck:SetPoint("TOPLEFT", rememberDesc, "BOTTOMLEFT", -6, -14)
+    zoomCheck:SetSize(26, 26)
+    local zoomCheckText = zoomCheck.Text or zoomCheck.text
+        or SubElement(zoomCheck, "Text", "Text")
+    if zoomCheckText then
+        zoomCheckText:SetText("Additional Zoom Levels")
+    else
+        zoomCheckText = Label(panel, "Additional Zoom Levels",
+            "GameFontHighlight")
+        zoomCheckText:SetPoint("LEFT", zoomCheck, "RIGHT", 2, 0)
+    end
+    zoomCheck:SetScript("OnClick", function(btn)
+        Config.db.additionalZoomLevels = btn:GetChecked() and true or false
+        ns.ZoomLevels:Refresh()
+    end)
+
+    local zoomDesc = Label(panel,
+        "|cff999999Lets the world map zoom in eight steps closer than the "
+        .. "client's own maximum — worth turning on now that this addon's "
+        .. "zone art is built at the minimap's native resolution rather "
+        .. "than Blizzard's lower-resolution map art. Off by default.|r",
+        "GameFontHighlightSmall")
+    zoomDesc:SetPoint("TOPLEFT", zoomCheck, "BOTTOMLEFT", 6, -2)
+    zoomDesc:SetWidth(500)
+    zoomDesc:SetJustifyH("LEFT")
+
     -- Cave map (beta)
     --
     -- Its own heading rather than another line of checkboxes at the top: it
@@ -526,7 +561,7 @@ function Options:BuildPanel()
     -- maps C_Map doesn't have — so it is worth flagging as the newest,
     -- least-tested part of the addon.
     local caveHeading = Label(panel, "Cave map (beta)", "GameFontNormal")
-    caveHeading:SetPoint("TOPLEFT", rememberDesc, "BOTTOMLEFT", -6, -20)
+    caveHeading:SetPoint("TOPLEFT", zoomDesc, "BOTTOMLEFT", -6, -20)
 
     local caveCheck = CreateFrameTry("CheckButton", "HFWMForeverCaveCheck",
         panel, "InterfaceOptionsCheckButtonTemplate", "UICheckButtonTemplate")
@@ -655,7 +690,7 @@ function Options:BuildPanel()
         "|cff999999Also available from chat: /hfwm bg "
             .. table.concat(keys, "|")
             .. "  |  /hfwm cave on|off|autoopen|remember  |  "
-            .. "/hfwm remember on|off|r",
+            .. "/hfwm remember on|off  |  /hfwm zoom on|off|r",
         "GameFontHighlightSmall")
     hint:SetPoint("TOPLEFT", caveSlider, "BOTTOMLEFT", 0, -28)
 
@@ -664,6 +699,7 @@ function Options:BuildPanel()
     panel.bgDesc            = bgDesc
     panel.slider            = slider
     panel.rememberCheck     = rememberCheck
+    panel.zoomCheck         = zoomCheck
     panel.caveCheck         = caveCheck
     panel.caveAutoOpenCheck = caveAutoOpenCheck
     panel.caveRememberCheck = caveRememberCheck
@@ -682,6 +718,7 @@ function Options:BuildPanel()
     panel.default   = function()
         for k, v in pairs(Config.DEFAULTS) do Config.db[k] = v end
         ns.Renderer:ForceRefresh()
+        ns.ZoomLevels:Refresh()
         -- Reconcile rather than hide outright: "default" for the cave map is
         -- off, but that is a fact about DEFAULTS, not something to hard-code
         -- a second time here.
@@ -712,6 +749,9 @@ function Options:Refresh()
 
     panel.rememberCheck:SetChecked(
         Config.db.rememberMapZoomPan and true or false)
+
+    panel.zoomCheck:SetChecked(
+        Config.db.additionalZoomLevels and true or false)
 
     panel.caveCheck:SetChecked(Config.db.caveEnabled and true or false)
     panel.caveAutoOpenCheck:SetChecked(Config.db.caveAutoOpen and true or false)

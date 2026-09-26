@@ -65,6 +65,15 @@ Config.DEFAULTS = {
     -- reason caveEnabled is: a feature worth having is worth having on
     -- unless the player says otherwise. See MapMemory.lua.
     rememberMapZoomPan = true,
+
+    -- Additional Zoom Levels: appends 8 extra, closer steps onto the world
+    -- map's own zoom ladder (see ZoomLevels.lua) so the native-resolution
+    -- zone art this addon ships can actually be zoomed into past whatever
+    -- ceiling Blizzard's own map data allows. Off by default — it changes
+    -- how far the built-in zoom control reaches, which is a bigger behaviour
+    -- change than anything else here defaults to on, so it is opt-in rather
+    -- than assumed.
+    additionalZoomLevels = false,
 }
 -- The db also carries `caveWindowPoint` — { point, relPoint, x, y, toMap } —
 -- written by CaveRenderer when the window is dragged. It is deliberately not
@@ -291,6 +300,32 @@ Config.FDID_MAP_SUB      = HFWMF_FDID_MAP_SUB      or {}
 Config.FDID_MAP_ORIGINAL = HFWMF_FDID_MAP_ORIGINAL or {}
 Config.FDID_BASE    = "Interface\\AddOns\\HighFidelityWorldMapForever\\WorldMap\\"
 
+-- Native-resolution Type=Zone maps (see hfwm/db2.py's _native_zone_geometry
+-- and hfwm/fdid_map.py). Keyed by UiMapID rather than FileDataID: these
+-- zones draw a bigger tile grid, at the pipeline's own resolution, than
+-- Blizzard's fixed art layer describes -- so Renderer.lua uses this
+-- geometry and path prefix directly instead of C_Map.GetMapArtLayers /
+-- GetMapArtLayerTextures. Empty tables (rather than a missing global) on
+-- any build from before this table existed.
+Config.NATIVE_ZONES          = HFWMF_NATIVE_ZONES          or {}
+Config.NATIVE_ZONES_ORIGINAL = HFWMF_NATIVE_ZONES_ORIGINAL or {}
+
+--- Native geometry for *mapID* under the given background, or nil.
+--- nil either means this map has no native art at all (continent/world
+--- maps, or a Type=Zone map whose Blizzard-native layer was already at or
+--- above minimap density), or means the specific dump the background
+--- wants (main vs. the raw --original one) was not built -- either way,
+--- Renderer.lua's fallback to the ordinary FDID path is the right thing to
+--- do, and it does that safely on its own once this returns nil.
+---@param mapID number
+---@param bg table entry from Config.BACKGROUNDS
+---@return table|nil
+function Config:GetNativeZone(mapID, bg)
+    local t = (bg and bg.tiles == "original")
+        and self.NATIVE_ZONES_ORIGINAL or self.NATIVE_ZONES
+    return t[mapID]
+end
+
 -- Vashj'ir UiMapIDs — retail-only (Cataclysm). WoW Forever has no Vashj'ir,
 -- so this is intentionally empty. Kept so that Renderer.lua stays
 -- structurally identical to the retail addon.
@@ -346,6 +381,8 @@ do
     end
     Config._fdidMapSize         = count(Config.FDID_MAP)
     Config._fdidMapOriginalSize = count(Config.FDID_MAP_ORIGINAL)
+    Config._nativeZonesSize         = count(Config.NATIVE_ZONES)
+    Config._nativeZonesOriginalSize = count(Config.NATIVE_ZONES_ORIGINAL)
 end
 
 -- Saved background keys that have been renamed. "default" was the original

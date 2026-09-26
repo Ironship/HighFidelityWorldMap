@@ -361,13 +361,26 @@ def process_zone(
     )
 
     folder = zone_info["folder"]
-    cols, rows = zone_info["cols"], zone_info["rows"]
-    layer_w, layer_h = zone_info["layer_w"], zone_info["layer_h"]
-    tile_w, tile_h = zone_info["tile_w"], zone_info["tile_h"]
     tile_fdids = zone_info["tile_fdids"]
 
+    # ``native`` (see hfwm/db2.py's _native_zone_geometry) means this is a
+    # Type=Zone map whose art layer is sized for the minimap's own source
+    # density rather than Blizzard's fixed layer. tile_fdids stays
+    # Blizzard's own list -- still used below for the base-art backdrop and
+    # for reporting -- but it no longer enumerates the output grid 1:1, so
+    # the length assertion in the else-branch doesn't apply here.
+    native = zone_info.get("native")
+    if native:
+        cols, rows = native["cols"], native["rows"]
+        layer_w, layer_h = native["layer_w"], native["layer_h"]
+        tile_w, tile_h = native["tile_w"], native["tile_h"]
+    else:
+        cols, rows = zone_info["cols"], zone_info["rows"]
+        layer_w, layer_h = zone_info["layer_w"], zone_info["layer_h"]
+        tile_w, tile_h = zone_info["tile_w"], zone_info["tile_h"]
+
     expected = cols * rows
-    if len(tile_fdids) != expected:
+    if not native and len(tile_fdids) != expected:
         return {
             "status": "error",
             "reason": (
@@ -475,9 +488,21 @@ def process_zone(
 
     canvas = None
     if want_base_art:
+        # _base_art_canvas places Blizzard's original art-layer tiles using
+        # zone_info's own (small, fixed) cols/tile_w/tile_h -- that grid is
+        # unrelated to the native one above, so build it at its own native
+        # size first and upscale the whole composed backdrop afterwards
+        # rather than trying to paste small original tiles into a much
+        # bigger canvas at the wrong positions.
+        orig_w = zone_info["cols"] * zone_info["tile_w"]
+        orig_h = zone_info["rows"] * zone_info["tile_h"]
         canvas, base_art_missing = _base_art_canvas(
-            zone_info, base_art_cache or {}, out_w, out_h,
+            zone_info, base_art_cache or {}, orig_w, orig_h,
         )
+        if canvas is not None and (orig_w, orig_h) != (out_w, out_h):
+            upscaled = resize_rgba(canvas, (out_w, out_h), Image.LANCZOS)
+            canvas.close()
+            canvas = upscaled
         if canvas is None:
             notes.append(
                 "base art unavailable (none of the zone's "
@@ -552,6 +577,7 @@ def process_zone(
         "grid": f"{cols}x{rows}",
         "layer": f"{layer_w}x{layer_h}",
         "output": f"{out_w}x{out_h}",
+        "native": bool(native),
         "regions": regions_drawn,
         "has_ocean": has_ocean,
         "alpha_sea": want_alpha_sea,

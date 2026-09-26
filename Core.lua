@@ -9,6 +9,7 @@
 -- /hfwm alpha 0-1   – set overlay opacity
 -- /hfwm cave        – the cave map window (on|off|show|hide|reset|alpha N)
 -- /hfwm remember    – remember world map zoom+pan across close/reopen
+-- /hfwm zoom        – additional (closer) world map zoom levels
 -- /hfwm debug       – print diagnostic info for current map
 -------------------------------------------------------------------------------
 local addonName, ns = ...
@@ -22,6 +23,7 @@ local Options     = ns.Options
 local Cave        = ns.Cave
 local CaveRenderer = ns.CaveRenderer
 local MapMemory   = ns.MapMemory
+local ZoomLevels  = ns.ZoomLevels
 local P           = ns.P
 
 -------------------------------------------------------------------------------
@@ -81,6 +83,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
 
         Cave:Start()
         MapMemory:Start()
+        ZoomLevels:Start()
 
         Commands:Register()
         -- After Commands, so a Lua error while probing the client's options

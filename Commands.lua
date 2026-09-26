@@ -151,6 +151,20 @@ function Commands:Handle(msg)
             db.rememberMapZoomPan and "|cff00ff00on|r" or "|cffff4444off|r"))
         if ns.Options.panel then ns.Options:Refresh() end
         return
+    elseif cmd == "zoom" then
+        local want = args[2]
+        if want == "on" then
+            db.additionalZoomLevels = true
+        elseif want == "off" then
+            db.additionalZoomLevels = false
+        else
+            db.additionalZoomLevels = not db.additionalZoomLevels
+        end
+        ns.ZoomLevels:Refresh()
+        P(("Additional zoom levels: %s"):format(
+            db.additionalZoomLevels and "|cff00ff00on|r" or "|cffff4444off|r"))
+        if ns.Options.panel then ns.Options:Refresh() end
+        return
     elseif cmd == "bg" or cmd == "background" then
         local want = args[2] or ""
         -- Only what this install can actually draw: "original" needs the
@@ -322,6 +336,8 @@ function Commands:Handle(msg)
         print("  /hfwm alpha N       - set opacity (0-1)")
         print("  /hfwm remember [on|off] - remember world map zoom+pan "
             .. "across close/reopen")
+        print("  /hfwm zoom [on|off] - additional (closer) world map zoom "
+            .. "levels")
         print("  /hfwm cave [on|off] - toggle the cave map (opt-in)")
         print("                        show/hide, reset (position), alpha N,")
         print("                        autoopen [on|off], remember [on|off]")
@@ -359,6 +375,8 @@ function Commands:Debug()
     print(("  FDID_BASE: %s"):format(Config.FDID_BASE or "nil"))
     print(("  tile tables: bundled=%d  original=%d"):format(
         Config._fdidMapSize or -1, Config._fdidMapOriginalSize or -1))
+    print(("  native zones: bundled=%d  original=%d"):format(
+        Config._nativeZonesSize or -1, Config._nativeZonesOriginalSize or -1))
     local bgHow
     if bg.rgb then
         bgHow = ("#%02X%02X%02X"):format(
