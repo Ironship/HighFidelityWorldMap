@@ -560,6 +560,17 @@ def _build_zone_db(
             ui_map_type, key, geo["layer_w"], geo["layer_h"], regions,
         )
 
+        # The three capped continent maps ship two builds, not one: the
+        # "Increase world map clarity" toggle needs a genuinely lower-res
+        # *satellite* fallback for when it's off, not Blizzard's own
+        # hand-painted map -- so the base key here always stays the
+        # ordinary, Blizzard-grid-matching satellite build (native=None,
+        # included in HFWMF_FDID_MAP same as any other non-native map),
+        # and a second "<key>HD" entry carries the capped hi-res geometry
+        # instead. Every Type=Zone map (native uncapped, no toggle, no
+        # dual build) keeps native set on the one entry as before.
+        is_continent = bool(native) and native.get("continent")
+
         zones[key] = {
             "folder": key,
             "area_name": ui_names[uid],
@@ -573,9 +584,14 @@ def _build_zone_db(
             "tile_w": geo["tile_w"],
             "tile_h": geo["tile_h"],
             "tile_fdids": geo["tile_fdids"],
-            "native": native,
+            "native": None if is_continent else native,
             "regions": regions,
         }
+
+        if is_continent:
+            hd_key = f"{key}HD"
+            zones[hd_key] = dict(zones[key], folder=hd_key, native=native)
+            used.add(hd_key)
 
     if skipped_no_tiles:
         print(f"    {skipped_no_tiles} UiMaps skipped (no minimap coverage)",

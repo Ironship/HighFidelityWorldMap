@@ -21,12 +21,27 @@ covers every map ``hfwm/db2.py``'s ``_hires_geometry`` gave a bigger-than-
 Blizzard's layer to (see ``hfwm/zone.py``'s ``native`` field) -- every
 Type=Zone map, uncapped, plus the three named continent/world maps in
 ``HIRES_CONTINENT_MAPS`` (Kalimdor, Eastern Kingdoms, the top-level
-Azeroth map), capped. Those maps' output grid no longer matches
-Blizzard's own FDID count or order 1:1 -- there are more tiles, laid out
-at the pipeline's own resolution rather than the client's fixed art layer
--- so they are excluded from the two FDID tables above entirely and
-instead keyed by ``UiMapID`` directly, with their own geometry and a bare
-path prefix ``Renderer.lua`` appends a tile index to.
+Azeroth map), capped and flagged ``continent=true`` (see below). Those
+maps' output grid no longer matches Blizzard's own FDID count or order
+1:1 -- there are more tiles, laid out at the pipeline's own resolution
+rather than the client's fixed art layer -- so they are excluded from
+the two FDID tables above entirely and instead keyed by ``UiMapID``
+directly, with their own geometry and a bare path prefix
+``Renderer.lua`` appends a tile index to.
+
+The three continent maps are the one case where ``hfwm/db2.py``'s
+``_build_zone_db`` emits *two* zone-DB entries for a single UiMapID: the
+plain key (e.g. ``"Kalimdor"``, ``native=None``) is the ordinary,
+Blizzard-grid-matching satellite build, so it lands in ``HFWMF_FDID_MAP``
+like any other zone; a second ``"<key>HD"`` entry (e.g.
+``"KalimdorHD"``, ``native`` set) carries the capped hi-res geometry
+into ``HFWMF_NATIVE_ZONES`` instead, marked ``continent=true``. Config.lua's
+"Increase world map clarity" toggle reads that flag: off, it hides the HD
+entry and Renderer.lua falls through to the ordinary FDID-mapped satellite
+art above -- never to Blizzard's own unreplaced map -- and on, it draws
+the HD entry. Every Type=Zone map has no such split: it has no toggle to
+serve, so its one entry carries ``native`` directly, same as before this
+existed.
 """
 
 from __future__ import annotations
