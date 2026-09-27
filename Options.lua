@@ -402,12 +402,12 @@ function Options:BuildPanel()
     panel.name = PANEL_TITLE
     -- Tall enough for the cave section's two extra checkboxes and their
     -- descriptions (added alongside "(beta)") plus the remember-zoom-and-pan,
-    -- additional-zoom-levels and world-map-clarity checkboxes and their
-    -- descriptions above them; a frame doesn't clip its children by default,
-    -- but the client's own canvas and BuildWindow's standalone frame below
-    -- both size themselves from this, so a panel too short for its content
-    -- would just run past their bottom edge.
-    panel:SetSize(560, 830)
+    -- additional-zoom-levels, world-map-clarity and fog-of-war checkboxes and
+    -- their descriptions above them; a frame doesn't clip its children by
+    -- default, but the client's own canvas and BuildWindow's standalone frame
+    -- below both size themselves from this, so a panel too short for its
+    -- content would just run past their bottom edge.
+    panel:SetSize(560, 900)
     panel:Hide()
 
     local title = Label(panel, PANEL_TITLE, "GameFontNormalLarge")
@@ -591,6 +591,41 @@ function Options:BuildPanel()
     clarityDesc:SetWidth(500)
     clarityDesc:SetJustifyH("LEFT")
 
+    -- Fog of War
+    --
+    -- Off by default: it's a deliberate step back into the mystery this
+    -- addon otherwise exists to remove, so it's opt-in rather than assumed,
+    -- the same reasoning as the two checkboxes above. See
+    -- Config.DEFAULTS.fogOfWarEnabled and Renderer's Activate().
+    local fogCheck = CreateFrameTry("CheckButton",
+        "HFWMForeverFogCheck", panel,
+        "InterfaceOptionsCheckButtonTemplate", "UICheckButtonTemplate")
+    fogCheck:SetPoint("TOPLEFT", clarityDesc, "BOTTOMLEFT", -6, -14)
+    fogCheck:SetSize(26, 26)
+    local fogCheckText = fogCheck.Text or fogCheck.text
+        or SubElement(fogCheck, "Text", "Text")
+    if fogCheckText then
+        fogCheckText:SetText("Fog of War")
+    else
+        fogCheckText = Label(panel, "Fog of War", "GameFontHighlight")
+        fogCheckText:SetPoint("LEFT", fogCheck, "RIGHT", 2, 0)
+    end
+    fogCheck:SetScript("OnClick", function(btn)
+        Config.db.fogOfWarEnabled = btn:GetChecked() and true or false
+        ns.Renderer:ForceRefresh()
+    end)
+
+    local fogDesc = Label(panel,
+        "|cff999999Brings back the original grayscale fog covering ground "
+        .. "you haven't explored yet, same as without this addon. The "
+        .. "moment you actually uncover a patch of ground, this addon's "
+        .. "own hi-res art takes over there instantly — down to the exact "
+        .. "same boundary the game's own map uses. Off by default.|r",
+        "GameFontHighlightSmall")
+    fogDesc:SetPoint("TOPLEFT", fogCheck, "BOTTOMLEFT", 6, -2)
+    fogDesc:SetWidth(500)
+    fogDesc:SetJustifyH("LEFT")
+
     -- Cave map (beta)
     --
     -- Its own heading rather than another line of checkboxes at the top: it
@@ -601,7 +636,7 @@ function Options:BuildPanel()
     -- maps C_Map doesn't have — so it is worth flagging as the newest,
     -- least-tested part of the addon.
     local caveHeading = Label(panel, "Cave map (beta)", "GameFontNormal")
-    caveHeading:SetPoint("TOPLEFT", clarityDesc, "BOTTOMLEFT", -6, -20)
+    caveHeading:SetPoint("TOPLEFT", fogDesc, "BOTTOMLEFT", -6, -20)
 
     local caveCheck = CreateFrameTry("CheckButton", "HFWMForeverCaveCheck",
         panel, "InterfaceOptionsCheckButtonTemplate", "UICheckButtonTemplate")
@@ -731,7 +766,7 @@ function Options:BuildPanel()
             .. table.concat(keys, "|")
             .. "  |  /hfwm cave on|off|autoopen|remember  |  "
             .. "/hfwm remember on|off  |  /hfwm zoom on|off  |  "
-            .. "/hfwm clarity on|off|r",
+            .. "/hfwm clarity on|off  |  /hfwm fog on|off|r",
         "GameFontHighlightSmall")
     hint:SetPoint("TOPLEFT", caveSlider, "BOTTOMLEFT", 0, -28)
 
@@ -742,6 +777,7 @@ function Options:BuildPanel()
     panel.rememberCheck     = rememberCheck
     panel.zoomCheck         = zoomCheck
     panel.clarityCheck      = clarityCheck
+    panel.fogCheck          = fogCheck
     panel.caveCheck         = caveCheck
     panel.caveAutoOpenCheck = caveAutoOpenCheck
     panel.caveRememberCheck = caveRememberCheck
@@ -798,6 +834,8 @@ function Options:Refresh()
     panel.clarityCheck:SetChecked(
         Config.db.worldMapClarity and true or false)
 
+    panel.fogCheck:SetChecked(Config.db.fogOfWarEnabled and true or false)
+
     panel.caveCheck:SetChecked(Config.db.caveEnabled and true or false)
     panel.caveAutoOpenCheck:SetChecked(Config.db.caveAutoOpen and true or false)
     panel.caveRememberCheck:SetChecked(
@@ -842,7 +880,7 @@ function Options:BuildWindow()
     local win = CreateFrame("Frame", "HFWMForeverOptionsWindow", UIParent)
     -- Matches BuildPanel's taller size (see its own comment) plus the same
     -- ~20px margin the original 480 left over its 450.
-    win:SetSize(580, 780)
+    win:SetSize(580, 850)
     win:SetPoint("CENTER")
     win:SetFrameStrata("DIALOG")
     win:SetToplevel(true)

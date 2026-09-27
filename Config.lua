@@ -87,6 +87,39 @@ Config.DEFAULTS = {
     -- Falls straight back to the client's own art when off, exactly as if
     -- this feature did not exist.
     worldMapClarity = false,
+
+    -- Fog of War: re-introduce the original, grayscale-until-explored look
+    -- Blizzard's own map has always drawn, in place of this addon's usual
+    -- "every zone in full, hi-res detail the instant the map opens" pitch
+    -- — which is exactly what this option deliberately works against, so
+    -- it is opt-in rather than assumed, the same reasoning as
+    -- worldMapClarity and additionalZoomLevels below.
+    --
+    -- With it on, Blizzard's own detail-layer art (BaseArt) is left visible
+    -- underneath this addon's tiles instead of hidden, and the tile-layout
+    -- section of Renderer's Refresh draws this addon's own tiles only
+    -- where one of Blizzard's own, live exploration reveal textures says
+    -- the player has actually explored -- Exploration:HidePins() keeps
+    -- those textures populated and enumerable (just invisible) rather
+    -- than releasing them the way plain suppression does, and
+    -- Exploration:EnumerateOverlayTextures hands them to Renderer's
+    -- DrawExploredPiece, which reads each one's own real screen position,
+    -- size, texture and texture coordinates directly off it and crops
+    -- this addon's tiles to that exact same shape as a MaskTexture. That
+    -- shape is Blizzard's own already-correct, torn/feathered reveal
+    -- outline, borrowed wholesale rather than recomputed, so it matches
+    -- the game's own map pixel for pixel instead of looking like a crop
+    -- (an earlier attempt recomputed the same shape from
+    -- C_MapExplorationInfo's raw offsets and an assumed tile-chunking
+    -- scheme, which produced scattered, misplaced pieces on at least one
+    -- client and was abandoned for this instead). Blizzard's own
+    -- exploration overlay pins (Exploration.lua) stay suppressed exactly
+    -- as always; they would only ever restate the same area in Blizzard's
+    -- own lower-resolution art on top of this addon's tiles.
+    -- See Renderer's Activate() and the tile-layout section of Refresh,
+    -- and Core.lua's MAP_EXPLORATION_UPDATED hook for keeping this live
+    -- while the map stays open.
+    fogOfWarEnabled = false,
 }
 -- The db also carries `caveWindowPoint` — { point, relPoint, x, y, toMap } —
 -- written by CaveRenderer when the window is dragged. It is deliberately not
@@ -354,6 +387,17 @@ end
 ---@return boolean
 function Config:WorldMapClarityEnabled()
     return self.db and self.db.worldMapClarity or false
+end
+
+--- Whether this addon's own tiles should draw only over ground the player
+--- has actually explored (per C_MapExplorationInfo), with Blizzard's
+--- original grayscale-until-explored detail-layer art left visible
+--- everywhere else, instead of this addon's tiles covering the whole map
+--- unconditionally. Off by default — see DEFAULTS.fogOfWarEnabled for what
+--- turning it on actually changes.
+---@return boolean
+function Config:FogOfWarEnabled()
+    return self.db and self.db.fogOfWarEnabled or false
 end
 
 -- Vashj'ir UiMapIDs — retail-only (Cataclysm). WoW Forever has no Vashj'ir,

@@ -9,6 +9,7 @@ local addonName, ns = ...
 -- Public sub-tables filled by individual modules
 ns.Config      = {}
 ns.Pool        = {}
+ns.MaskPool    = {}
 ns.BaseArt     = {}
 ns.MapFrameBg  = {}
 ns.Exploration = {}

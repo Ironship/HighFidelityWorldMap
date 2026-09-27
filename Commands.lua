@@ -183,6 +183,25 @@ function Commands:Handle(msg)
                 or ""))
         if ns.Options.panel then ns.Options:Refresh() end
         return
+    elseif cmd == "fog" or cmd == "fogofwar" then
+        local want = args[2]
+        if want == "on" then
+            db.fogOfWarEnabled = true
+        elseif want == "off" then
+            db.fogOfWarEnabled = false
+        else
+            db.fogOfWarEnabled = not db.fogOfWarEnabled
+        end
+        ns.Renderer:ForceRefresh()
+        P(("Fog of War: %s"):format(
+            db.fogOfWarEnabled and "|cff00ff00on|r" or "|cffff4444off|r")
+            .. (db.fogOfWarEnabled
+                and " |cff999999(Blizzard's original grayscale map shows "
+                    .. "through unexplored ground; explored ground still "
+                    .. "shows this addon's own art)|r"
+                or ""))
+        if ns.Options.panel then ns.Options:Refresh() end
+        return
     elseif cmd == "bg" or cmd == "background" then
         local want = args[2] or ""
         -- Only what this install can actually draw: "original" needs the
@@ -358,6 +377,8 @@ function Commands:Handle(msg)
             .. "levels")
         print("  /hfwm clarity [on|off] - higher-detail Kalimdor/Eastern "
             .. "Kingdoms/Azeroth maps (off by default, may render slower)")
+        print("  /hfwm fog [on|off]  - fog of war over unexplored ground "
+            .. "(off by default)")
         print("  /hfwm cave [on|off] - toggle the cave map (opt-in)")
         print("                        show/hide, reset (position), alpha N,")
         print("                        autoopen [on|off], remember [on|off]")

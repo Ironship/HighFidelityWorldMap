@@ -6,6 +6,7 @@ local addonName, ns = ...
 local Renderer    = ns.Renderer
 local Config      = ns.Config
 local Pool        = ns.Pool
+local MaskPool    = ns.MaskPool
 local BaseArt     = ns.BaseArt
 local MapFrameBg  = ns.MapFrameBg
 local Exploration = ns.Exploration
@@ -87,6 +88,207 @@ local function RestoreDefaults()
     Exploration:SetVisible(true)
 end
 
+--- Fog of War: draw the slice of this addon's own tile grid that falls
+--- under one of Blizzard's own, currently-active exploration reveal
+--- textures (Exploration:EnumerateOverlayTextures), cropped to that exact
+--- texture's own alpha shape — the same torn, feathered edge Blizzard's
+--- own map uses right now — instead of a hard rectangle.
+---
+--- The whole point of this over recomputing the same shape from
+--- C_MapExplorationInfo (the previous approach here, which placed pieces
+--- wrong on this client): *blizTex* is a live Texture object Blizzard's
+--- own client already positioned, sized, textured and cropped correctly
+--- this very frame — HidePins only set its alpha to 0, it is still doing
+--- everything else a normal, undisturbed exploration overlay does — so
+--- its geometry is read directly off it (GetLeft/Top/Right/Bottom,
+--- GetTexture, GetTexCoord) rather than rebuilt from raw offsets and an
+--- assumed tile size / file-padding scheme this addon has no way to
+--- verify holds on every client.
+---
+--- *blizTex*'s own screen rect only rarely lines up with this addon's own
+--- tile grid, so it is usually split across more than one of this
+--- addon's own tiles; each such split gets its own texture, masked with
+--- the matching slice of *blizTex*'s own mask shape, so the pieces still
+--- line up into that one true shape once drawn.
+---@param blizTex table live Texture from Exploration:EnumerateOverlayTextures
+---@param frameLeft number Config.overlayFrame:GetLeft(), screen space
+---@param frameTop number Config.overlayFrame:GetTop(), screen space
+---@param layerW number
+---@param layerH number
+---@param tilePxW number
+---@param tilePxH number
+---@param cols number
+---@param rows number
+---@param tileSource table
+---@param scaleX number
+---@param scaleY number
+---@param trace boolean|nil
+---@return number piecesDrawn
+local function DrawExploredPiece(
+    blizTex, frameLeft, frameTop,
+    layerW, layerH, tilePxW, tilePxH, cols, rows, tileSource, scaleX, scaleY,
+    trace)
+
+    -- isShownByMouseOver pieces (Blizzard's own RefreshOverlays) start
+    -- Hidden and only Blizzard's own mouse-over handling ever Shows them
+    -- — nothing this addon does touches that — so an unshown texture here
+    -- means Blizzard itself is not currently revealing anything with it,
+    -- same as if it were not in the list at all.
+    if not blizTex:IsShown() then
+        if trace then P("  fog piece SKIPPED: not shown") end
+        return 0
+    end
+
+    local texLeft, texTop = blizTex:GetLeft(), blizTex:GetTop()
+    local texRight, texBottom = blizTex:GetRight(), blizTex:GetBottom()
+    if not (texLeft and texTop and texRight and texBottom
+        and frameLeft and frameTop) then
+        -- GetLeft/Top/Right/Bottom return nil until a region has actually
+        -- been laid out on screen at least once -- shown is not the same
+        -- as laid out. The very first time this addon ever lets
+        -- Blizzard's own exploration provider populate on a given map
+        -- (previously always suppressed via RemoveAllData before it could
+        -- draw anything), that first frame's freshly (re)acquired chunk
+        -- textures can still read nil here even though IsShown() is
+        -- already true; see the retry in the caller.
+        if trace then
+            P(("  fog piece SKIPPED: not laid out yet (left=%s top=%s "
+               .. "right=%s bottom=%s frameLeft=%s frameTop=%s)"):format(
+                tostring(texLeft), tostring(texTop), tostring(texRight),
+                tostring(texBottom), tostring(frameLeft), tostring(frameTop)))
+        end
+        return 0
+    end
+
+    -- Blizzard's screen-space rect, remapped into this addon's own
+    -- layer-pixel space by the same scale this refresh already uses for
+    -- its own tiles. GetTop/GetBottom count up from the bottom of the
+    -- screen (WoW's usual convention), so frameTop - texTop is the
+    -- distance *down* from the frame's own top edge, matching the sign
+    -- the ordinary tile-layout loop already uses for cellY.
+    local chunkX0 = (texLeft - frameLeft) / scaleX
+    local chunkX1 = (texRight - frameLeft) / scaleX
+    local chunkY0 = (frameTop - texTop) / scaleY
+    local chunkY1 = (frameTop - texBottom) / scaleY
+
+    local chunkW = chunkX1 - chunkX0
+    local chunkH = chunkY1 - chunkY0
+    if chunkW <= 0 or chunkH <= 0 then
+        if trace then
+            P(("  fog piece SKIPPED: degenerate chunk %.2fx%.2f"):format(
+                chunkW, chunkH))
+        end
+        return 0
+    end
+
+    local maskFile = blizTex:GetTexture()
+    if not maskFile then
+        if trace then P("  fog piece SKIPPED: no texture file") end
+        return 0
+    end
+
+    -- Every reveal piece Blizzard draws is an unrotated, unflipped crop
+    -- (its own RefreshOverlays only ever calls the plain 4-argument
+    -- SetTexCoord(left, right, top, bottom)), so the 8-value getter's
+    -- four corners reduce to one rectangle: upper-left and upper-right
+    -- share their top, upper-left and lower-left share their left, and
+    -- so on.
+    local ulX, ulY, llX, llY, urX, urY = blizTex:GetTexCoord()
+    local maskLeft, maskRight = ulX, urX
+    local maskTop, maskBottom = ulY, llY
+
+    if trace then
+        P(("  fog piece: screen=[%.1f,%.1f]-[%.1f,%.1f]  chunk(layerpx)="
+           .. "[%.1f,%.1f]-[%.1f,%.1f] (%.1fx%.1f)  mask=%s  "
+           .. "maskTexCoord=%.4f,%.4f,%.4f,%.4f"):format(
+            texLeft, texTop, texRight, texBottom,
+            chunkX0, chunkY0, chunkX1, chunkY1, chunkW, chunkH,
+            tostring(maskFile), maskLeft, maskRight, maskTop, maskBottom))
+    end
+
+    local colStart = math.max(0, math.floor(chunkX0 / tilePxW))
+    local colEnd   = math.min(cols - 1, math.ceil(chunkX1 / tilePxW) - 1)
+    local rowStart = math.max(0, math.floor(chunkY0 / tilePxH))
+    local rowEnd   = math.min(rows - 1, math.ceil(chunkY1 / tilePxH) - 1)
+
+    if trace then
+        P(("    tiles touched: cols=%d rows=%d tilePx=%dx%d  colStart=%d "
+           .. "colEnd=%d rowStart=%d rowEnd=%d (%d cell(s))"):format(
+            cols, rows, tilePxW, tilePxH, colStart, colEnd, rowStart, rowEnd,
+            (colEnd - colStart + 1) * (rowEnd - rowStart + 1)))
+    end
+
+    local piecesDrawn, nilSrcSkipped, degenerateSkipped = 0, 0, 0
+    for row = rowStart, rowEnd do
+        for col = colStart, colEnd do
+            local src = tileSource[row * cols + col + 1]
+            if not src then nilSrcSkipped = nilSrcSkipped + 1 end
+            if src then
+                local tileX0 = col * tilePxW
+                local tileY0 = row * tilePxH
+                local tileX1 = tileX0 + math.min(tilePxW, layerW - tileX0)
+                local tileY1 = tileY0 + math.min(tilePxH, layerH - tileY0)
+
+                local ix0 = math.max(tileX0, chunkX0)
+                local ix1 = math.min(tileX1, chunkX1)
+                local iy0 = math.max(tileY0, chunkY0)
+                local iy1 = math.min(tileY1, chunkY1)
+
+                if not (ix1 > ix0 and iy1 > iy0) then
+                    degenerateSkipped = degenerateSkipped + 1
+                end
+                if ix1 > ix0 and iy1 > iy0 then
+                    local screenW = (ix1 - ix0) * scaleX
+                    local screenH = (iy1 - iy0) * scaleY
+                    local screenX = ix0 * scaleX
+                    local screenY = iy0 * scaleY
+
+                    local tex = Pool:Acquire()
+                    tex:SetSize(screenW, screenH)
+                    tex:SetPoint("TOPLEFT", Config.overlayFrame, "TOPLEFT",
+                        screenX, -screenY)
+                    tex:SetTexCoord(
+                        (ix0 - tileX0) / tilePxW, (ix1 - tileX0) / tilePxW,
+                        (iy0 - tileY0) / tilePxH, (iy1 - tileY0) / tilePxH)
+                    tex:SetTexture(src)
+
+                    -- Same screen rect as the tile piece above so the two
+                    -- register pixel-for-pixel, cropped to the fraction of
+                    -- *blizTex*'s own rect this piece occupies, then
+                    -- placed within blizTex's own texture-coordinate
+                    -- rectangle (rather than assumed to start at 0,0 —
+                    -- Blizzard's own crop can itself start anywhere).
+                    local fracLeft   = (ix0 - chunkX0) / chunkW
+                    local fracRight  = (ix1 - chunkX0) / chunkW
+                    local fracTop    = (iy0 - chunkY0) / chunkH
+                    local fracBottom = (iy1 - chunkY0) / chunkH
+
+                    local mask = MaskPool:Acquire()
+                    mask:SetSize(screenW, screenH)
+                    mask:SetPoint("TOPLEFT", Config.overlayFrame, "TOPLEFT",
+                        screenX, -screenY)
+                    mask:SetTexture(maskFile,
+                        "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+                    mask:SetTexCoord(
+                        maskLeft + fracLeft   * (maskRight  - maskLeft),
+                        maskLeft + fracRight  * (maskRight  - maskLeft),
+                        maskTop  + fracTop    * (maskBottom - maskTop),
+                        maskTop  + fracBottom * (maskBottom - maskTop))
+                    tex:AddMaskTexture(mask)
+                    piecesDrawn = piecesDrawn + 1
+                end
+            end
+        end
+    end
+
+    if trace then
+        P(("    -> %d piece(s) drawn  (%d skipped: no tileSource entry  "
+           .. "%d skipped: degenerate intersection)"):format(
+            piecesDrawn, nilSrcSkipped, degenerateSkipped))
+    end
+    return piecesDrawn
+end
+
 --- Main overlay refresh.
 ---@param force boolean|nil
 function Renderer:Refresh(force)
@@ -96,6 +298,7 @@ function Renderer:Refresh(force)
     if not mapID then
         Config.overlayActive = false
         Pool:ReleaseAll()
+        MaskPool:ReleaseAll()
         Config.lastMapID = nil
         return
     end
@@ -163,6 +366,7 @@ function Renderer:Refresh(force)
     end
 
     Pool:ReleaseAll()
+    MaskPool:ReleaseAll()
     Config.lastCanvas    = canvas
     Config.lastMapID     = mapID
     Config.lastCanvasW   = canvasW
@@ -193,6 +397,11 @@ function Renderer:Refresh(force)
     local tilePxH = layer.tileHeight or 256
     local cols    = math.ceil(layerW / tilePxW)
     local rows    = math.ceil(layerH / tilePxH)
+
+    -- Hoisted above Activate() (which used to compute this itself) because
+    -- the tile-layout section below needs it too, to decide whether to draw
+    -- the ordinary unconditional grid or Fog of War's explored-only subset.
+    local fogOfWar = Config:FogOfWarEnabled()
 
     -- The background decides which tile set to draw, not just what goes
     -- behind it: Original has its own raw dump under WorldMap/Original/ and
@@ -310,12 +519,39 @@ function Renderer:Refresh(force)
         local bg
         if useBundled then
             bg = ApplyBackground(background)
+            if fogOfWar then
+                -- Fog of War wants Blizzard's own detail-layer art
+                -- underneath this addon's tiles regardless of which
+                -- background is chosen: that grayscale-until-explored art
+                -- is what shows through wherever the tile-layout section
+                -- below does not draw one of this addon's own tiles over
+                -- it, which on purpose is now wherever the player has not
+                -- actually explored. Overrides ApplyBackground's own
+                -- BaseArt choice above on purpose.
+                BaseArt:SetVisible(true)
+            end
         else
             if Config.backdropTexture then Config.backdropTexture:Hide() end
             BaseArt:SetVisible(false)
             MapFrameBg:SetVisible(not background.seeThrough)
         end
-        Exploration:SetVisible(false)
+        if fogOfWar and useBundled then
+            -- Fog of War's own tiles below are drawn FROM Blizzard's live
+            -- exploration textures (Exploration:EnumerateOverlayTextures /
+            -- DrawExploredPiece), so unlike the plain-suppression case,
+            -- that data has to stay populated and enumerable rather than
+            -- released -- HidePins only zeroes alpha on the originals,
+            -- which has no bearing on the separate MaskTexture objects
+            -- DrawExploredPiece points at the same underlying files.
+            Exploration:HidePins()
+        else
+            -- No Fog of War reveal to build from here (feature off, or
+            -- this map has no bundled art of ours to selectively show), so
+            -- Blizzard's own reveal pins would only ever redundantly
+            -- restate what this addon's own tiles (or their absence)
+            -- already show -- suppressed the ordinary, full way.
+            Exploration:SetVisible(false)
+        end
         Watchdog:Start()
         return bg
     end
@@ -340,34 +576,96 @@ function Renderer:Refresh(force)
     -- Tile layout
     local scaleX = canvasW / layerW
     local scaleY = canvasH / layerH
-    local tileIdx = 1
 
-    for row = 0, rows - 1 do
-        for col = 0, cols - 1 do
-            local src = tileSource[tileIdx]
-            if not src then break end
+    -- Fog of War: swap the ordinary unconditional grid for just the tiles
+    -- (or slices of tiles) that fall under one of Blizzard's own, live
+    -- exploration reveal textures. `fogActive` is deliberately the gate
+    -- for which loop below runs, not a separate flag next to it, so every
+    -- way this can end up unusable — the feature off, or this map having
+    -- no bundled art of ours to selectively show — falls back to exactly
+    -- the ordinary full grid rather than needing its own case.
+    local fogActive = fogOfWar and useBundled
+    local blizExploredTextures = fogActive
+        and Exploration:EnumerateOverlayTextures()
+    local fogPiecesDrawn = 0
 
-            local artTileW = math.min(tilePxW, layerW - col * tilePxW)
-            local artTileH = math.min(tilePxH, layerH - row * tilePxH)
+    if fogActive then
+        local frameLeft = Config.overlayFrame:GetLeft()
+        local frameTop  = Config.overlayFrame:GetTop()
+        if trace then
+            P(("  fog: %d live Blizzard texture(s) found  frameLeft=%s "
+               .. "frameTop=%s"):format(
+                #blizExploredTextures, tostring(frameLeft), tostring(frameTop)))
+        end
+        for _, blizTex in ipairs(blizExploredTextures) do
+            fogPiecesDrawn = fogPiecesDrawn
+                + DrawExploredPiece(
+                    blizTex, frameLeft, frameTop,
+                    layerW, layerH, tilePxW, tilePxH, cols, rows, tileSource,
+                    scaleX, scaleY, trace)
+        end
 
-            local cellW = artTileW * scaleX
-            local cellH = artTileH * scaleY
-            local cellX = col * tilePxW * scaleX
-            local cellY = row * tilePxH * scaleY
+        -- GetLeft/Top/Right/Bottom on a region only resolve once it has
+        -- actually rendered at least one frame after being (re)shown or
+        -- repositioned. The very first time this addon lets Blizzard's own
+        -- exploration provider populate on a given map -- previously
+        -- always pre-empted by RemoveAllData before it ever got to lay
+        -- anything out -- its freshly (re)acquired chunk textures can
+        -- still be mid-layout this same tick even though EnumerateOverlay
+        -- Textures() just forced them to exist. That shows up here as
+        -- real entries but zero usable geometry: not Fog of War's
+        -- legitimate "nothing explored yet" (which wouldn't have produced
+        -- any entries in the first place), so retry exactly once next
+        -- frame, by which point the layout pass has caught up, rather than
+        -- leaving the map looking blank until something else happens to
+        -- trigger another refresh.
+        if fogPiecesDrawn == 0 and #blizExploredTextures > 0
+            and not Config._fogRetryPending then
+            if trace then P("  fog: 0 pieces from real entries -- retrying next frame") end
+            Config._fogRetryPending = true
+            C_Timer.After(0, function()
+                Config._fogRetryPending = false
+                if Config.overlayActive and Config:FogOfWarEnabled() then
+                    Renderer:ForceRefresh()
+                end
+            end)
+        end
+    else
+        local tileIdx = 1
+        for row = 0, rows - 1 do
+            for col = 0, cols - 1 do
+                local src = tileSource[tileIdx]
+                if not src then break end
 
-            local texRight  = artTileW / tilePxW
-            local texBottom = artTileH / tilePxH
+                local artTileW = math.min(tilePxW, layerW - col * tilePxW)
+                local artTileH = math.min(tilePxH, layerH - row * tilePxH)
 
-            local tex = Pool:Acquire()
-            tex:SetSize(cellW, cellH)
-            tex:SetPoint("TOPLEFT", Config.overlayFrame, "TOPLEFT", cellX, -cellY)
-            tex:SetTexCoord(0, texRight, 0, texBottom)
-            tex:SetTexture(src)
-            tileIdx = tileIdx + 1
+                local cellW = artTileW * scaleX
+                local cellH = artTileH * scaleY
+                local cellX = col * tilePxW * scaleX
+                local cellY = row * tilePxH * scaleY
+
+                local texRight  = artTileW / tilePxW
+                local texBottom = artTileH / tilePxH
+
+                local tex = Pool:Acquire()
+                tex:SetSize(cellW, cellH)
+                tex:SetPoint(
+                    "TOPLEFT", Config.overlayFrame, "TOPLEFT", cellX, -cellY)
+                tex:SetTexCoord(0, texRight, 0, texBottom)
+                tex:SetTexture(src)
+                tileIdx = tileIdx + 1
+            end
         end
     end
 
-    if Pool:ActiveCount() == 0 then
+    -- Fog of War genuinely can mean zero tiles here — a map the player has
+    -- not explored any of yet, or has no live reveal textures to read this
+    -- particular refresh — which is not the failure this is meant to
+    -- catch: fogActive being true at all already means this is Fog of
+    -- War's own intentionally-partial grid, not a lookup that came back
+    -- empty by mistake, so there is nothing to fall back from.
+    if Pool:ActiveCount() == 0 and not fogActive then
         P("No textures created for mapID " .. mapID .. " — restoring default art")
         RestoreDefaults()
     end

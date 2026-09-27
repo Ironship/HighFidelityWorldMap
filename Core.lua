@@ -41,6 +41,14 @@ loader:SetScript("OnEvent", function(self, event, arg1)
 
     elseif event == "PLAYER_LOGIN" then
         self:UnregisterAllEvents()
+        -- Fog of War's own reveal (see Renderer's DrawExploredPiece) needs
+        -- to hear about newly-explored ground while the map is already
+        -- open, not just whenever something else happens to trigger a
+        -- refresh — registered unconditionally rather than only while the
+        -- feature is on, since the handler below is what actually checks
+        -- that, and toggling a single event registration on and off with
+        -- it would be no cheaper.
+        self:RegisterEvent("MAP_EXPLORATION_UPDATED")
 
         local canvas = WorldMapFrame.ScrollContainer.Child
         Config.overlayFrame = CreateFrame(
@@ -92,5 +100,15 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         -- APIs still leaves the slash commands working.
         Options:Init()
         P("loaded — /hfwm to toggle, /hfwm options for settings")
+
+    elseif event == "MAP_EXPLORATION_UPDATED" then
+        -- Only meaningful while Fog of War is on and the map is actually
+        -- open: exploration state is the only thing Renderer draws that
+        -- depends on it at all, so without both checks this would be a
+        -- full Refresh on every step the player takes, map open or not,
+        -- for no visible reason.
+        if Config:FogOfWarEnabled() and WorldMapFrame:IsShown() then
+            Renderer:Refresh(true)
+        end
     end
 end)
