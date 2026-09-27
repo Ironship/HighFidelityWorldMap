@@ -35,7 +35,47 @@ This module collapses all three onto a single colour.  Two passes:
 Both passes are keyed off a small measured palette rather than a
 "looks blue" heuristic, because the fills are flat and exact and a loose
 test eats dark coastal cliff shadow.  Inland lakes use the water shader at
-their own tint and are not in the palette, so they survive untouched.
+their own tint and are not in the palette in principle, so they are
+supposed to survive untouched — but "in principle" is doing a lot of work
+there.  A colour test has no idea *where* a pixel is, so anything that
+happens to render close enough to one of the five measured fills (within
+:data:`OCEAN_FILL_TOLERANCE`) gets erased or recoloured right alongside
+real ocean, deep inside a zone's boundary — a lake or river, but also
+Blackrock Mountain's near-black interior shading, or any other dark patch
+of *dry land* that coincidentally lands in the same narrow colour range as
+open ocean.
+
+A first attempt at fixing this restricted the colour test to a border band
+near each region's own edge, on the theory that real coastline runs along
+the outside of a zone's world rect. That is true often enough, but not at
+Blackrock Mountain: it sits in the corner of Burning Steppes' rect, which
+*is* an edge, just not a coastal one — Searing Gorge is across it, not the
+sea. Distance from the rectangle's edge and distance from the actual
+coastline are different things, and only coincide when every edge happens
+to be a coast.
+
+The second attempt, :func:`reachable_sea_tiles`, was connectivity instead
+of geometry: a whole *tile* only counted as sea if some path of
+ocean-coloured tiles connected it back to one read with high confidence as
+open water. That fixed Blackrock Mountain — nothing walks a colour-match
+chain from it out to the sea — but it was still coarse in the wrong
+direction at Stormwind: the canals are real water, so their tile is
+legitimately reachable, and the whole-tile gate then erased *every*
+ocean-coloured pixel in that tile, including the dark stone of Stormwind
+Keep sitting a few pixels away in the same or the next tile over.
+
+:func:`reachable_sea_pixels` is the fix, and it is connectivity at the
+resolution the problem actually lives at — pixels, not tiles. Every
+tile's own ocean-fill mask is measured at native resolution as before (so
+the downscale still can't blend a fringe no exact-colour match could
+otherwise reach), but those masks are then assembled into one canvas for
+the whole region and split into 4-connected components. A component is
+trusted only if it contains at least one pixel from a cell read with high
+confidence as open water; a component is a *shape*, so it stops exactly
+where the colour does — at the canal's edge, not at the tile's. Real
+coastline is one connected body reaching every shore it touches, so it is
+always such a component; an isolated match, whatever it is and however
+large, is a component of its own that no seed pixel ever falls in.
 """
 
 from __future__ import annotations
@@ -99,14 +139,49 @@ def ocean_mask(rgb):
     return mask
 
 
+def apply_unify(arr, mask, ocean_rgb: tuple[int, int, int]) -> None:
+    """Recolour *arr*'s RGB in-place wherever *mask* is set.
+
+    Shared core of :func:`unify_tile` (per-tile, mask computed on the spot)
+    and the region-wide path in :mod:`hfwm.zone` (mask is the pixel-level
+    :func:`reachable_sea_pixels` result). *arr* is an ``HxWx4`` uint8
+    array; *mask* is ``HxW`` bool.
+    """
+    if mask.any():
+        arr[:, :, :3][mask] = ocean_rgb
+
+
+def apply_erase(arr, mask, keep_rgb: bool = True) -> None:
+    """Clear *arr*'s alpha in-place wherever *mask* is set.
+
+    Shared core of :func:`erase_tile` and the region-wide path in
+    :mod:`hfwm.zone`. Only the alpha is cleared, by default: see
+    :func:`erase_tile` for why the RGB underneath is worth keeping.
+    Pass ``keep_rgb=False`` for the old zeroing behaviour.
+    """
+    if mask.any():
+        if keep_rgb:
+            arr[:, :, 3][mask] = 0
+        else:
+            arr[mask] = (0, 0, 0, 0)
+
+
 def unify_tile(img, ocean_rgb: tuple[int, int, int]) -> tuple[object, float]:
     """Recolour every ocean-fill pixel of *img* to *ocean_rgb*.
 
     Returns ``(image, ocean_fraction)``.  *img* is an RGBA PIL image at its
     native resolution; the returned image is a new one.  ``ocean_fraction``
     is what share of the tile was sea, which
-    :func:`classify_missing_cells` uses to tell open water apart from an
+    :func:`classify_missing_cells` uses to tell open water from an
     interior map's void.
+
+    Unconditional — matches every colour hit with no idea whether it is
+    real sea. :mod:`hfwm.zone` does not call this directly any more for
+    that reason; it assembles every tile's mask into one canvas and runs
+    :func:`reachable_sea_pixels` across the whole region before touching
+    anything. This still exists as the single-tile building block (and
+    what :func:`reachable_sea_pixels`'s caller measures each tile's own
+    fraction with).
     """
     import numpy as np
     from PIL import Image
@@ -114,8 +189,8 @@ def unify_tile(img, ocean_rgb: tuple[int, int, int]) -> tuple[object, float]:
     arr = np.array(img)
     mask = ocean_mask(arr[:, :, :3])
     frac = float(mask.mean())
+    apply_unify(arr, mask, ocean_rgb)
     if frac:
-        arr[:, :, :3][mask] = ocean_rgb
         img = Image.fromarray(arr)
     return img, frac
 
@@ -149,6 +224,9 @@ def erase_tile(img, keep_rgb: bool = True) -> tuple[object, float]:
     claim is the downscale one above.
 
     Pass ``keep_rgb=False`` for the old zeroing behaviour.
+
+    Unconditional, same as :func:`unify_tile`, and superseded the same way
+    by :func:`reachable_sea_pixels` for the region-wide erase pass.
     """
     import numpy as np
     from PIL import Image
@@ -156,11 +234,8 @@ def erase_tile(img, keep_rgb: bool = True) -> tuple[object, float]:
     arr = np.array(img)
     mask = ocean_mask(arr[:, :, :3])
     frac = float(mask.mean())
+    apply_erase(arr, mask, keep_rgb)
     if frac:
-        if keep_rgb:
-            arr[:, :, 3][mask] = 0
-        else:
-            arr[mask] = (0, 0, 0, 0)
         img = Image.fromarray(arr)
     return img, frac
 
@@ -227,3 +302,49 @@ def classify_missing_cells(
             fill.extend(component)
 
     return fill
+
+
+# ---------------------------------------------------------------------------
+# Pixel-connectivity gate for the colour test
+# ---------------------------------------------------------------------------
+
+def reachable_sea_pixels(mask, seed_mask):
+    """Return the pixels of *mask* whose 4-connected component touches *seed_mask*.
+
+    Both are ``HxW`` bool arrays over the same region-wide canvas: *mask*
+    is every pixel that matched the ocean palette (however it got there),
+    *seed_mask* marks the pixels that sit inside a cell read with high
+    confidence as open water (:data:`OCEAN_TILE_FRACTION` or more of it —
+    see :mod:`hfwm.zone`, which paints whole ``tile_px``-sized blocks of
+    it in before calling this).
+
+    :func:`scipy.ndimage.label` splits *mask* into its 4-connected
+    components (the default structuring element in 2D). A component is
+    kept in full, exactly as matched, if any one of its pixels is also in
+    *seed_mask*; otherwise every pixel in it is dropped, however large the
+    component is. Real coastline is always one connected body reaching
+    every shore it touches, so a genuine stretch of sea and the confident
+    tile it borders end up in the same component and the whole thing
+    survives intact. A false positive — Blackrock Mountain's shading, a
+    lake, or (the case this was rewritten for) Stormwind Keep's stone
+    sitting next to a real canal — is a component of its own with no seed
+    pixel in it, so it is dropped whole, without eating into the
+    legitimate water it happens to touch or sit near: the component
+    boundary *is* the colour boundary, pixel for pixel, not the tile it
+    happened to fall in.
+    """
+    import numpy as np
+    from scipy import ndimage
+
+    labels, num = ndimage.label(mask)
+    if num == 0:
+        return mask  # all False; nothing matched at all.
+
+    seed_labels = np.unique(labels[seed_mask & mask])
+    seed_labels = seed_labels[seed_labels != 0]
+    if seed_labels.size == 0:
+        return np.zeros_like(mask)
+
+    keep = np.zeros(num + 1, dtype=bool)
+    keep[seed_labels] = True
+    return keep[labels]

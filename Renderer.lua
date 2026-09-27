@@ -208,13 +208,15 @@ function Renderer:Refresh(force)
     local useBundled = false
     local useNative  = false
 
-    -- Native-resolution Type=Zone maps (see hfwm/db2.py's
-    -- _native_zone_geometry) bypass Blizzard's fixed art-layer geometry
-    -- entirely: our own bundled grid is finer than anything a Classic-era
-    -- UiMapArtStyleLayer can describe for these, so cols/rows/tile size/
-    -- layer size all come from the pipeline's own output instead of
-    -- C_Map.GetMapArtLayers, and the tile source is built straight from a
-    -- path prefix rather than looked up per Blizzard FileDataID.
+    -- Higher-resolution maps (see hfwm/db2.py's _hires_geometry) bypass
+    -- Blizzard's fixed art-layer geometry entirely: every Type=Zone map,
+    -- uncapped, plus Kalimdor/Eastern Kingdoms/the top-level Azeroth map,
+    -- capped (see HIRES_CONTINENT_MAPS). Our own bundled grid is finer
+    -- than anything a Classic-era UiMapArtStyleLayer can describe for
+    -- these, so cols/rows/tile size/layer size all come from the
+    -- pipeline's own output instead of C_Map.GetMapArtLayers, and the
+    -- tile source is built straight from a path prefix rather than
+    -- looked up per Blizzard FileDataID.
     local nativeZone = Config:GetNativeZone(mapID, background)
     if nativeZone then
         layerW, layerH = nativeZone.layerW, nativeZone.layerH

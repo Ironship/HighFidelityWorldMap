@@ -62,7 +62,13 @@ from .constants import (
     TILE_WORLD_SIZE,
 )
 from .coordinates import compute_crop_box
-from .ocean import classify_missing_cells, erase_tile, unify_tile
+from .ocean import (
+    apply_erase,
+    apply_unify,
+    classify_missing_cells,
+    ocean_mask,
+    reachable_sea_pixels,
+)
 from .resample import resize_rgba
 
 
@@ -113,6 +119,48 @@ def _effective_tile_px(region: dict, dst_w: int, dst_h: int) -> int:
     return tp
 
 
+# A region this size or larger pays for parallel tile decoding; below it,
+# ProcessPoolExecutor's own startup cost isn't worth it. Kalimdor/Eastern
+# Kingdoms/Azeroth's regions run into the hundreds-to-low-thousands of
+# tiles; ordinary zones are almost always well under this.
+_PARALLEL_DECODE_MIN_TILES = 150
+_PARALLEL_DECODE_WORKERS = min(4, os.cpu_count() or 1)
+
+
+def _decode_and_measure(path: Path, want_color_pass: bool):
+    """Decode one source tile and, if requested, its ocean mask.
+
+    Pulled out of ``_stitch_region``'s pass 1 so the exact same decode
+    logic can run either in-process (small regions, the common case) or
+    dispatched across worker processes (large ones — see the parallel
+    branch below). The minimap tiles this pipeline downloads are BLP2's
+    *compressed* encoding, and Pillow's decoder for it is slow (roughly
+    100ms for a 512px tile) and holds the GIL the whole time, so only
+    separate processes speed it up — threads measured no faster than
+    running sequentially.
+
+    Returns ``(status, array_or_None, mask_or_None)`` where *status* is
+    one of ``"ok"``, ``"too_small"``, ``"unreadable"``. The tile comes
+    back as a raw RGBA array rather than a ``PIL.Image``: an ``Image``
+    can't cross a process boundary as cheaply as its own backing buffer,
+    and the caller reconstructs one locally when it needs it.
+    """
+    from PIL import Image
+
+    import numpy as np
+
+    try:
+        tile = Image.open(path).convert("RGBA")
+    except Exception:
+        return "unreadable", None, None
+    w, h = tile.size
+    if w < MIN_SOURCE_TILE_PX or h < MIN_SOURCE_TILE_PX:
+        return "too_small", None, None
+    arr = np.array(tile)
+    mask = ocean_mask(arr[:, :, :3]) if want_color_pass else None
+    return "ok", arr, mask
+
+
 def _stitch_region(
     region: dict,
     tile_cache: dict[int, Path],
@@ -147,19 +195,33 @@ def _stitch_region(
     the downscale to ``tp``.  Afterwards the downscale has already blended
     dark open ocean into light coastal water across every coast tile, and
     no exact-colour match can undo that.
+
+    Neither colour pass is applied to every pixel that matches, though.
+    :func:`hfwm.ocean.reachable_sea_pixels` decides whether an ocean-coloured
+    pixel is trusted at all — 4-connected to a tile confidently read as
+    open water, or a coincidence (a lake, a river, a patch of terrain
+    shading, a building's stonework, that happens to land in the ocean
+    palette). That needs every tile's mask assembled into one region-wide
+    canvas before it can decide anything, so tiles are loaded and measured
+    in a first pass below, then assembled, decided and coloured as a
+    whole in a second — never per tile, or a coincidental match sitting
+    next to real water in the same tile would be swept in with it.
     """
     from PIL import Image
+
+    import numpy as np
 
     tp = _effective_tile_px(region, dst_w, dst_h)
     row_min, row_max = region["row_min"], region["row_max"]
     col_min, col_max = region["col_min"], region["col_max"]
     scols = col_max - col_min + 1
     srows = row_max - row_min + 1
+    sw, sh = scols * tp, srows * tp
 
     # Transparent base only when something is going to show through it;
     # otherwise the historical opaque black, so a raw run is unchanged.
     base = (0, 0, 0, 0) if sea_mode == "erase" else (0, 0, 0, 255)
-    stitch = Image.new("RGBA", (scols * tp, srows * tp), base)
+    stitch = Image.new("RGBA", (sw, sh), base)
 
     loaded = 0
     upscaled = 0
@@ -167,29 +229,105 @@ def _stitch_region(
     unreadable = 0
     missing = 0
     ocean_fracs: dict[tuple[int, int], float] = {}
+    want_color_pass = sea_mode in ("unify", "erase")
 
+    # --- Pass 1: load and measure -----------------------------------
+    # Every tile that makes it past the size check is kept open (rather
+    # than pasted immediately), along with its own native-resolution
+    # ocean mask, so pass 2 can assemble a region-wide canvas of both
+    # before deciding anything.
+    opened: dict[tuple[int, int], "Image.Image"] = {}
+    tile_masks: dict[tuple[int, int], "np.ndarray"] = {}
+
+    keyed_paths: list[tuple[int, int, Path]] = []
     for key_str, fdid in region["tiles"].items():
         r, c = (int(x) for x in key_str.split("_"))
         path = tile_cache.get(fdid)
         if not path:
             missing += 1
             continue
-        try:
-            tile = Image.open(path).convert("RGBA")
-        except Exception:
-            unreadable += 1
-            continue
+        keyed_paths.append((r, c, path))
 
-        w, h = tile.size
-        if w < MIN_SOURCE_TILE_PX or h < MIN_SOURCE_TILE_PX:
-            # Genuinely unusable placeholder.
-            tile.close()
+    def _apply_decoded(r: int, c: int, status: str, arr, mask) -> None:
+        nonlocal too_small, unreadable
+        if status == "unreadable":
+            unreadable += 1
+        elif status == "too_small":
             too_small += 1
-            continue
-        if sea_mode == "unify":
-            tile, ocean_fracs[(r, c)] = unify_tile(tile, ocean_rgb)
-        elif sea_mode == "erase":
-            tile, ocean_fracs[(r, c)] = erase_tile(tile)
+        else:
+            if want_color_pass:
+                ocean_fracs[(r, c)] = float(mask.mean())
+                tile_masks[(r, c)] = mask
+            opened[(r, c)] = Image.fromarray(arr, "RGBA")
+
+    if (
+        len(keyed_paths) >= _PARALLEL_DECODE_MIN_TILES
+        and _PARALLEL_DECODE_WORKERS > 1
+    ):
+        try:
+            from concurrent.futures import ProcessPoolExecutor
+
+            with ProcessPoolExecutor(max_workers=_PARALLEL_DECODE_WORKERS) as ex:
+                results = ex.map(
+                    _decode_and_measure,
+                    [p for _, _, p in keyed_paths],
+                    [want_color_pass] * len(keyed_paths),
+                    chunksize=8,
+                )
+                for (r, c, _path), (status, arr, mask) in zip(keyed_paths, results):
+                    _apply_decoded(r, c, status, arr, mask)
+        except Exception:
+            # Any pool-related failure (platform quirk, pickling limit,
+            # resource exhaustion) -- fall back to the always-correct
+            # sequential path rather than losing the region. Undo any
+            # partial results first so a mid-failure doesn't leave a
+            # mix of the two passes' output.
+            opened.clear()
+            tile_masks.clear()
+            ocean_fracs.clear()
+            too_small = 0
+            unreadable = 0
+            for r, c, path in keyed_paths:
+                status, arr, mask = _decode_and_measure(path, want_color_pass)
+                _apply_decoded(r, c, status, arr, mask)
+    else:
+        for r, c, path in keyed_paths:
+            status, arr, mask = _decode_and_measure(path, want_color_pass)
+            _apply_decoded(r, c, status, arr, mask)
+
+    # A cell confidently read as open water — the seed a pixel-level
+    # match has to trace a path back to (see reachable_sea_pixels) before
+    # anything erases or recolours it.
+    oceanic_cells = {
+        cell for cell, frac in ocean_fracs.items()
+        if frac >= OCEAN_TILE_FRACTION
+    }
+
+    # --- Pass 2: assemble, decide, paste ---------------------------------
+    region_mask = (
+        np.zeros((sh, sw), dtype=bool) if want_color_pass else None
+    )
+    seed_mask = (
+        np.zeros((sh, sw), dtype=bool) if want_color_pass else None
+    )
+
+    for (r, c), tile in opened.items():
+        w, h = tile.size
+        x0, y0 = (c - col_min) * tp, (r - row_min) * tp
+
+        if want_color_pass:
+            mask = tile_masks[(r, c)]
+            if (h, w) != (tp, tp):
+                # Match the tile's own upscale/downscale below, nearest
+                # rather than LANCZOS: a mask is a boolean field, and
+                # blending it would invent fractional edge pixels that
+                # were never actually measured.
+                mask_img = Image.fromarray(mask.astype(np.uint8) * 255)
+                mask = np.array(mask_img.resize((tp, tp), Image.NEAREST)) > 0
+            region_mask[y0:y0 + tp, x0:x0 + tp] = mask
+            if (r, c) in oceanic_cells:
+                seed_mask[y0:y0 + tp, x0:x0 + tp] = True
+
         if (w, h) != (tp, tp):
             # gotchas.md 1.2: some legitimate minimap tiles ship at 256px.
             # Upscale rather than drop them, so a zone never ends up with
@@ -201,9 +339,19 @@ def _stitch_region(
             # under alpha 0 and Pillow's premultiplied path would zero it.
             tile = resize_rgba(tile, (tp, tp), Image.LANCZOS)
 
-        stitch.paste(tile, ((c - col_min) * tp, (r - row_min) * tp))
+        stitch.paste(tile, (x0, y0))
         tile.close()
         loaded += 1
+
+    if want_color_pass and region_mask.any():
+        reachable = reachable_sea_pixels(region_mask, seed_mask)
+        if reachable.any():
+            arr = np.array(stitch)
+            if sea_mode == "unify":
+                apply_unify(arr, reachable, ocean_rgb)
+            else:
+                apply_erase(arr, reachable)
+            stitch = Image.fromarray(arr)
 
     stats = {
         "loaded": loaded,
@@ -255,7 +403,6 @@ def _stitch_region(
     # Map vertical axis = world X (loc_top is max X), horizontal = world Y
     # (loc_left is max Y).  Both run in the negative direction across the
     # image, which is why compute_crop_box works in (origin - bound).
-    sw, sh = stitch.size
     box, coverage = compute_crop_box(
         row_min, col_min,
         region["loc_top"], region["loc_bottom"],
@@ -363,12 +510,14 @@ def process_zone(
     folder = zone_info["folder"]
     tile_fdids = zone_info["tile_fdids"]
 
-    # ``native`` (see hfwm/db2.py's _native_zone_geometry) means this is a
-    # Type=Zone map whose art layer is sized for the minimap's own source
-    # density rather than Blizzard's fixed layer. tile_fdids stays
-    # Blizzard's own list -- still used below for the base-art backdrop and
-    # for reporting -- but it no longer enumerates the output grid 1:1, so
-    # the length assertion in the else-branch doesn't apply here.
+    # ``native`` (see hfwm/db2.py's _hires_geometry) means this map's art
+    # layer is sized for the minimap's own source density rather than
+    # Blizzard's fixed layer -- every Type=Zone map, uncapped, plus the
+    # three named continent/world maps in HIRES_CONTINENT_MAPS, capped.
+    # tile_fdids stays Blizzard's own list -- still used below for the
+    # base-art backdrop and for reporting -- but it no longer enumerates
+    # the output grid 1:1, so the length assertion in the else-branch
+    # doesn't apply here.
     native = zone_info.get("native")
     if native:
         cols, rows = native["cols"], native["rows"]

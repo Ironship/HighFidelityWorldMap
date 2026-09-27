@@ -17,13 +17,16 @@ draws; it is empty when that dump was not generated, which is how the
 addon knows to leave the entry out of its dropdown.
 
 A third pair, ``HFWMF_NATIVE_ZONES`` / ``HFWMF_NATIVE_ZONES_ORIGINAL``,
-covers the native-resolution Type=Zone maps from ``hfwm/db2.py``'s
-``_native_zone_geometry`` (see ``hfwm/zone.py``). Those zones' output grid
-no longer matches Blizzard's own FDID count or order 1:1 -- there are more
-tiles, laid out at the pipeline's own resolution rather than the client's
-fixed art layer -- so they are excluded from the two FDID tables above
-entirely and instead keyed by ``UiMapID`` directly, with their own
-geometry and a bare path prefix ``Renderer.lua`` appends a tile index to.
+covers every map ``hfwm/db2.py``'s ``_hires_geometry`` gave a bigger-than-
+Blizzard's layer to (see ``hfwm/zone.py``'s ``native`` field) -- every
+Type=Zone map, uncapped, plus the three named continent/world maps in
+``HIRES_CONTINENT_MAPS`` (Kalimdor, Eastern Kingdoms, the top-level
+Azeroth map), capped. Those maps' output grid no longer matches
+Blizzard's own FDID count or order 1:1 -- there are more tiles, laid out
+at the pipeline's own resolution rather than the client's fixed art layer
+-- so they are excluded from the two FDID tables above entirely and
+instead keyed by ``UiMapID`` directly, with their own geometry and a bare
+path prefix ``Renderer.lua`` appends a tile index to.
 """
 
 from __future__ import annotations
@@ -262,17 +265,20 @@ def _write_table(
             f.write("HFWMF_FDID_MAP_ORIGINAL = {}\n")
 
         f.write(
-            "\n-- Native-resolution Type=Zone maps: art layer sized for "
-            "the minimap's\n"
-            "-- own source density instead of Blizzard's fixed layer (see "
-            "hfwm/db2.py's\n"
-            "-- _native_zone_geometry). Keyed by UiMapID, not FileDataID -- "
-            "these\n"
-            "-- zones draw a bigger grid than the client's own art layer "
-            "describes,\n"
-            "-- so Renderer.lua uses this geometry and path prefix "
-            "directly instead\n"
-            "-- of C_Map.GetMapArtLayers / GetMapArtLayerTextures.\n"
+            "\n-- Higher-resolution maps: art layer sized for the "
+            "minimap's own\n"
+            "-- source density instead of Blizzard's fixed layer -- every "
+            "Type=Zone\n"
+            "-- map, uncapped, plus Kalimdor/Eastern Kingdoms/Azeroth, "
+            "capped (see\n"
+            "-- hfwm/db2.py's _hires_geometry and HIRES_CONTINENT_MAPS). "
+            "Keyed by\n"
+            "-- UiMapID, not FileDataID -- these draw a bigger grid than "
+            "the client's\n"
+            "-- own art layer describes, so Renderer.lua uses this "
+            "geometry and path\n"
+            "-- prefix directly instead of C_Map.GetMapArtLayers / "
+            "GetMapArtLayerTextures.\n"
         )
         if native_main["entries"]:
             f.write(

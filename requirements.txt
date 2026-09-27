@@ -5,3 +5,8 @@ Pillow
 # hfwm/ocean.py does its sea masking on the pixel array: the ocean-fill
 # match in ocean_mask, and the alpha erase in erase_tile.
 numpy
+# hfwm/ocean.py's reachable_sea_pixels uses scipy.ndimage.label to split
+# the region-wide ocean-colour mask into 4-connected components, so a
+# false colour match (dark terrain shading, say) that isn't actually
+# joined to real open water can be told apart from it and left alone.
+scipy

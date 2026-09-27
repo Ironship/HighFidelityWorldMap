@@ -52,6 +52,8 @@ from .constants import (
     EXPECTED_ART_LAYER_DIMS,
     GAME_BUILD,
     GAME_PRODUCT,
+    HIRES_CONTINENT_MAPS,
+    HIRES_CONTINENT_MAX_PX,
     MAID_FIELD_MINIMAP,
     MINIMAP_DB_CACHE,
     MINIMAP_DB_CACHE_TTL_DAYS,
@@ -253,7 +255,7 @@ def _build_art_geometry(
 # ---------------------------------------------------------------------------
 
 def _native_zone_layer_dims(regions: list[dict]) -> tuple[float, float]:
-    """Native-resolution art-layer size for a Type=Zone map.
+    """Native-resolution art-layer size implied by a map's own regions.
 
     Enough pixels to render every region at exactly the minimap's own
     source density (``MINIMAP_TILE_PX`` per ``TILE_WORLD_SIZE`` yards) — no
@@ -265,9 +267,13 @@ def _native_zone_layer_dims(regions: list[dict]) -> tuple[float, float]:
     A region occupies only its own ``ui_min/max`` sub-rect of the full
     layer, so the layer size implied by *that* region alone is its own
     pixel span divided by the fraction of the layer it covers. Multi-region
-    zones take the max across regions, so every region ends up at least at
+    maps take the max across regions, so every region ends up at least at
     native density (a region whose own implied layer is smaller than
     another's just ends up slightly denser than native, never softer).
+
+    Used both for Type=Zone maps (uncapped) and for the three named
+    continent/world maps in ``HIRES_CONTINENT_MAPS`` (capped) — see
+    :func:`_hires_geometry`.
     """
     native_pp = MINIMAP_TILE_PX / TILE_WORLD_SIZE  # px per world yard
     layer_w = 0.0
@@ -284,18 +290,48 @@ def _native_zone_layer_dims(regions: list[dict]) -> tuple[float, float]:
     return layer_w, layer_h
 
 
-def _native_zone_geometry(
-    ui_map_type: int, layer_w: int, layer_h: int, regions: list[dict],
+def _hires_geometry(
+    ui_map_type: int, folder: str, layer_w: int, layer_h: int,
+    regions: list[dict],
 ) -> dict | None:
-    """Return native ``{cols, rows, layer_w, layer_h, tile_w, tile_h}`` for
-    a Type=Zone map, or ``None`` when Blizzard's own fixed layer is already
-    at or above native density (e.g. the 512x512 city maps) — going bigger
-    there would upscale rather than preserve detail, so the fixed layer is
-    left alone.
+    """Return higher-resolution ``{cols, rows, layer_w, layer_h, tile_w,
+    tile_h}`` for a map that qualifies, or ``None`` to leave Blizzard's
+    fixed layer alone.
+
+    Two cases qualify, and only one is actually lossless:
+
+    * Every Type=Zone map gets its layer sized to the minimap's own native
+      density, uncapped — see ``_native_zone_layer_dims``. Zones are small
+      enough that even the biggest (TheBarrens) tops out at under 1,000
+      tiles.
+    * The three maps named in ``HIRES_CONTINENT_MAPS`` (Kalimdor, Eastern
+      Kingdoms, the top-level Azeroth map) get the same native-density
+      calculation, but then scaled down to fit within
+      ``HIRES_CONTINENT_MAX_PX`` on its longer axis if native would exceed
+      it — which for a continent it always does by a wide margin (Kalimdor
+      alone is 138x92 = 12,696 tiles at true native, an addon-crippling
+      texture count for what a player opens constantly). Capped rather
+      than lossless is the deliberate trade-off here.
+
+    Either way, ``None`` when the result is already at or below Blizzard's
+    own fixed layer (e.g. the 512x512 city maps) — going bigger there would
+    upscale rather than preserve detail, so the fixed layer is left alone.
     """
-    if ui_map_type != UI_MAP_TYPE_ZONE:
+    if ui_map_type == UI_MAP_TYPE_ZONE:
+        max_px = None
+    elif folder in HIRES_CONTINENT_MAPS:
+        max_px = HIRES_CONTINENT_MAX_PX
+    else:
         return None
+
     native_w, native_h = _native_zone_layer_dims(regions)
+    if max_px is not None and (native_w > max_px or native_h > max_px):
+        scale = min(
+            max_px / native_w if native_w > 0 else 1.0,
+            max_px / native_h if native_h > 0 else 1.0,
+        )
+        native_w, native_h = native_w * scale, native_h * scale
+
     if native_w <= layer_w and native_h <= layer_h:
         return None
     cols = max(1, -(-round(native_w) // NATIVE_ZONE_TILE_PX))
@@ -514,8 +550,8 @@ def _build_zone_db(
         used.add(key)
 
         ui_map_type = ui_types.get(uid, 0)
-        native = _native_zone_geometry(
-            ui_map_type, geo["layer_w"], geo["layer_h"], regions,
+        native = _hires_geometry(
+            ui_map_type, key, geo["layer_w"], geo["layer_h"], regions,
         )
 
         zones[key] = {

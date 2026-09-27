@@ -300,23 +300,26 @@ Config.FDID_MAP_SUB      = HFWMF_FDID_MAP_SUB      or {}
 Config.FDID_MAP_ORIGINAL = HFWMF_FDID_MAP_ORIGINAL or {}
 Config.FDID_BASE    = "Interface\\AddOns\\HighFidelityWorldMapForever\\WorldMap\\"
 
--- Native-resolution Type=Zone maps (see hfwm/db2.py's _native_zone_geometry
--- and hfwm/fdid_map.py). Keyed by UiMapID rather than FileDataID: these
--- zones draw a bigger tile grid, at the pipeline's own resolution, than
--- Blizzard's fixed art layer describes -- so Renderer.lua uses this
--- geometry and path prefix directly instead of C_Map.GetMapArtLayers /
--- GetMapArtLayerTextures. Empty tables (rather than a missing global) on
--- any build from before this table existed.
+-- Higher-resolution maps (see hfwm/db2.py's _hires_geometry and
+-- hfwm/fdid_map.py): every Type=Zone map, uncapped, plus Kalimdor/Eastern
+-- Kingdoms/the top-level Azeroth map, capped -- see HIRES_CONTINENT_MAPS.
+-- Keyed by UiMapID rather than FileDataID: these draw a bigger tile grid,
+-- at the pipeline's own resolution, than Blizzard's fixed art layer
+-- describes -- so Renderer.lua uses this geometry and path prefix
+-- directly instead of C_Map.GetMapArtLayers / GetMapArtLayerTextures.
+-- Empty tables (rather than a missing global) on any build from before
+-- this table existed.
 Config.NATIVE_ZONES          = HFWMF_NATIVE_ZONES          or {}
 Config.NATIVE_ZONES_ORIGINAL = HFWMF_NATIVE_ZONES_ORIGINAL or {}
 
---- Native geometry for *mapID* under the given background, or nil.
---- nil either means this map has no native art at all (continent/world
---- maps, or a Type=Zone map whose Blizzard-native layer was already at or
---- above minimap density), or means the specific dump the background
---- wants (main vs. the raw --original one) was not built -- either way,
---- Renderer.lua's fallback to the ordinary FDID path is the right thing to
---- do, and it does that safely on its own once this returns nil.
+--- Higher-resolution geometry for *mapID* under the given background, or
+--- nil. nil either means this map has no such art at all (most
+--- continent/world maps, or a Type=Zone map whose Blizzard-native layer
+--- was already at or above minimap density), or means the specific dump
+--- the background wants (main vs. the raw --original one) was not built
+--- -- either way, Renderer.lua's fallback to the ordinary FDID path is
+--- the right thing to do, and it does that safely on its own once this
+--- returns nil.
 ---@param mapID number
 ---@param bg table entry from Config.BACKGROUNDS
 ---@return table|nil

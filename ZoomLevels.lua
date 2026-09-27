@@ -2,11 +2,12 @@
 -- HFWM-Forever Zoom Levels
 --
 -- Optional "Additional Zoom Levels" feature (off by default): appends extra,
--- closer zoom steps onto the world map's own zoom ladder, so the native-
--- resolution zone art this addon ships for Type=Zone maps (see hfwm/db2.py's
--- _native_zone_geometry) can actually be zoomed into past whatever ceiling
--- Blizzard's own map data happens to allow, instead of that extra detail
--- going to waste once the built-in max zoom is reached.
+-- closer zoom steps onto the world map's own zoom ladder, so the higher-
+-- resolution art this addon ships (see hfwm/db2.py's _hires_geometry --
+-- every Type=Zone map uncapped, plus Kalimdor/Eastern Kingdoms/Azeroth
+-- capped) can actually be zoomed into past whatever ceiling Blizzard's own
+-- map data happens to allow, instead of that extra detail going to waste
+-- once the built-in max zoom is reached.
 --
 -- WorldMapFrame.ScrollContainer (MapCanvasScrollControllerMixin) keeps its
 -- own zoom ladder in self.zoomLevels, a plain array of { scale, layerIndex }

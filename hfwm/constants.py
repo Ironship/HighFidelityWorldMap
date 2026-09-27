@@ -259,6 +259,36 @@ EXPECTED_ART_LAYER_DIMS = {
 NATIVE_ZONE_TILE_PX = 256
 
 # ---------------------------------------------------------------------------
+# Higher-resolution continent/world maps (see hfwm/db2.py's _hires_geometry)
+# ---------------------------------------------------------------------------
+# Continent (UiMapType 2) and World (UiMapType 1) maps get the same fixed,
+# tiny layer as zones -- the whole world is squeezed into the same ~1002x668
+# a single zone gets -- but true native resolution there is a different
+# order of problem than for zones: Kalimdor alone is 138x92 = 12,696 tiles
+# at native density, and Renderer.lua creates one live Texture per tile
+# every time the map is open. That is a real client-performance risk, not
+# just a big download, so unlike zones these are deliberately capped rather
+# than lossless.
+#
+# Named explicitly rather than "every Continent/World-type map": this build
+# also carries Kalimdor1464 and EasternKingdoms1463, two Continent-type
+# duplicates of unclear in-game use, and the point is the three maps a
+# player actually means by "the continent view" -- Kalimdor, Eastern
+# Kingdoms, and the top-level Azeroth map showing both at once -- not
+# whatever else happens to share their UiMapType.
+HIRES_CONTINENT_MAPS = frozenset({"Kalimdor", "EasternKingdoms", "Azeroth"})
+
+# Pixel-per-axis ceiling for the maps above. Chosen to land in the same
+# tile-count territory as the biggest zone map already ships (TheBarrens,
+# 988 tiles) rather than the tens of thousands true native would create.
+HIRES_CONTINENT_MAX_PX = 8192
+
+# Enum.UiMapType values these three maps carry (Zone's own value already
+# lives above, next to the interior-pass constants).
+UI_MAP_TYPE_WORLD = 1
+UI_MAP_TYPE_CONTINENT = 2
+
+# ---------------------------------------------------------------------------
 # Cache TTLs (days)
 # ---------------------------------------------------------------------------
 MINIMAP_DB_CACHE_TTL_DAYS = 30
