@@ -74,6 +74,19 @@ Config.DEFAULTS = {
     -- change than anything else here defaults to on, so it is opt-in rather
     -- than assumed.
     additionalZoomLevels = false,
+
+    -- Increase world map clarity: draws the three continent/world maps
+    -- (Kalimdor, Eastern Kingdoms, Azeroth) from this addon's own capped
+    -- hi-res tile grid instead of Blizzard's stock art -- see
+    -- HFWMF_NATIVE_ZONES' `continent` flag and Config:GetNativeZone below.
+    -- Off by default, unlike the zone maps' native art (which ships
+    -- unconditionally): a continent map is many more tiles than a zone
+    -- ever is, and opening the world map is common enough that a slow
+    -- machine finding that out for the first time mid-session would look
+    -- like this addon breaking the game rather than an opt-in trade-off.
+    -- Falls straight back to the client's own art when off, exactly as if
+    -- this feature did not exist.
+    worldMapClarity = false,
 }
 -- The db also carries `caveWindowPoint` — { point, relPoint, x, y, toMap } —
 -- written by CaveRenderer when the window is dragged. It is deliberately not
@@ -313,20 +326,34 @@ Config.NATIVE_ZONES          = HFWMF_NATIVE_ZONES          or {}
 Config.NATIVE_ZONES_ORIGINAL = HFWMF_NATIVE_ZONES_ORIGINAL or {}
 
 --- Higher-resolution geometry for *mapID* under the given background, or
---- nil. nil either means this map has no such art at all (most
+--- nil. nil means one of: this map has no such art at all (most
 --- continent/world maps, or a Type=Zone map whose Blizzard-native layer
---- was already at or above minimap density), or means the specific dump
---- the background wants (main vs. the raw --original one) was not built
---- -- either way, Renderer.lua's fallback to the ordinary FDID path is
---- the right thing to do, and it does that safely on its own once this
---- returns nil.
+--- was already at or above minimap density); the specific dump the
+--- background wants (main vs. the raw --original one) was not built; or
+--- the entry is one of the three capped continent maps and "Increase
+--- world map clarity" is off. Every case is handled the same way --
+--- Renderer.lua's fallback to the ordinary FDID path is the right thing
+--- to do, and it does that safely on its own once this returns nil.
 ---@param mapID number
 ---@param bg table entry from Config.BACKGROUNDS
 ---@return table|nil
 function Config:GetNativeZone(mapID, bg)
     local t = (bg and bg.tiles == "original")
         and self.NATIVE_ZONES_ORIGINAL or self.NATIVE_ZONES
-    return t[mapID]
+    local entry = t[mapID]
+    if entry and entry.continent and not self:WorldMapClarityEnabled() then
+        return nil
+    end
+    return entry
+end
+
+--- Whether the capped continent maps (Kalimdor/Eastern Kingdoms/Azeroth)
+--- should draw from this addon's hi-res tile grid. Off by default (see
+--- DEFAULTS.worldMapClarity); zone maps are unaffected by this and always
+--- draw at native resolution regardless.
+---@return boolean
+function Config:WorldMapClarityEnabled()
+    return self.db and self.db.worldMapClarity or false
 end
 
 -- Vashj'ir UiMapIDs — retail-only (Cataclysm). WoW Forever has no Vashj'ir,

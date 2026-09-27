@@ -10,6 +10,8 @@
 -- /hfwm cave        – the cave map window (on|off|show|hide|reset|alpha N)
 -- /hfwm remember    – remember world map zoom+pan across close/reopen
 -- /hfwm zoom        – additional (closer) world map zoom levels
+-- /hfwm clarity     – higher-detail Kalimdor/Eastern Kingdoms/Azeroth maps
+--                     (off by default; may render slower)
 -- /hfwm debug       – print diagnostic info for current map
 -------------------------------------------------------------------------------
 local addonName, ns = ...

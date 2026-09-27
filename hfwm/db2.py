@@ -340,6 +340,12 @@ def _hires_geometry(
         "cols": cols, "rows": rows,
         "layer_w": round(native_w), "layer_h": round(native_h),
         "tile_w": NATIVE_ZONE_TILE_PX, "tile_h": NATIVE_ZONE_TILE_PX,
+        # Zone maps ship on unconditionally; the capped continent maps sit
+        # behind the addon's "Increase world map clarity" toggle (off by
+        # default) because of the render cost their much bigger tile grid
+        # adds -- fdid_map.py reads this to mark their Lua table entries so
+        # Config/Renderer know which ones to gate.
+        "continent": folder in HIRES_CONTINENT_MAPS,
     }
 
 

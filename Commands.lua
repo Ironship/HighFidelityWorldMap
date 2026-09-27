@@ -165,6 +165,24 @@ function Commands:Handle(msg)
             db.additionalZoomLevels and "|cff00ff00on|r" or "|cffff4444off|r"))
         if ns.Options.panel then ns.Options:Refresh() end
         return
+    elseif cmd == "clarity" then
+        local want = args[2]
+        if want == "on" then
+            db.worldMapClarity = true
+        elseif want == "off" then
+            db.worldMapClarity = false
+        else
+            db.worldMapClarity = not db.worldMapClarity
+        end
+        ns.Renderer:ForceRefresh()
+        P(("World map clarity: %s"):format(
+            db.worldMapClarity and "|cff00ff00on|r" or "|cffff4444off|r")
+            .. (db.worldMapClarity
+                and " |cff999999(Kalimdor/Eastern Kingdoms/Azeroth at higher "
+                    .. "detail — may render a bit slower)|r"
+                or ""))
+        if ns.Options.panel then ns.Options:Refresh() end
+        return
     elseif cmd == "bg" or cmd == "background" then
         local want = args[2] or ""
         -- Only what this install can actually draw: "original" needs the
@@ -338,6 +356,8 @@ function Commands:Handle(msg)
             .. "across close/reopen")
         print("  /hfwm zoom [on|off] - additional (closer) world map zoom "
             .. "levels")
+        print("  /hfwm clarity [on|off] - higher-detail Kalimdor/Eastern "
+            .. "Kingdoms/Azeroth maps (off by default, may render slower)")
         print("  /hfwm cave [on|off] - toggle the cave map (opt-in)")
         print("                        show/hide, reset (position), alpha N,")
         print("                        autoopen [on|off], remember [on|off]")

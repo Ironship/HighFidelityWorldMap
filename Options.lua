@@ -401,13 +401,13 @@ function Options:BuildPanel()
     local panel = CreateFrame("Frame")
     panel.name = PANEL_TITLE
     -- Tall enough for the cave section's two extra checkboxes and their
-    -- descriptions (added alongside "(beta)") plus the remember-zoom-and-pan
-    -- and additional-zoom-levels checkboxes and their descriptions above
-    -- them; a frame doesn't clip its children by default, but the client's
-    -- own canvas and BuildWindow's standalone frame below both size
-    -- themselves from this, so a panel too short for its content would just
-    -- run past their bottom edge.
-    panel:SetSize(560, 750)
+    -- descriptions (added alongside "(beta)") plus the remember-zoom-and-pan,
+    -- additional-zoom-levels and world-map-clarity checkboxes and their
+    -- descriptions above them; a frame doesn't clip its children by default,
+    -- but the client's own canvas and BuildWindow's standalone frame below
+    -- both size themselves from this, so a panel too short for its content
+    -- would just run past their bottom edge.
+    panel:SetSize(560, 830)
     panel:Hide()
 
     local title = Label(panel, PANEL_TITLE, "GameFontNormalLarge")
@@ -551,6 +551,46 @@ function Options:BuildPanel()
     zoomDesc:SetWidth(500)
     zoomDesc:SetJustifyH("LEFT")
 
+    -- Increase world map clarity
+    --
+    -- Off by default, unlike the always-on native zone art: a continent map
+    -- (Kalimdor, Eastern Kingdoms, Azeroth) is a much bigger tile grid than
+    -- any single zone, and opening the world map is common enough that a
+    -- slower machine finding out the hard way would look like this addon
+    -- breaking the game. Falls back to Blizzard's own stock map the moment
+    -- this is off, exactly as if the feature were never installed.
+    local clarityCheck = CreateFrameTry("CheckButton",
+        "HFWMForeverClarityCheck", panel,
+        "InterfaceOptionsCheckButtonTemplate", "UICheckButtonTemplate")
+    clarityCheck:SetPoint("TOPLEFT", zoomDesc, "BOTTOMLEFT", -6, -14)
+    clarityCheck:SetSize(26, 26)
+    local clarityCheckText = clarityCheck.Text or clarityCheck.text
+        or SubElement(clarityCheck, "Text", "Text")
+    if clarityCheckText then
+        clarityCheckText:SetText("Increase world map clarity")
+    else
+        clarityCheckText = Label(panel, "Increase world map clarity",
+            "GameFontHighlight")
+        clarityCheckText:SetPoint("LEFT", clarityCheck, "RIGHT", 2, 0)
+    end
+    clarityCheck:SetScript("OnClick", function(btn)
+        Config.db.worldMapClarity = btn:GetChecked() and true or false
+        ns.Renderer:ForceRefresh()
+    end)
+
+    local clarityDesc = Label(panel,
+        "|cff999999Draws the full Kalimdor, Eastern Kingdoms and Azeroth "
+        .. "world maps at far higher detail than Blizzard's own map art, "
+        .. "the same treatment this addon already gives every zone map. "
+        .. "Because of how much more detail that is, the world map could "
+        .. "render a bit slowly depending on your system and the client's "
+        .. "own limitations — so it's off by default, and falls back to "
+        .. "the ordinary map the moment it's off.|r",
+        "GameFontHighlightSmall")
+    clarityDesc:SetPoint("TOPLEFT", clarityCheck, "BOTTOMLEFT", 6, -2)
+    clarityDesc:SetWidth(500)
+    clarityDesc:SetJustifyH("LEFT")
+
     -- Cave map (beta)
     --
     -- Its own heading rather than another line of checkboxes at the top: it
@@ -561,7 +601,7 @@ function Options:BuildPanel()
     -- maps C_Map doesn't have — so it is worth flagging as the newest,
     -- least-tested part of the addon.
     local caveHeading = Label(panel, "Cave map (beta)", "GameFontNormal")
-    caveHeading:SetPoint("TOPLEFT", zoomDesc, "BOTTOMLEFT", -6, -20)
+    caveHeading:SetPoint("TOPLEFT", clarityDesc, "BOTTOMLEFT", -6, -20)
 
     local caveCheck = CreateFrameTry("CheckButton", "HFWMForeverCaveCheck",
         panel, "InterfaceOptionsCheckButtonTemplate", "UICheckButtonTemplate")
@@ -690,7 +730,8 @@ function Options:BuildPanel()
         "|cff999999Also available from chat: /hfwm bg "
             .. table.concat(keys, "|")
             .. "  |  /hfwm cave on|off|autoopen|remember  |  "
-            .. "/hfwm remember on|off  |  /hfwm zoom on|off|r",
+            .. "/hfwm remember on|off  |  /hfwm zoom on|off  |  "
+            .. "/hfwm clarity on|off|r",
         "GameFontHighlightSmall")
     hint:SetPoint("TOPLEFT", caveSlider, "BOTTOMLEFT", 0, -28)
 
@@ -700,6 +741,7 @@ function Options:BuildPanel()
     panel.slider            = slider
     panel.rememberCheck     = rememberCheck
     panel.zoomCheck         = zoomCheck
+    panel.clarityCheck      = clarityCheck
     panel.caveCheck         = caveCheck
     panel.caveAutoOpenCheck = caveAutoOpenCheck
     panel.caveRememberCheck = caveRememberCheck
@@ -753,6 +795,9 @@ function Options:Refresh()
     panel.zoomCheck:SetChecked(
         Config.db.additionalZoomLevels and true or false)
 
+    panel.clarityCheck:SetChecked(
+        Config.db.worldMapClarity and true or false)
+
     panel.caveCheck:SetChecked(Config.db.caveEnabled and true or false)
     panel.caveAutoOpenCheck:SetChecked(Config.db.caveAutoOpen and true or false)
     panel.caveRememberCheck:SetChecked(
@@ -797,7 +842,7 @@ function Options:BuildWindow()
     local win = CreateFrame("Frame", "HFWMForeverOptionsWindow", UIParent)
     -- Matches BuildPanel's taller size (see its own comment) plus the same
     -- ~20px margin the original 480 left over its 450.
-    win:SetSize(580, 700)
+    win:SetSize(580, 780)
     win:SetPoint("CENTER")
     win:SetFrameStrata("DIALOG")
     win:SetToplevel(true)

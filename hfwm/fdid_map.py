@@ -141,6 +141,10 @@ def _collect_native(
             "tile_w": native["tile_w"], "tile_h": native["tile_h"],
             "layer_w": native["layer_w"], "layer_h": native["layer_h"],
             "path": f"{lua_dir}\\\\{folder.lower()}",
+            # Flags the three capped continent maps so Config.lua can gate
+            # them behind "Increase world map clarity" (off by default)
+            # while every uncapped Type=Zone map keeps shipping unconditionally.
+            "continent": bool(native.get("continent")),
         }
         covered.append(folder)
 
@@ -288,11 +292,12 @@ def _write_table(
             )
         f.write("HFWMF_NATIVE_ZONES = {\n")
         for map_id, g in sorted(native_main["entries"].items()):
+            continent = ", continent=true" if g.get("continent") else ""
             f.write(
                 f'    [{map_id}] = {{ cols={g["cols"]}, rows={g["rows"]}, '
                 f'tileW={g["tile_w"]}, tileH={g["tile_h"]}, '
                 f'layerW={g["layer_w"]}, layerH={g["layer_h"]}, '
-                f'path="{g["path"]}" }},\n'
+                f'path="{g["path"]}"{continent} }},\n'
             )
         f.write("}\n")
 
@@ -303,11 +308,12 @@ def _write_table(
         if native_orig and native_orig["entries"]:
             f.write("HFWMF_NATIVE_ZONES_ORIGINAL = {\n")
             for map_id, g in sorted(native_orig["entries"].items()):
+                continent = ", continent=true" if g.get("continent") else ""
                 f.write(
                     f'    [{map_id}] = {{ cols={g["cols"]}, rows={g["rows"]}, '
                     f'tileW={g["tile_w"]}, tileH={g["tile_h"]}, '
                     f'layerW={g["layer_w"]}, layerH={g["layer_h"]}, '
-                    f'path="{g["path"]}" }},\n'
+                    f'path="{g["path"]}"{continent} }},\n'
                 )
             f.write("}\n")
         else:
