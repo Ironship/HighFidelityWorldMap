@@ -51,9 +51,108 @@ suppression bookkeeping; nothing passes it to a C_Map function.
 
 from __future__ import annotations
 
+import re
 import time
 
 from .constants import CAVE_DATA_FILE, GAME_BUILD
+
+
+def _mask_comments_and_strings(text: str) -> str:
+    """Return *text* with comment and string-literal contents blanked out
+    (same length, same newlines), so brace-depth scanning never miscounts
+    a stray ``{``/``}`` that only appears in prose or a path string.
+    """
+    out = list(text)
+    i, n = 0, len(text)
+    in_comment = False
+    in_string = False
+    while i < n:
+        ch = text[i]
+        if in_comment:
+            if ch != "\n":
+                out[i] = " "
+            else:
+                in_comment = False
+            i += 1
+            continue
+        if in_string:
+            if ch == '"':
+                in_string = False
+            elif ch == "\\" and i + 1 < n:
+                out[i] = " "
+                out[i + 1] = " "
+                i += 2
+                continue
+            else:
+                out[i] = " "
+            i += 1
+            continue
+        if ch == "-" and i + 1 < n and text[i + 1] == "-":
+            in_comment = True
+            i += 2
+            continue
+        if ch == '"':
+            in_string = True
+            i += 1
+            continue
+        i += 1
+    return "".join(out)
+
+
+def _extract_preserved_places(existing_text: str) -> dict[str, str]:
+    """Pull hand-added cave-satellite-v2 place blocks out of an on-disk
+    CaveData.lua, keyed by place ``name``.
+
+    A place carries hand-added data when its block has a place-level
+    ``projection`` or ``pieces`` field -- the DB2-driven pass this module
+    runs never emits either, so their presence marks a block the
+    hfwm-add-cave skill spliced in by hand. Those two fields (see
+    hfwm/cave_minimap.py) are exactly what a plain regeneration has no
+    way to reconstruct, so this lets the caller restore the whole block
+    verbatim instead of quietly reverting the place to its generic
+    floors-only entry. Comments and formatting are preserved exactly
+    since the block is copied as raw text, not re-serialized.
+    """
+    masked = _mask_comments_and_strings(existing_text)
+    marker = "places = {"
+    start = masked.find(marker)
+    if start == -1:
+        return {}
+    body_start = start + len(marker)
+
+    depth = 1
+    i = body_start
+    n = len(existing_text)
+    while i < n and depth > 0:
+        c = masked[i]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+        i += 1
+    body_end = i - 1  # index of the matching closing '}' of `places = { ... }`
+
+    body = existing_text[body_start:body_end]
+    masked_body = masked[body_start:body_end]
+
+    preserved: dict[str, str] = {}
+    depth = 0
+    block_start = None
+    for j, c in enumerate(masked_body):
+        if c == "{":
+            depth += 1
+            if depth == 1:
+                block_start = j
+        elif c == "}":
+            depth -= 1
+            if depth == 0 and block_start is not None:
+                block = body[block_start:j + 1]
+                if "projection = {" in block or "pieces = {" in block:
+                    m = re.search(r'name\s*=\s*"([^"]*)"', block)
+                    if m:
+                        preserved[m.group(1)] = block
+                block_start = None
+    return preserved
 
 
 def _lua_string(value: str) -> str:
@@ -85,13 +184,40 @@ def generate_cave_data(places: list[dict]) -> dict:
     multi = sum(1 for p in places if len(p["floors"]) > 1)
     tiles = sum(len(f["tiles"]) for p in places for f in p["floors"])
 
+    # Read whatever is currently on disk *before* overwriting it, so any
+    # hand-added cave-satellite-v2 place blocks (projection/pieces --
+    # this DB2-driven pass only ever emits the generic floors-only shape)
+    # can be restored verbatim rather than silently reverted. See
+    # hfwm-add-cave's landmine warning and SYNTHETIC_FDID_BASE's comment.
+    preserved: dict[str, str] = {}
+    if CAVE_DATA_FILE.is_file():
+        try:
+            preserved = _extract_preserved_places(
+                CAVE_DATA_FILE.read_text(encoding="utf-8")
+            )
+        except OSError:
+            preserved = {}
+
+    seen: set[str] = set()
     with open(CAVE_DATA_FILE, "w", encoding="utf-8") as handle:
         _write_header(handle, places, floors, multi, tiles)
         handle.write("HFWMF_CAVE_DATA = {\n")
         handle.write(f"    build = {_lua_string(GAME_BUILD)},\n")
         handle.write("    places = {\n")
         for place in places:
-            _write_place(handle, place)
+            name = place["name"]
+            if name in preserved:
+                handle.write("        " + preserved[name] + ",\n")
+                seen.add(name)
+            else:
+                _write_place(handle, place)
+        # Anything hand-added that this pass's fresh output no longer
+        # produces (renamed or removed upstream) is kept rather than
+        # dropped -- restoring lost art silently is exactly the failure
+        # mode this guard exists to prevent.
+        leftover = [name for name in preserved if name not in seen]
+        for name in leftover:
+            handle.write("        " + preserved[name] + ",\n")
         handle.write("    },\n")
         handle.write("}\n")
 
@@ -100,11 +226,25 @@ def generate_cave_data(places: list[dict]) -> dict:
         f"floors ({multi} multi-level), {tiles} tiles.",
         flush=True,
     )
+    if preserved:
+        print(
+            f"  Preserved {len(preserved)} hand-added cave-satellite-v2 "
+            f"place(s): {', '.join(sorted(preserved))}.",
+            flush=True,
+        )
+    if leftover:
+        print(
+            f"  WARNING: {len(leftover)} preserved place(s) were not in "
+            f"this pass's fresh output (kept anyway): "
+            f"{', '.join(leftover)}.",
+            flush=True,
+        )
     return {
         "places": len(places),
         "floors": floors,
         "multi": multi,
         "tiles": tiles,
+        "preserved": len(preserved),
     }
 
 

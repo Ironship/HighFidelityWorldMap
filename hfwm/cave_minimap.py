@@ -273,10 +273,188 @@ ECHO_RIDGE = MineSpec(
     single_floor=True,
 )
 
+
+# --- Batch 3: 13 more micro-dungeons resolved from ADT MODF placement data
+# directly (see the 2026-09-28 session) rather than name-guessing --
+# WMOAreaTable + community-listfile.csv + each covering ADT's own MODF
+# chunk gave every raw ID with no ambiguity. All single_floor=True (no
+# retail-floor-count-driven 2-means split attempted); every group used
+# below is single-subtile (_00_00 only) -- mines needing multi-subtile
+# group art are held back for a later pass.
+BANETHILBARROWDEN = MineSpec(
+    key='BanethilBarrowDen',
+    wmo_fdid=110359,
+    tile_fdids={0: 214278, 1: 214279, 2: 214280, 3: 214281, 4: 214282, 5: 214283, 6: 214284, 7: 214285, 8: 214286, 9: 214287, 10: 214288, 11: 214289, 12: 214290, 13: 214291, 14: 214292, 15: 214293, 16: 214294, 17: 214295, 18: 214296, 19: 214297, 20: 214298, 21: 214299, 22: 214300, 23: 214301, 24: 214302, 25: 214303, 27: 214304, 28: 214305, 29: 214306, 30: 214307, 31: 214308, 32: 214309},
+    adt_obj0_fdid=783826,
+    modf_unique_id=173805,
+    modf_name_set=3,
+    floor_fdid_base=900000300,
+    piece_fdid_base=900000400,
+    single_floor=True,
+)
+
+COLDRIDGEPASS = MineSpec(
+    key='ColdridgePass',
+    wmo_fdid=110345,
+    tile_fdids={0: 214267, 1: 214268, 2: 214269, 3: 214270, 4: 214271, 5: 214272, 6: 214273, 7: 214274, 8: 214275, 10: 214276, 12: 214277},
+    adt_obj0_fdid=777803,
+    modf_unique_id=48527,
+    modf_name_set=1,
+    floor_fdid_base=900000500,
+    piece_fdid_base=900000600,
+    single_floor=True,
+)
+
+DUSTWINDCAVE = MineSpec(
+    key='DustwindCave',
+    wmo_fdid=111304,
+    tile_fdids={0: 215223, 1: 215224, 3: 215225, 4: 215226, 5: 215227, 6: 215228, 7: 215229},
+    adt_obj0_fdid=786646,
+    modf_unique_id=172378,
+    modf_name_set=2,
+    floor_fdid_base=900000700,
+    piece_fdid_base=900000800,
+    single_floor=True,
+)
+
+GOLDCOASTQUARRY = MineSpec(
+    key='GoldCoastQuarry',
+    wmo_fdid=111137,
+    tile_fdids={0: 214998, 1: 214999, 3: 215000, 4: 215001, 5: 215002, 6: 215003, 7: 215004},
+    adt_obj0_fdid=777243,
+    modf_unique_id=170486,
+    modf_name_set=5,
+    floor_fdid_base=900000900,
+    piece_fdid_base=900001000,
+    single_floor=True,
+)
+
+JANGOLODEMINE = MineSpec(
+    key='JangolodeMine',
+    wmo_fdid=110750,
+    tile_fdids={0: 214595, 1: 214596, 2: 214597, 3: 214598, 4: 214599, 5: 214600, 6: 214601, 7: 214602, 8: 214603},
+    adt_obj0_fdid=777438,
+    modf_unique_id=16632,
+    modf_name_set=4,
+    floor_fdid_base=900001100,
+    piece_fdid_base=900001200,
+    single_floor=True,
+)
+
+JASPERLODEMINE = MineSpec(
+    key='JasperlodeMine',
+    wmo_fdid=111538,
+    tile_fdids={0: 215383, 1: 215384, 2: 215385, 3: 215386, 4: 215387, 5: 215388, 7: 215389, 8: 215390, 9: 215391, 10: 215392, 11: 215393},
+    adt_obj0_fdid=778028,
+    modf_unique_id=71446,
+    modf_name_set=3,
+    floor_fdid_base=900001300,
+    piece_fdid_base=900001400,
+    single_floor=True,
+)
+
+LIGHTSHOPECHAPEL = MineSpec(
+    key='LightsHopeChapel',
+    wmo_fdid=106695,
+    tile_fdids={0: 209852},
+    adt_obj0_fdid=779648,
+    modf_unique_id=200881,
+    modf_name_set=0,
+    floor_fdid_base=900001500,
+    piece_fdid_base=900001600,
+    single_floor=True,
+)
+
+NIGHTWEBSHOLLOW = MineSpec(
+    key='NightWebsHollow',
+    wmo_fdid=111551,
+    tile_fdids={0: 215394, 1: 215395, 2: 215396, 3: 215397, 4: 215398, 5: 215399, 7: 215401, 8: 215402, 9: 215403, 10: 215404, 11: 408584},
+    adt_obj0_fdid=777128,
+    modf_unique_id=70052623,
+    modf_name_set=2,
+    floor_fdid_base=900001700,
+    piece_fdid_base=900001800,
+    single_floor=True,
+)
+
+THEGAPINGCHASM = MineSpec(
+    key='TheGapingChasm',
+    wmo_fdid=110955,
+    tile_fdids={0: 214793, 1: 214794, 2: 214795, 3: 214796, 4: 214797, 5: 214798, 6: 214799, 7: 214800, 8: 214801, 9: 214802, 10: 214803, 11: 214804},
+    adt_obj0_fdid=786736,
+    modf_unique_id=298596,
+    modf_name_set=1,
+    floor_fdid_base=900001900,
+    piece_fdid_base=900002000,
+    single_floor=True,
+)
+
+THEGRIZZLEDDEN = MineSpec(
+    key='TheGrizzledDen',
+    wmo_fdid=110491,
+    tile_fdids={0: 214404},
+    adt_obj0_fdid=777998,
+    modf_unique_id=51584,
+    modf_name_set=1,
+    floor_fdid_base=900002100,
+    piece_fdid_base=900002200,
+    single_floor=True,
+)
+
+ULDAMANAPPROACH = MineSpec(
+    key='UldamanApproach',
+    wmo_fdid=109758,
+    tile_fdids={0: 213412, 1: 213413, 2: 213414, 3: 213415, 4: 213416, 5: 213417, 6: 213418, 7: 213419, 8: 213420, 10: 213421, 11: 213422, 12: 213423, 13: 213424, 14: 213425, 15: 213426, 16: 213427, 17: 213428, 18: 213429, 19: 213430, 20: 213431, 21: 213432, 22: 213433},
+    adt_obj0_fdid=778998,
+    modf_unique_id=180253,
+    modf_name_set=1,
+    floor_fdid_base=900002300,
+    piece_fdid_base=900002400,
+    single_floor=True,
+)
+
+TIRAGARDEKEEP = MineSpec(
+    key='TiragardeKeep',
+    wmo_fdid=111454,
+    tile_fdids={0: 215331, 1: 215332, 2: 215333, 3: 215334, 4: 215335, 5: 215336, 6: 215337, 7: 215338, 8: 215339, 9: 215340, 10: 215341, 11: 215342, 13: 215343, 14: 215344, 15: 215345},
+    adt_obj0_fdid=786876,
+    modf_unique_id=183741,
+    modf_name_set=0,
+    floor_fdid_base=900002500,
+    piece_fdid_base=900002600,
+    single_floor=True,
+)
+
+THEMASTERSCELLAR = MineSpec(
+    key='TheMastersCellar',
+    wmo_fdid=114572,
+    tile_fdids={1: 217703, 2: 217704, 3: 217705, 4: 217706, 5: 217707, 6: 217708},
+    adt_obj0_fdid=778658,
+    modf_unique_id=566705,
+    modf_name_set=0,
+    floor_fdid_base=900002700,
+    piece_fdid_base=900002800,
+    single_floor=True,
+)
+
+
 # Registry __main__ dispatches on — see the bottom of this file.
 MINES: dict[str, MineSpec] = {
     "fargodeep": FARGODEEP,
     "echoridge": ECHO_RIDGE,
+    "banethil": BANETHILBARROWDEN,
+    "coldridgepass": COLDRIDGEPASS,
+    "dustwind": DUSTWINDCAVE,
+    "goldcoastquarry": GOLDCOASTQUARRY,
+    "jangolode": JANGOLODEMINE,
+    "jasperlode": JASPERLODEMINE,
+    "lightshope": LIGHTSHOPECHAPEL,
+    "nightwebshollow": NIGHTWEBSHOLLOW,
+    "gapingchasm": THEGAPINGCHASM,
+    "grizzledden": THEGRIZZLEDDEN,
+    "uldamanapproach": ULDAMANAPPROACH,
+    "tiragardekeep": TIRAGARDEKEEP,
+    "masterscellar": THEMASTERSCELLAR,
 }
 
 

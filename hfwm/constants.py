@@ -145,6 +145,23 @@ DONOR_DB2_CACHE_DIR = CACHE_ROOT / "donor-db2"
 INTERIOR_PRESENCE_CACHE = CACHE_ROOT / "interior_presence.json"
 CAVE_DATA_FILE = SCRIPT_DIR / "CaveData.lua"
 
+# First non-Blizzard FileDataID hfwm/cave_minimap.py hands out for baked
+# cave/mine art (see that module's MINES registry and the hfwm-add-cave
+# skill's "allocate synthetic FDIDs" step). Real Blizzard FDIDs on this
+# build top out in the low millions, so this block is chosen well clear
+# of any real range.
+#
+# generate_cave_data() and generate_fdid_map() both read this to find and
+# preserve hand-added cave-satellite-v2 data across a regeneration: the
+# DB2-driven passes that write CaveData.lua and FDIDMap.lua know nothing
+# about caves/mines above the generic fallback, so without this guard a
+# plain `python3 generateHFWM.py` silently reverts every hand-upgraded
+# mine back to its generic floors-only entry and drops its FDIDMap.lua
+# rows entirely -- exactly what happened to Fargodeep Mine and Echo Ridge
+# Mine once already (both mines' cave windows rendered solid green in
+# game until this was found and reverse-engineered from git history).
+SYNTHETIC_FDID_BASE = 900000000
+
 # Enum.UiMapType values.  Dungeon and Micro are the two interior kinds.
 UI_MAP_TYPE_ZONE = 3
 UI_MAP_TYPE_DUNGEON = 4
