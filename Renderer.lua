@@ -290,11 +290,32 @@ local function DrawExploredPiece(
     local mulX, mulY, mllX, mllY, murX, murY, mlrX, mlrY =
         blizTex:GetTexCoord()
 
+    -- CLAMPTOBLACKADDITIVE (the usual choice for a mask, e.g. a circular
+    -- minimap mask that really does need everything past its own edge to
+    -- read as fully transparent) is wrong here and is what the seams the
+    -- user reported turned out to be. Blizzard lays this map's exploration
+    -- reveal out as a whole grid of separate chunk textures, each its own
+    -- blizTex with its own file and its own mask built here -- so every
+    -- one of this mask's four edges is, ordinarily, sitting exactly on
+    -- the seam against the next chunk's own mask, not against empty
+    -- space. GPU texture filtering blends the texel right at texcoord
+    -- 0.0/1.0 with whatever lies just past it, and CLAMPTOBLACKADDITIVE
+    -- makes that "just past it" pure black / zero alpha -- so every chunk
+    -- faded slightly toward fully-masked-out right at its own border,
+    -- and two adjoining chunks doing that on both sides of the same seam
+    -- is exactly the thin line of bare background this was reported as.
+    -- Plain "CLAMP" repeats the true edge texel's own alpha instead of
+    -- fading it toward black, which removes the seam without weakening
+    -- the mask anywhere that actually matters: this addon's own pieces
+    -- never sample outside a mask's true 0..1 range in the first place
+    -- (each one is clipped to this chunk's own screen rect before it is
+    -- ever drawn), so there was never any real "beyond the edge" content
+    -- for CLAMPTOBLACKADDITIVE to be protecting here.
     local mask = MaskPool:Acquire()
     mask:ClearAllPoints()
     mask:SetPoint("TOPLEFT", blizTex, "TOPLEFT")
     mask:SetPoint("BOTTOMRIGHT", blizTex, "BOTTOMRIGHT")
-    mask:SetTexture(maskFile, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    mask:SetTexture(maskFile, "CLAMP", "CLAMP")
     mask:SetTexCoord(mulX, mulY, mllX, mllY, murX, murY, mlrX, mlrY)
 
     local piecesDrawn, nilSrcSkipped, degenerateSkipped = 0, 0, 0
