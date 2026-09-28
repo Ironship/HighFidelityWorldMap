@@ -354,6 +354,73 @@ function Commands:Handle(msg)
             .. "large enough to be backing; |cff999999framebg nuke|r hides "
             .. "all of it")
         return
+    elseif cmd == "testmask" then
+        -- Throwaway diagnostic, not part of the real render path: shows
+        -- each live exploration reveal texture's own raw file, full size,
+        -- at 0,0-1,1 texture coordinates, with no masking and no slicing
+        -- into this addon's own tile grid -- exactly what that file's own
+        -- alpha channel looks like on its own. Settles, with one
+        -- screenshot, whether that file carries a real organic/torn
+        -- shape (parchment showing through where it's transparent) or is
+        -- just an ordinary opaque terrain tile, without having to trust
+        -- either this addon's prior masked attempt (which fragmented,
+        -- but could have fragmented from the slicing math instead of the
+        -- file) or Blizzard's own client code (which never crops it
+        -- either way, so it can't answer the question by itself).
+        local sub = args[2] or ""
+        if sub == "off" or sub == "clear" then
+            if ns._testMaskTextures then
+                for _, tex in ipairs(ns._testMaskTextures) do
+                    tex:Hide()
+                end
+                ns._testMaskTextures = nil
+            end
+            P("testmask: cleared")
+            return
+        end
+
+        if not Config.overlayFrame then
+            P("testmask: overlay frame not built yet -- enable the addon first")
+            return
+        end
+
+        local textures = ns.Exploration:EnumerateOverlayTextures()
+        if not textures or #textures == 0 then
+            P("testmask: no live exploration texture(s) found on this map "
+                .. "right now")
+            return
+        end
+
+        if ns._testMaskTextures then
+            for _, tex in ipairs(ns._testMaskTextures) do tex:Hide() end
+        end
+        ns._testMaskTextures = {}
+
+        local shown = 0
+        for _, blizTex in ipairs(textures) do
+            if blizTex:IsShown() then
+                local left, top = blizTex:GetLeft(), blizTex:GetTop()
+                local right, bottom = blizTex:GetRight(), blizTex:GetBottom()
+                local file = blizTex:GetTexture()
+                if left and top and right and bottom and file then
+                    local tex = Config.overlayFrame:CreateTexture(
+                        nil, "OVERLAY", nil, 7)
+                    tex:SetTexture(file)
+                    tex:SetSize(right - left, top - bottom)
+                    tex:SetPoint(
+                        "BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, bottom)
+                    tex:Show()
+                    table.insert(ns._testMaskTextures, tex)
+                    shown = shown + 1
+                end
+            end
+        end
+        P(("testmask: showing %d raw reveal file(s), unmasked and "
+            .. "un-sliced -- look for parchment showing through in an "
+            .. "organic/torn shape (real reveal mask) vs. a plain solid "
+            .. "rectangle (ordinary terrain tile). "
+            .. "|cff999999/hfwm testmask off|r removes them."):format(shown))
+        return
     elseif cmd == "debug" then
         self:Debug()
         return
@@ -388,6 +455,8 @@ function Commands:Handle(msg)
         print("                        (all = survey everything, big = shown"
             .. " + large only, nuke/restore)")
         print("  /hfwm debug         - diagnostic info + force refresh")
+        print("  /hfwm testmask [off] - show live reveal texture file(s) "
+            .. "raw, unmasked (diagnostic; off removes them)")
         return
     end
 

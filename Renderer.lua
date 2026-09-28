@@ -90,47 +90,74 @@ end
 
 --- Fog of War: draw the slice of this addon's own tile grid that falls
 --- under one of Blizzard's own, currently-active exploration reveal
---- textures (Exploration:EnumerateOverlayTextures) -- as a plain, opaque
---- fill, not cropped to that texture's own alpha shape. It used to be
---- cropped: the assumption was that *blizTex*'s own file carried a torn,
---- feathered "reveal" shape Blizzard itself renders with, and masking our
---- own tile to that shape would borrow it for free. Pulling Blizzard's own
---- client code (MapExplorationPinMixin:RefreshOverlays, in
---- Blizzard_SharedMapDataProviders/MapExplorationDataProvider.lua) proved
---- that assumption wrong: Blizzard draws these with a plain
---- SetTexture/SetPoint per tile and no masking at all --
---- mapCanvas:AddMaskableTexture(texture) only makes the tile ELIGIBLE for
---- some separate, canvas-wide mask elsewhere; it does not crop the tile to
---- its own file's alpha. *blizTex*'s file is just an ordinary Blizzard
---- terrain tile, not a reveal-shape stencil, and whatever real
---- transparency that tile's own art happens to have (sea, edges) has
---- nothing to do with the shape of explored ground -- masking our own art
---- with it was carving each chunk up by Blizzard's unrelated terrain art
---- instead of by the actual explored footprint, which is exactly the
---- fragmentation and disconnected-looking chunks this was chased down
---- for. Blizzard's own edges are just as hard as DrawFillPiece's; there is
---- no organic edge to borrow here at all, on this client or (per the
---- source above) any other.
+--- textures (Exploration:EnumerateOverlayTextures), cropped to that exact
+--- texture's own alpha shape — the same torn, irregular edge Blizzard's
+--- own map uses right now — instead of a hard rectangle.
+---
+--- This was tried, reverted, and now tried again; here is why. Blizzard's
+--- own client code (MapExplorationPinMixin:RefreshOverlays, in
+--- Blizzard_SharedMapDataProviders/MapExplorationDataProvider.lua) draws
+--- *blizTex*'s file plainly, with no masking of its own -- which reads
+--- like proof this file carries no useful shape, and that is what this
+--- comment used to conclude. It doesn't hold up: a texture's own alpha
+--- channel still applies when it's simply drawn, with or without any
+--- extra masking code around it, so "Blizzard's code doesn't crop it"
+--- never actually proved the file itself was flat. `/hfwm testmask`
+--- (Commands.lua) settled it properly by showing *blizTex*'s file raw, at
+--- full size, with no masking and no slicing into this addon's own tile
+--- grid at all -- confirmed on a live client to be a real irregular
+--- shape, parchment visible through it where it's transparent. The
+--- fragmentation seen the first time this was tried came from a
+--- different bug active in the same test (a SetGradient call elsewhere
+--- in this file, since fixed, that fragmented piece alpha for unrelated
+--- reasons) -- not from this masking approach, which the corrected
+--- history above suggests was sound all along.
+---
+--- Restoring it a second time still came out wrong -- not the original
+--- fragmentation, but a fresh misalignment, because that first restore
+--- rebuilt blizTex's screen rect and texture-coordinate rect by hand: it
+--- read the numbers off blizTex once, converted them into this
+--- function's own chunkX0..chunkY1 layer-pixel space, sliced that into a
+--- fractional texcoord sub-rect per piece, and built one MaskTexture per
+--- piece from that fraction. Every one of those steps is a chance for
+--- this addon's own math to drift from what blizTex is actually showing
+--- right now (rounding, a wrong axis, a frame that moved between the
+--- read and the draw), and any drift shows up as exactly this kind of
+--- wrong-shaped edge. The fix is to stop rebuilding blizTex's rect at
+--- all: one MaskTexture is anchored directly to blizTex itself with
+--- SetPoint (TOPLEFT/BOTTOMRIGHT, no coordinates of our own) and given
+--- blizTex's own file and its exact, unmodified GetTexCoord() -- not a
+--- fraction of it -- so its screen rect and mapping ARE blizTex's,
+--- continuously, rather than a snapshot this function computed once.
+--- That single mask is then handed to every one of this addon's own
+--- pieces that overlaps it via AddMaskTexture; the client itself works
+--- out the overlap between each piece's real screen rect and the mask's
+--- real screen rect, which is the one piece of this whole picture that
+--- was never going to drift, because it isn't derived at all.
 ---
 --- The whole point of reading *blizTex* at all, rather than only ever
 --- using C_MapExplorationInfo directly (see DrawFillPiece below): it is a
---- live Texture object Blizzard's own client already positioned and sized
---- correctly this very frame — HidePins only set its alpha to 0, it is
---- still doing everything else a normal, undisturbed exploration overlay
---- does — so its geometry is read directly off it (GetLeft/Top/Right/
---- Bottom) rather than rebuilt from raw offsets and an assumed tile size /
+--- live Texture object Blizzard's own client already positioned, sized,
+--- textured and cropped correctly this very frame — HidePins only set
+--- its alpha to 0, it is still doing everything else a normal,
+--- undisturbed exploration overlay does — so its geometry is read
+--- directly off it (GetLeft/Top/Right/Bottom, GetTexture, GetTexCoord)
+--- rather than rebuilt from raw offsets and an assumed tile size /
 --- file-padding scheme this addon has no way to verify holds on every
 --- client.
 ---
 --- *blizTex*'s own screen rect only rarely lines up with this addon's own
 --- tile grid, so it is usually split across more than one of this
---- addon's own tiles; each such split gets its own texture, so the pieces
---- still line up into that one true shape once drawn.
+--- addon's own tiles; each such split gets its own texture, all sharing
+--- the one mask anchored to *blizTex* itself, so the pieces still line
+--- up into that one true shape once drawn.
 ---
 --- Not a complete picture on its own, though: tracing showed real,
 --- currently-explored ground with no live reveal texture behind it at
 --- all. See DrawFillPiece below (and the *filled* param this writes
---- into) for the pass that plugs exactly that gap.
+--- into) for the pass that plugs exactly that gap -- DrawFillPiece has
+--- no comparable mask of its own to borrow, so it stays hard-edged; only
+--- this pass's own pieces get the organic edge.
 ---@param blizTex table live Texture from Exploration:EnumerateOverlayTextures
 ---@param frameLeft number Config.overlayFrame:GetLeft(), screen space
 ---@param frameTop number Config.overlayFrame:GetTop(), screen space
@@ -233,6 +260,43 @@ local function DrawExploredPiece(
             (colEnd - colStart + 1) * (rowEnd - rowStart + 1)))
     end
 
+    -- The mask, this time, is not a copy this function derives at all --
+    -- it *is* blizTex's own existing fog frame. Every previous attempt
+    -- (including the one just reverted, which recomputed a fractional
+    -- texcoord sub-rect per piece from chunkX0..chunkY1 and our own
+    -- scaleX/scaleY) rebuilt blizTex's screen rect and texture mapping
+    -- from our own derived numbers, and any drift between that
+    -- reconstruction and blizTex's real, live layout showed up as
+    -- fragmented or misaligned pieces -- exactly the "wrong shape again"
+    -- failure this replaces. So instead of rebuilding it, one
+    -- MaskTexture is pointed AT blizTex directly: anchored with
+    -- SetPoint to blizTex's own two corners (so its screen rect tracks
+    -- blizTex's actual current layout every frame, not a snapshot this
+    -- function computed once) and given blizTex's own texture file and
+    -- exact, unmodified GetTexCoord() (not a fraction of it). That
+    -- reproduces blizTex's own displayed shape pixel-for-pixel by
+    -- construction, and it only has to be built once per blizTex, not
+    -- once per piece: AddMaskTexture lets the same MaskTexture crop any
+    -- number of target Textures, and the client's own overlap math
+    -- between each piece's screen rect and this mask's screen rect does
+    -- the actual per-piece cropping -- no more fraction math on this
+    -- addon's side at all.
+    local maskFile = blizTex:GetTexture()
+    if not maskFile then
+        if trace then P("  fog piece SKIPPED: no texture file") end
+        return 0
+    end
+
+    local mulX, mulY, mllX, mllY, murX, murY, mlrX, mlrY =
+        blizTex:GetTexCoord()
+
+    local mask = MaskPool:Acquire()
+    mask:ClearAllPoints()
+    mask:SetPoint("TOPLEFT", blizTex, "TOPLEFT")
+    mask:SetPoint("BOTTOMRIGHT", blizTex, "BOTTOMRIGHT")
+    mask:SetTexture(maskFile, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    mask:SetTexCoord(mulX, mulY, mllX, mllY, murX, murY, mlrX, mlrY)
+
     local piecesDrawn, nilSrcSkipped, degenerateSkipped = 0, 0, 0
     for row = rowStart, rowEnd do
         for col = colStart, colEnd do
@@ -266,9 +330,16 @@ local function DrawExploredPiece(
                         (ix0 - tileX0) / tilePxW, (ix1 - tileX0) / tilePxW,
                         (iy0 - tileY0) / tilePxH, (iy1 - tileY0) / tilePxH)
                     tex:SetTexture(src)
-                    -- No mask: see this function's own doc comment --
-                    -- Blizzard's own client draws these plain and opaque,
-                    -- no cropping to blizTex's own (unrelated) file.
+
+                    -- Crop to blizTex's own live shape. One shared mask
+                    -- (built once above, anchored to blizTex itself) is
+                    -- added to every piece that overlaps it; the client
+                    -- works out the actual overlap between this piece's
+                    -- own screen rect and the mask's -- which is
+                    -- blizTex's real rect, not a reconstruction of it --
+                    -- so there is no fraction math here to get wrong.
+                    tex:AddMaskTexture(mask)
+
                     piecesDrawn = piecesDrawn + 1
                     if filled then filled[row * cols + col] = true end
                     if pieceTex then pieceTex[row * cols + col] = tex end
@@ -285,40 +356,62 @@ local function DrawExploredPiece(
     return piecesDrawn
 end
 
---- Fade one edge of *tex* from opaque to transparent (or the reverse), on
---- whichever client build still has the API for it.
+--- Fade one edge of *tex* to transparent, keeping the opposite edge fully
+--- opaque, on whichever gradient API this client build actually has.
 ---
 --- `Texture:SetGradientAlpha(orientation, r,g,b,a, r,g,b,a)` is the classic
---- signature every prior client build had; this build (see the
---- ScrollContainer.Child-replacement comment on canvas re-parenting above,
---- also WoW 12.0+) dropped it. There is a replacement, `Texture:SetGradient
---- (orientation, startColor, endColor)`, but calling it here made things
---- WORSE than doing nothing: the exact same 117 pieces DrawExploredPiece/
---- DrawFillPiece always drew came back from a live client as a handful of
---- scattered fragments instead of solid ground, meaning SetGradient's real
---- argument shape on this build (orientation as a plain "VERTICAL"/
---- "HORIZONTAL" string may not even be it any more) does something far
---- more destructive than fading an edge when called the old way, and
---- there is no way to confirm the right shape without a live client to
---- try it against. Erring towards a hard edge that reliably shows
---- everything it should, over a soft edge that might silently eat most of
---- it, is the only safe default here -- so a client missing
---- SetGradientAlpha just skips the fade entirely rather than guessing at
---- SetGradient's call shape.
+--- signature every prior client build had; Patch 10.0.0 merged it into
+--- `TextureBase:SetGradient(orientation, minColor, maxColor)`, taking two
+--- ColorMixin objects (CreateColor(r,g,b,a)) instead of eight raw floats.
+--- This client is missing SetGradientAlpha entirely (confirmed by the
+--- crash that motivated this function existing at all), so it always
+--- takes the SetGradient branch.
+---
+--- Both the exact signature and the orientation convention below are
+--- confirmed against https://warcraft.wiki.gg/wiki/API:TextureBase_SetGradient
+--- rather than guessed: for "VERTICAL", minColor applies at the BOTTOM
+--- and maxColor at the TOP; for "HORIZONTAL", minColor is on the LEFT and
+--- maxColor on the RIGHT -- the same convention SetGradientAlpha always
+--- used, which the merge preserved. A first attempt at this function
+--- assumed "start" meant whichever edge was being faded from regardless
+--- of orientation, which is backwards for two of the four directions; it
+--- also came back from a live client with far more than a backwards
+--- fade wrong (solid ground reduced to scattered fragments), for reasons
+--- that were never fully isolated, so this rewrite takes the documented
+--- per-orientation/per-argument mapping literally, spelled out per
+--- *transparentSide* rather than through a generic "fadeAtStart" that
+--- has to be re-derived correctly for all four directions by whoever
+--- calls it.
 ---@param tex table
----@param orientation "VERTICAL"|"HORIZONTAL"
----@param fadeAtStart boolean true: transparent->opaque; false: opaque->transparent
-local function FadeEdge(tex, orientation, fadeAtStart)
+---@param transparentSide "TOP"|"BOTTOM"|"LEFT"|"RIGHT" which edge of *tex*
+---                        fades to transparent; the opposite edge stays
+---                        fully opaque
+local function FadeEdge(tex, transparentSide)
     if tex.SetGradientAlpha then
-        if fadeAtStart then
-            tex:SetGradientAlpha(orientation, 1, 1, 1, 0, 1, 1, 1, 1)
-        else
-            tex:SetGradientAlpha(orientation, 1, 1, 1, 1, 1, 1, 1, 0)
+        if transparentSide == "TOP" then
+            tex:SetGradientAlpha("VERTICAL", 1, 1, 1, 1, 1, 1, 1, 0)
+        elseif transparentSide == "BOTTOM" then
+            tex:SetGradientAlpha("VERTICAL", 1, 1, 1, 0, 1, 1, 1, 1)
+        elseif transparentSide == "LEFT" then
+            tex:SetGradientAlpha("HORIZONTAL", 1, 1, 1, 0, 1, 1, 1, 1)
+        elseif transparentSide == "RIGHT" then
+            tex:SetGradientAlpha("HORIZONTAL", 1, 1, 1, 1, 1, 1, 1, 0)
+        end
+    elseif tex.SetGradient and CreateColor then
+        local opaque = CreateColor(1, 1, 1, 1)
+        local clear  = CreateColor(1, 1, 1, 0)
+        if transparentSide == "TOP" then
+            tex:SetGradient("VERTICAL", opaque, clear)
+        elseif transparentSide == "BOTTOM" then
+            tex:SetGradient("VERTICAL", clear, opaque)
+        elseif transparentSide == "LEFT" then
+            tex:SetGradient("HORIZONTAL", clear, opaque)
+        elseif transparentSide == "RIGHT" then
+            tex:SetGradient("HORIZONTAL", opaque, clear)
         end
     end
-    -- No SetGradientAlpha and no safe fallback: leave tex at whatever
-    -- alpha it already has (full opacity, from Pool:Acquire/SetVertexColor)
-    -- rather than risk a wrong SetGradient call.
+    -- Neither API: leave tex at whatever alpha it already has (full
+    -- opacity from Pool:Acquire) rather than risk a wrong call.
 end
 
 --- Fog of War gap-filler: C_MapExplorationInfo.GetExploredMapTextures'
@@ -620,16 +713,16 @@ local function SoftenFogEdges(cols, rows, filled, pieceTex, trace)
                 -- would otherwise qualify on two sides at once -- a
                 -- gradient only ever fades along one axis at a time.
                 if hasTop then
-                    FadeEdge(tex, "VERTICAL", true)
+                    FadeEdge(tex, "TOP")
                     faded = faded + 1
                 elseif hasBottom then
-                    FadeEdge(tex, "VERTICAL", false)
+                    FadeEdge(tex, "BOTTOM")
                     faded = faded + 1
                 elseif hasLeft then
-                    FadeEdge(tex, "HORIZONTAL", true)
+                    FadeEdge(tex, "LEFT")
                     faded = faded + 1
                 elseif hasRight then
-                    FadeEdge(tex, "HORIZONTAL", false)
+                    FadeEdge(tex, "RIGHT")
                     faded = faded + 1
                 end
             end
@@ -1041,10 +1134,19 @@ local function DoRefresh(force)
             cols, rows, tileSource, filled, pieceTex, layerW, layerH,
             tilePxW, tilePxH, scaleX, scaleY, trace)
 
-        -- Last: now that every cell this Refresh will ever fill IS filled,
-        -- fade whichever of them sit on the true outer boundary of the
-        -- whole assembled shape (see SoftenFogEdges).
-        SoftenFogEdges(cols, rows, filled, pieceTex, trace)
+        -- SoftenFogEdges is deliberately NOT called here. Confirmed
+        -- against Blizzard's own client source (MapExplorationPinMixin:
+        -- RefreshOverlays, see DrawExploredPiece's doc comment) that it
+        -- draws these hard-edged, no gradient at all -- and tried live,
+        -- fading the boundary just turned a correctly-shaped hard-edged
+        -- area into a blurry one, which is a worse match for Blizzard's
+        -- own look, not a better one. The irregular look this addon is
+        -- actually chasing comes from the SHAPE of the explored-chunk
+        -- data itself (many chunks tracing a path), not from any per-edge
+        -- fade -- there is no post-processing trick that turns a hard
+        -- rectangle into an organic outline. Left in place, unused, in
+        -- case a future data source actually calls for it.
+        -- SoftenFogEdges(cols, rows, filled, pieceTex, trace)
     else
         local tileIdx = 1
         for row = 0, rows - 1 do
