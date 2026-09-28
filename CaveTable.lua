@@ -5,8 +5,8 @@
 -- answer about an interior, so Cave.lua can drive the window off either one.
 --
 -- Why this file has to exist at all: this build ships Blizzard's own interior
--- map art — Fargodeep Mine has two floors of it sitting in the client right
--- now — but its UiMap table lists outdoor zones only. 60 rows, no Dungeon and
+-- map art (Fargodeep Mine has two floors of it sitting in the client right
+-- now), but its UiMap table lists outdoor zones only: 60 rows, no Dungeon and
 -- no Micro. So C_Map.GetBestMapForUnit can never name a cave, GetMapArtLayers
 -- can never describe one, and the art is unreachable from Lua even though the
 -- engine happily draws it on the minimap. What is missing is the *plumbing*,
@@ -25,14 +25,14 @@
 --   Which floor?           Dungeon floors share one AreaID (all four
 --       Gnomeregan floors are area 721), so the name says only *where*. The
 --       floor comes from the world-space rectangles instead, where they
---       discriminate — see FloorForPosition.
+--       discriminate; see FloorForPosition.
 --   What art?              Straight out of the table: FileDataIDs the client
 --       already has, in the row-major order GetMapArtLayerTextures uses.
 --
 -- Floor identity is a synthetic ID minted here rather than the retail UiMapID
 -- the table carries. The retail numbering is kept on each floor for tracing,
--- but it is retail's — this client renumbered the world (Elwynn Forest is
--- 1429 here and 37 there) — so handing it to anything that might pass it to
+-- but it is retail's: this client renumbered the world (Elwynn Forest is
+-- 1429 here and 37 there), so handing it to anything that might pass it to
 -- C_Map would be inviting a lookup against the wrong map.
 -------------------------------------------------------------------------------
 local addonName, ns = ...
@@ -70,8 +70,8 @@ local function IndexNames(place)
         seen[areaID] = true
         -- The localised name for this build's own AreaTable row. nil means
         -- the client does not know the area, which the generator is supposed
-        -- to have made impossible — every baked ID was matched against this
-        -- build's AreaTable — so it is simply skipped rather than guessed at.
+        -- to have made impossible (every baked ID was matched against this
+        -- build's AreaTable), so it is simply skipped rather than guessed at.
         local name = C_Map.GetAreaInfo and C_Map.GetAreaInfo(areaID)
         if not name or name == "" then return end
         local key = name:lower()
@@ -192,7 +192,7 @@ function CaveTable:GetBuild()
     return HFWMF_CAVE_DATA and HFWMF_CAVE_DATA.build or nil
 end
 
---- The floor record behind a synthetic floor ID, or nil for anything else —
+--- The floor record behind a synthetic floor ID, or nil for anything else,
 --- which is how every caller tells a baked ID from a real UiMapID.
 ---@param floorID number|nil
 function CaveTable:GetFloor(floorID)
@@ -218,26 +218,25 @@ end
 
 --- Player world position as the baked rectangles measure it.
 ---
---- UnitPosition returns y, x, z, instanceID — Y first, which is easy to get
+--- UnitPosition returns y, x, z, instanceID: Y first, which is easy to get
 --- backwards and produces a pin that is plausibly wrong rather than obviously
 --- wrong, so it is unpacked in one place only.
 ---
---- z is read and then thrown away unconditionally. It is not just
---- unreliable on this client — confirmed live at obviously different real
---- elevations (in and out of Fargodeep Mine, top floor and bottom) — it is
---- documented (warcraft.wiki.gg/wiki/API_UnitPosition) as a permanent
---- placeholder that is *always* 0, addon-side, on every version of the
---- game, with no workaround: HereBeDragons, the library other addons reach
---- for to avoid exactly this kind of hand-rolled position math, doesn't
---- expose a Z either, for the same reason — there is nothing behind
---- UnitPosition for it to expose. A real elevation was never coming through
---- this call. Keeping it would mean a literal 0 silently wins ContainsZ's
---- tie-break in FloorForPosition against whichever floor's baked zMin/zMax
---- happens to straddle 0 (Lower Mines here), locking floor detection and the
---- elevation marker onto that one floor forever regardless of where the
---- player actually is. Discarding it instead lets the rectangle test — and
---- ultimately the manual depth slider — take over, same as any other place
---- with no baked Z data at all.
+--- z is read and then thrown away unconditionally. It is not just unreliable
+--- on this client (confirmed live at obviously different real elevations, in
+--- and out of Fargodeep Mine, top floor and bottom); it is documented
+--- (warcraft.wiki.gg/wiki/API_UnitPosition) as a permanent placeholder that is
+--- *always* 0, addon-side, on every version of the game, with no workaround:
+--- HereBeDragons, the library other addons reach for to avoid exactly this
+--- kind of hand-rolled position math, doesn't expose a Z either, since there
+--- is nothing behind UnitPosition for it to expose. A real elevation was
+--- never coming through this call. Keeping it would mean a literal 0
+--- silently wins ContainsZ's tie-break in FloorForPosition against whichever
+--- floor's baked zMin/zMax happens to straddle 0 (Lower Mines here), locking
+--- floor detection and the elevation marker onto that one floor forever
+--- regardless of where the player actually is. Discarding it instead lets
+--- the rectangle test, and ultimately the manual depth slider, take over,
+--- same as any other place with no baked Z data at all.
 ---@return number|nil worldX, number|nil worldY
 local function PlayerWorldXY()
     if not UnitPosition then return nil end
@@ -251,11 +250,11 @@ end
 --- bounds reads as { minY, maxY, minX, maxX }, not the { minX, maxX, minY,
 --- maxY } CaveData.lua's header claims. Confirmed from two live /hfwm debug
 --- captures at Fargodeep Mine, one on the hillside above it and one inside
---- the shaft: the player's real worldY (from UnitPosition, itself correct —
+--- the shaft: the player's real worldY (from UnitPosition, itself correct;
 --- see PlayerWorldXY) landed inside bounds[1..2] and real worldX inside
 --- bounds[3..4], the opposite of documented. That is why FindPlayerFloor
 --- used to return nil for every micro dungeon regardless of the outdoors
---- gate or name match — this check was failing for every place, always.
+--- gate or name match: this check was failing for every place, always.
 --- The generator (hfwm/db2.py's Region_0..5 -> world-axis mapping, around
 --- line 34) has the transposition at its root and is worth fixing there so
 --- a future regenerate doesn't reintroduce this; until then, this reads the
@@ -272,7 +271,7 @@ end
 
 --- Does *floor*'s real worldZ range (see CaveData.lua's Fargodeep entries)
 --- contain worldZ? Returns nil, not false, when either side has no opinion
---- (no worldZ reading, or this floor was generated without a zMin/zMax) —
+--- (no worldZ reading, or this floor was generated without a zMin/zMax);
 --- callers must tell "doesn't contain" apart from "can't say" so a place
 --- with no Z data at all falls through to the rectangle test untouched.
 ---@param floor table
@@ -286,42 +285,41 @@ end
 --- Which floor of *place* the player is most likely standing on.
 ---
 --- The X/Y rectangles are the primary discriminator, but the source rows
---- behind them carry no usable Z bounds — they are -10000 and 1000000 on
---- every interior row — so two floors stacked in the same shaft can have
+--- behind them carry no usable Z bounds (they are -10000 and 1000000 on
+--- every interior row), so two floors stacked in the same shaft can have
 --- overlapping, sometimes identical, footprints. Where the rectangles do
---- differ this gets the floor right without any Z data at all, and
---- Gnomeregan's four levels are a good case: the Hall of Gears and the
---- Launch Bay barely overlap.
+--- differ this gets the floor right without any Z data at all; Gnomeregan's
+--- four levels are a good case, since the Hall of Gears and the Launch Bay
+--- barely overlap.
 ---
---- Where the footprints don't differ, a floor that was generated with a
---- real worldZ range (from its own WMO geometry, not the DB2 rows — see
+--- Where the footprints don't differ, a floor generated with a real worldZ
+--- range (from its own WMO geometry, not the DB2 rows; see
 --- hfwm/cave_minimap.py's world_z_range_for_groups) gets first say: if
 --- exactly one floor's range contains the player's altitude, that floor
 --- wins outright, rectangle area be damned. Fargodeep Mine's upper and
---- lower floors are exactly this case — their X/Y footprints overlap
---- almost entirely, but their real heights (roughly 14-49 vs. 0-24) mostly
---- don't.
+--- lower floors are exactly this case: their X/Y footprints overlap almost
+--- entirely, but their real heights (roughly 14-49 vs. 0-24) mostly don't.
 ---
---- Failing that — no floor here has Z data, both ranges contain the
---- player, or neither does — it falls back to the smallest containing
---- rectangle, and if that doesn't discriminate either it returns the
---- shallowest, with the depth slider as how the player says otherwise.
---- That is not a consolation prize — it is the reason the slider is the
---- feature's main control rather than a nicety.
+--- Failing that (no floor here has Z data, both ranges contain the player,
+--- or neither does), it falls back to the smallest containing rectangle,
+--- and if that doesn't discriminate either it returns the shallowest, with
+--- the depth slider as how the player says otherwise. That is not a
+--- consolation prize; it is the reason the slider is the feature's main
+--- control rather than a nicety.
 --- `preferredFloorID` is the floor currently on screen, for the case
 --- neither Z nor the rectangles can settle: see the ambiguous-match branch
---- below. Optional — every existing caller that omits it keeps today's
+--- below. Optional; every existing caller that omits it keeps today's
 --- behaviour exactly.
 ---
 --- The second return, `confident`, is true only when *position* (Z or the
---- rectangle test) actually discriminated between this place's floors —
+--- rectangle test) actually discriminated between this place's floors,
 --- false whenever the answer instead came from deferring to
 --- `preferredFloorID` or from the smallest-rectangle tie-break, since
 --- neither of those is really locating the player, just picking something
 --- non-disruptive to show. Callers that only care about "which floor's art
 --- to draw" (the depth slider following the player) can ignore it exactly
 --- as before; a caller that means to assert "the player really is on floor
---- X" — e.g. hiding the map pin on every *other* floor — must not act on a
+--- X" (e.g. hiding the map pin on every *other* floor) must not act on a
 --- `false` one, or it ends up hiding/showing based on a coin flip dressed
 --- up as an answer.
 ---@param place table
@@ -372,13 +370,13 @@ local function FloorForPosition(place, preferredFloorID)
 
     -- Zero or multiple matches: position alone couldn't settle it.
     --
-    -- More than one floor's rectangle claims this position — Fargodeep's
+    -- More than one floor's rectangle claims this position: Fargodeep's
     -- upper and lower floors overlap almost entirely in the shaft, which is
     -- exactly the case the Z tie-break above exists for, and it just came up
     -- empty. Forcing the smallest-rectangle guess here would flip-flop to a
     -- specific floor and then freeze there, wrong half the time the player
     -- is actually on the other one. Staying on whatever floor is already
-    -- showing — if it's one of the genuine candidates — isn't a guess, it's
+    -- showing, if it's one of the genuine candidates, isn't a guess; it's
     -- deferring to the slider, same as this function's fallback always has.
     if #matches > 1 and preferredFloorID then
         for _, floor in ipairs(matches) do
@@ -415,7 +413,7 @@ end
 ---   enough: area 57 is "Fargodeep Mine" whether the player is down the shaft
 ---   or on the hillside above it, and the rectangle cannot tell those apart
 ---   either because there are no Z bounds to compare. IsOutdoors() is what
----   separates them — a mine is a WMO and the client knows it is inside one.
+---   separates them: a mine is a WMO and the client knows it is inside one.
 ---
 ---   This used to carry a per-place exemption from the outdoors check for
 ---   Fargodeep Mine, on the theory that it was a terrain-cut mine with no
@@ -423,7 +421,7 @@ end
 ---   read true on the hillside and false in the shaft, exactly as it should.
 ---   The real fault was Contains() reading every place's bounds transposed
 ---   (see its comment), which made the rectangle test fail everywhere,
----   independent of this gate — so the gate was never the problem, for
+---   independent of this gate, so the gate was never the problem, for
 ---   Fargodeep or anything else, and stays unconditional.
 ---@param preferredFloorID number|nil the floor currently on screen, passed
 ---  straight through to FloorForPosition for its ambiguous-match fallback
@@ -598,7 +596,7 @@ end
 --- cave-satellite-v2 Phase 2: this floor's place's per-piece art list, or
 --- nil when this place has no per-piece bake (see CaveData.lua's `pieces`
 --- and hfwm/cave_minimap.py's generate_fargodeep_pieces). Each entry is
---- `{ fdid, group, name, zMin, zMax }` — a whole-canvas piece anchored at
+--- `{ fdid, group, name, zMin, zMax }`, a whole-canvas piece anchored at
 --- (0,0) exactly like a floor tile, differing only in how much of that
 --- canvas its own art actually covers. CaveRenderer uses this list, not
 --- `floors`, to decide what to draw once it's present; `floors` continues
@@ -620,7 +618,7 @@ function CaveTable:GetPieceCanvasSize(floorID)
 end
 
 --- The player's real worldZ (height), independent of any floor's own
---- zMin/zMax window — cave-satellite-v2 Phase 2 needs this raw value to
+--- zMin/zMax window. cave-satellite-v2 Phase 2 needs this raw value to
 --- fade the player pin against whichever *piece* the slider says is at
 --- the player's own elevation, rather than against a floor-index
 --- distance. Reuses the same UnitPosition read PlayerWorldXY and
@@ -656,8 +654,8 @@ function CaveTable:BuildFloorList(floorID)
             name  = f.name or ("Level " .. i),
             relativeHeightIndex = #all - i,
             -- Real worldZ range, when this floor was generated with one
-            -- (see CaveData.lua's Fargodeep entries) — carried through
-            -- so CaveRenderer's floor picker can scope a per-piece place's
+            -- (see CaveData.lua's Fargodeep entries), carried through so
+            -- CaveRenderer's floor picker can scope a per-piece place's
             -- pieces and depth-slider range to one floor at a time. nil on
             -- every floor with no such data, same as the field it's copied
             -- from.
@@ -700,8 +698,8 @@ end
 ---
 ---   1. World (worldX, worldY) -> WMO-local (localX, localY). The inverse
 ---      of the yaw rotation applied when the WMO was placed into the
----      world — a 2x2 matrix that is its own inverse here, so the same
----      cos/sin terms invert it: given northOffset/eastOffset relative to
+---      world: a 2x2 matrix that is its own inverse here, so the same
+---      cos/sin terms invert it. Given northOffset/eastOffset relative to
 ---      the placement's own world position,
 ---        localX = -northOffset * cos(yaw) + eastOffset * sin(yaw)
 ---        localY =  northOffset * sin(yaw) + eastOffset * cos(yaw)
@@ -709,7 +707,7 @@ end
 ---      Y) at column <- (localX - minLocalX) * scale, row <- (maxLocalY
 ---      - localY) * scale (build_floor_image's own anchor formula), then
 ---      the whole canvas was rotated with Image.rotate(angle,
----      expand=True) to align to true north — undone here with the same
+---      expand=True) to align to true north, undone here with the same
 ---      rotate-about-center formula already validated against Pillow's
 ---      actual behaviour.
 ---
@@ -723,7 +721,7 @@ local function ProjectPlayerPosition(projection, worldX, worldY)
     -- world_to_local_projection names its fields placementWorldX/Y as if
     -- they lined up with UnitPosition's X/Y, but placementWorldX is
     -- actually the WMO placement's real *west* (this file's worldY)
-    -- coordinate and placementWorldY its real *north* (worldX) coordinate —
+    -- coordinate and placementWorldY its real *north* (worldX) coordinate,
     -- swapped, the same way `bounds` turned out to be. Confirmed the same
     -- way that one was: with the fields taken at face value, every sampled
     -- point across Fargodeep's own DB2 rectangle projected miles outside
@@ -750,7 +748,7 @@ local function ProjectPlayerPosition(projection, worldX, worldY)
 
     local x, y = finalX / projection.rotatedW, finalY / projection.rotatedH
     -- Outside the art entirely (player is elsewhere in the mine's DB2 area
-    -- rectangle but off this floor's own composited footprint) — no pin
+    -- rectangle but off this floor's own composited footprint); no pin
     -- beats a wrong one, same standard as the bounds path below.
     if x < 0 or x > 1 or y < 0 or y > 1 then return nil end
     return x, y
@@ -762,7 +760,7 @@ end
 --- every known zone confirms: the top of the map is max world X, the left is
 --- max world Y. So map x runs down from max Y and map y runs down from max X,
 --- which is why neither numerator looks like the other. bounds itself reads
---- as { minY, maxY, minX, maxX } — see Contains's comment — so it is indexed
+--- as { minY, maxY, minX, maxX }, see Contains's comment, so it is indexed
 --- to match that, not the { minX, maxX, minY, maxY } it is documented as.
 ---
 --- This linear stretch only holds for unrotated art that fills its canvas

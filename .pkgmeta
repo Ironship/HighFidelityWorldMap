@@ -1,4 +1,4 @@
-# BigWigs packager config — https://github.com/BigWigsMods/packager/wiki/Preparing-the-PackageMeta-File
+# BigWigs packager config: https://github.com/BigWigsMods/packager/wiki/Preparing-the-PackageMeta-File
 #
 # The zip is dominated by WorldMap/, which is generated (and .gitignored), not
 # committed. CI regenerates it and then `git add -fN`s it so the packager stops
@@ -7,10 +7,10 @@
 
 package-as: HighFidelityWorldMapForever
 
-# No colon in the value — the packager's pkgmeta parser splits on the first one.
+# No colon in the value: the packager's pkgmeta parser splits on the first one.
 changelog-title: High Fidelity World Map Forever
 
-# Everything below is either build machinery or a local artefact — none of it
+# Everything below is either build machinery or a local artefact, none of it
 # belongs in the package users download.
 ignore:
   - .github
@@ -20,10 +20,25 @@ ignore:
   - .cache-*
   - __pycache__
   - hfwm/__pycache__
+  - dev
 
-# No embedded libraries, so a nolib build would be byte-identical. Leave it off.
+# Ace3: fetched here rather than committed, from the canonical WowAce svn
+# trunk, per Ace3's own packaging guidance. dev/fetch-libs.sh gets the same
+# libraries locally from a GitHub mirror instead, so a checkout only needs
+# git, not svn, to test with; see that script's own comment for why.
+externals:
+  Libs/AceAddon-3.0: https://repos.wowace.com/wow/ace3/trunk/AceAddon-3.0
+  Libs/AceEvent-3.0: https://repos.wowace.com/wow/ace3/trunk/AceEvent-3.0
+  Libs/AceConsole-3.0: https://repos.wowace.com/wow/ace3/trunk/AceConsole-3.0
+  Libs/AceDB-3.0: https://repos.wowace.com/wow/ace3/trunk/AceDB-3.0
+  Libs/AceDBOptions-3.0: https://repos.wowace.com/wow/ace3/trunk/AceDBOptions-3.0
+  Libs/AceGUI-3.0: https://repos.wowace.com/wow/ace3/trunk/AceGUI-3.0
+  Libs/AceConfigRegistry-3.0: https://repos.wowace.com/wow/ace3/trunk/AceConfig-3.0/AceConfigRegistry-3.0
+  Libs/AceConfigDialog-3.0: https://repos.wowace.com/wow/ace3/trunk/AceConfig-3.0/AceConfigDialog-3.0
+
+# A nolib build would be missing Ace3 entirely and not load, so don't offer one.
 enable-nolib-creation: no
 
-# Single `## Interface:` line, single game flavour (Forever, 16xxx) — nothing to
+# Single `## Interface:` line, single game flavour (Forever, 16xxx), nothing to
 # split.
 enable-toc-creation: no

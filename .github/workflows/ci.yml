@@ -29,6 +29,13 @@ jobs:
       - name: Install Lua
         run: sudo apt-get update -qq && sudo apt-get install -y -qq lua5.1
 
+      # Same script a contributor runs locally. Fetches from a GitHub
+      # mirror (see the script's own comment for why), not the svn trunk
+      # .pkgmeta's externals use for the actual release, so a renamed or
+      # broken path there fails here rather than silently at release time.
+      - name: Fetch Ace3 libraries
+        run: ./dev/fetch-libs.sh
+
       - name: Lint Lua
         run: |
           set -euo pipefail
@@ -40,6 +47,15 @@ jobs:
             [[ "$file" == *.lua ]] || continue
             luac5.1 -p "$file" || status=1
           done < <(grep -E '^[^#[:space:]].*\.(lua|xml)[[:space:]]*$' HighFidelityWorldMapForever.toc | tr -d '\r')
+          exit $status
+
+      - name: Lint fetched Ace3 libraries
+        run: |
+          set -euo pipefail
+          status=0
+          while IFS= read -r file; do
+            luac5.1 -p "$file" || status=1
+          done < <(find Libs -name '*.lua')
           exit $status
 
   python:

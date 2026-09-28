@@ -4,11 +4,11 @@
 -- Decides *whether* there is a cave map to show and *which floor* it should
 -- be showing; CaveRenderer owns the window that shows it.
 --
--- The case this exists for: the player walks into a cave, a mine, a vault —
--- anything the client models as its own UiMapID — and the world map carries
--- on showing the zone above, which has nothing to say about where they now
--- are. When the map the player is standing on differs from the map on screen
--- and is an interior type, the cave window opens over the top.
+-- The case this exists for: the player walks into a cave, a mine, or a
+-- vault, anything the client models as its own UiMapID, and the world map
+-- carries on showing the zone above, which has nothing to say about where
+-- they now are. When the map the player is standing on differs from the map
+-- on screen and is an interior type, the cave window opens over the top.
 --
 -- Two things are deliberately *not* automatic:
 --
@@ -28,23 +28,22 @@ local P      = ns.P
 -- Map types that should trigger the cave window.
 --
 -- Enum.UiMapType is Cosmic=0, World=1, Continent=2, Zone=3, Dungeon=4,
--- Micro=5, Orphan=6. The enum is read where the client offers it rather than
--- hard-coded, with the numbers as a fallback for a build that predates it.
+-- Micro=5, Orphan=6. Read from the client where offered, with these numbers
+-- as fallback for a build that predates the enum.
 --
 -- Dungeon and Micro are the two interior kinds:
 --
 --   Dungeon  a dungeon or raid map, one UiMapID per floor, grouped by
 --            C_Map.GetMapGroupID.
---   Micro    the small interiors scattered through the outdoor world — caves,
---            mines, huts, cellars, vaults. These are the case this feature
---            exists for: the world map has no way to navigate to them, so it
---            carries on showing the zone above.
+--   Micro    small interiors scattered through the outdoor world: caves,
+--            mines, huts, cellars, vaults. This is the case the feature
+--            exists for, since the world map has no way to navigate to them
+--            and just keeps showing the zone above.
 --
--- Orphan is deliberately excluded. An orphan map is one with no parent in the
--- map hierarchy, which is a statement about map *plumbing* rather than about
--- being indoors; on this client the handful that exist are transport and
--- scenario scaffolding, and triggering a cave window over them would be
--- noise.
+-- Orphan is excluded: an orphan map has no parent in the map hierarchy, which
+-- is about map plumbing, not about being indoors. The few that exist here are
+-- transport and scenario scaffolding, and a cave window over them would just
+-- be noise.
 local UI_MAP_TYPE = (Enum and Enum.UiMapType) or {}
 local CAVE_MAP_TYPES = {
     [UI_MAP_TYPE.Dungeon or 4] = true,
@@ -59,11 +58,11 @@ local elapsedSincePoll = 0
 -- Sources
 --
 -- Everything below this point asks the same handful of questions about an
--- interior — where is the player, which floors does this place have, what art
--- draws them, where does the pin go — and on any given build only one thing
--- can answer them:
+-- interior: where is the player, which floors does this place have, what art
+-- draws them, where does the pin go. On any given build only one thing can
+-- answer them:
 --
---   ClientSource   C_Map. Right wherever the client's UiMap table carries
+--   ClientSource   C_Map. Works wherever the client's UiMap table carries
 --                  Dungeon and Micro rows, which is every retail build and no
 --                  1.x one.
 --
@@ -71,15 +70,14 @@ local elapsedSincePoll = 0
 --                  build's UiMap does not have, rebuilt offline from retail's
 --                  map plumbing, validated against this build's own art and
 --                  AreaTable, and shipped with the addon. Its floor IDs are
---                  synthetic (4000001 up) and are never handed to a C_Map
---                  function — see CaveTable.lua.
+--                  synthetic (4000001 up) and never handed to a C_Map
+--                  function; see CaveTable.lua.
 --
--- Both are kept behind one interface so that nothing further down, and nothing
--- in CaveRenderer, has to know which one is talking. C_Map stays preferred
--- where it has anything to say: a client that really does carry interior maps
--- knows more about them than a table baked against a different build, and the
--- day this beta ships those rows the addon should quietly start using them
--- rather than keep drawing from a snapshot.
+-- Both sit behind one interface so nothing further down, including
+-- CaveRenderer, has to know which one is talking. C_Map stays preferred where
+-- it has anything to say: a client with real interior maps knows more about
+-- them than a table baked against a different build, and if this beta ever
+-- ships those rows the addon should quietly switch to using them.
 -------------------------------------------------------------------------------
 
 local ClientSource, BakedSource
@@ -98,8 +96,8 @@ ClientSource = {
 
     --- The UiMapID the player is physically standing on (specific floor).
     ---
-    --- Two APIs answer this and they do not always agree, which matters
-    --- because the whole feature hangs off the answer:
+    --- Two APIs answer this and they do not always agree, which matters since
+    --- the whole feature hangs off the answer:
     ---
     ---   C_Map.GetBestMapForUnit resolves the player's *world position* to a
     ---   map. A micro dungeon has its own coordinate space, and the position
@@ -107,28 +105,27 @@ ClientSource = {
     ---   this still says "the zone".
     ---
     ---   C_Minimap.GetUiMapID reports the map the *minimap* has swapped its
-    ---   art to. That swap is the client stating that it now considers the
-    ---   player to be in the interior, and it is driven by the map's own
-    ---   bounds rather than by a position lookup — so on the way in it is
-    ---   usually first.
+    ---   art to. That swap is the client stating it now considers the player
+    ---   to be in the interior, driven by the map's own bounds rather than a
+    ---   position lookup, so on the way in it is usually first.
     ---
     --- Neither is reliably ahead of the other, so an interior answer from
-    --- either one is taken as the answer, and the position lookup wins the
-    --- tie. The alternative — trusting position alone — leaves the window a
-    --- beat behind the minimap the player is already looking at.
+    --- either one is taken as the answer, with the position lookup winning
+    --- ties. Trusting position alone would leave the window a beat behind the
+    --- minimap the player is already looking at.
     ---
-    --- Deliberately *not* consulted: IsOutdoors(). It is true in a great many
+    --- Deliberately *not* consulted: IsOutdoors(). It is true in many
     --- interiors with no map of their own (every inn, every tower) and false
-    --- in some caves, so as a gate here it would both fire spuriously and
-    --- miss. The baked source below *does* use it, for a different job: not to
-    --- detect a cave but to tell standing in a mine from standing on the hill
-    --- above it, once the name has already said which mine — see
+    --- in some caves, so as a gate here it would fire spuriously and miss.
+    --- The baked source below does use it, but for a different job: not
+    --- detecting a cave but telling standing in a mine from standing on the
+    --- hill above it, once the name has already said which mine; see
     --- CaveTable.lua's FindPlayerFloor, which gates on it unconditionally.
     ---
-    --- Second return, `confident`: always true. Both APIs consulted here are
-    --- direct client answers about the player's real position, never a
-    --- guess or a deferral to whatever floor is already on screen — unlike
-    --- the baked source below, this one has nothing to be unconfident about.
+    --- Second return, `confident`: always true. Both APIs here are direct
+    --- client answers about the player's real position, never a guess or a
+    --- deferral to whatever floor is already on screen, so this source has
+    --- nothing to be unconfident about.
     CurrentFloor = function()
         local best = C_Map.GetBestMapForUnit("player")
         if IsClientInteriorMap(best) then return best, true end
@@ -207,8 +204,8 @@ ClientSource = {
     ---
     --- C_Map.GetMapArtLayers can return more than one layer, and the extra
     --- ones are *zoom detail* levels: the same map extent re-cut at a higher
-    --- tile resolution. The cave window does not zoom, so layer 1 — the
-    --- full-extent base layer — is the one it wants.
+    --- tile resolution. The cave window does not zoom, so it wants layer 1,
+    --- the full-extent base layer.
     ArtLayer = function(floorMapID)
         local layers = floorMapID and C_Map.GetMapArtLayers(floorMapID)
         if not layers or #layers == 0 then return nil, nil end
@@ -225,16 +222,16 @@ ClientSource = {
         return pos:GetXY()
     end,
 
-    --- C_Map has no notion of floors sharing a baked canvas — every real
-    --- dungeon floor is its own distinct art layer — so the client source
+    --- C_Map has no notion of floors sharing a baked canvas: every real
+    --- dungeon floor is its own distinct art layer, so the client source
     --- never offers continuous crossfade.
     ContinuousDepth = function()
         return false
     end,
 
     --- cave-satellite-v2 Phase 2: C_Map has no notion of individually-fading
-    --- sub-floor art pieces either — every real dungeon floor is one whole
-    --- art layer — so the client source never offers any.
+    --- sub-floor art pieces either, since every real dungeon floor is one
+    --- whole art layer, so the client source never offers any.
     Pieces = function()
         return nil
     end,
@@ -261,17 +258,16 @@ BakedSource = {
     ---
     --- Passes the floor already on screen through as FindPlayerFloor's
     --- tie-break hint, for places whose floors' footprints overlap too much
-    --- for position alone to ever tell apart (Fargodeep Mine's shaft) — see
+    --- for position alone to tell apart (Fargodeep Mine's shaft); see
     --- FloorForPosition's comment. Without it every ambiguous poll would
-    --- re-guess independently and could flip-flop, or worse, lock onto
+    --- re-guess independently and could flip-flop, or worse lock onto
     --- whichever floor wins the guess and never leave it.
     ---
     --- Second return, `confident`: passed straight through from
-    --- FindPlayerFloor — false exactly when that tie-break hint (or the
-    --- smallest-rectangle fallback) is what answered, rather than real
-    --- position data. The C_Map fallback below is its own last resort, not
-    --- a location fix on any baked floor, so it is unconditionally false
-    --- too.
+    --- FindPlayerFloor, false exactly when that tie-break hint (or the
+    --- smallest-rectangle fallback) answered rather than real position data.
+    --- The C_Map fallback below is its own last resort, not a location fix
+    --- on any baked floor, so it is unconditionally false too.
     CurrentFloor = function()
         local floorID, confident =
             ns.CaveTable:FindPlayerFloor(Config.caveCurrentFloorMapID)
@@ -339,7 +335,7 @@ local sourceResolved = false
 --- with no baked table loaded there is nothing to weigh up and the answer is
 --- C_Map without a probe. When there *is* a baked table, the probe that
 --- decides between them walks the whole map tree, which is far too much work
---- for a half-second poll to repeat — hence the memo, and hence
+--- for a half-second poll to repeat, hence the memo and
 --- Cave:InvalidateSource() for the one case that can change it.
 ---@return table
 function Cave:GetSource()
@@ -351,7 +347,7 @@ function Cave:GetSource()
     -- Zero is the answer that matters: the client has no interior map for the
     -- player ever to be standing on, so C_Map cannot answer and the baked
     -- table is the only thing that can. Nil means the client gave no way to
-    -- ask, which is not the same as none — keep C_Map in that case.
+    -- ask, which is not the same as none; keep C_Map in that case.
     local count = self:CountInteriorMaps()
     activeSource   = (count == 0) and BakedSource or ClientSource
     sourceResolved = true
@@ -359,7 +355,7 @@ function Cave:GetSource()
 end
 
 --- Forget the memoised source choice. For anything that changes the client's
---- map table under us — in practice a loading screen into a different flavour
+--- map table under us: in practice a loading screen into a different flavour
 --- of the world, and the test harness.
 function Cave:InvalidateSource()
     sourceResolved = false
@@ -387,19 +383,18 @@ end
 ---
 --- Second return, `confident`: true when this is a real position fix
 --- rather than a guess or a deferral to whatever floor is already being
---- shown — see BakedSource.CurrentFloor / FloorForPosition's own comments
+--- shown; see BakedSource.CurrentFloor / FloorForPosition's own comments
 --- for when it isn't. Every existing caller predates this and only reads
 --- the first return, which keeps their behaviour (follow the player,
 --- defer to the slider when ambiguous) exactly as it was; a caller has to
---- opt in to the second value to change how it treats an ambiguous
---- answer.
+--- opt in to the second value to change how it treats an ambiguous answer.
 ---@return number|nil floorID
 ---@return boolean confident
 function Cave:GetCurrentFloorMapID()
     return self:GetSource().CurrentFloor()
 end
 
---- Are these two IDs the same place — the same map, or two floors of one
+--- Are these two IDs the same place: the same map, or two floors of one
 --- group?
 ---@return boolean
 local function SameMapGroup(a, b)
@@ -413,9 +408,10 @@ end
 --- separate UiMapIDs but the world map showing any one of them draws the
 --- client's own floor selector, so the player can already get to the rest;
 --- opening a second set of floor controls on top would be a duplicate of a
---- control that is right there. On the baked source the world map can never be
---- showing a baked floor — the client has no way to navigate to one — so this
---- test simply never fires, which is correct rather than merely harmless.
+--- control that is right there. On the baked source the world map can never
+--- show a baked floor, since the client has no way to navigate to one, so
+--- this test simply never fires, which is correct rather than merely
+--- harmless.
 ---@return boolean inCave, number|nil playerMapID
 function Cave:IsPlayerInCave()
     local playerMapID = self:GetCurrentFloorMapID()
@@ -442,11 +438,11 @@ end
 -- Art and position, for CaveRenderer
 --
 -- The renderer used to call C_Map directly for all three. It goes through here
--- instead so that the window, its proportions, its tiles and its player pin
--- all come from whichever source located the cave in the first place — a
--- window sized from C_Map's idea of a layer while its tiles came from the
--- baked table would be stretched, and a pin placed in the wrong coordinate
--- space is worse than no pin.
+-- instead so the window, its proportions, its tiles and its player pin all
+-- come from whichever source located the cave in the first place: a window
+-- sized from C_Map's idea of a layer while its tiles came from the baked
+-- table would be stretched, and a pin placed in the wrong coordinate space is
+-- worse than no pin.
 -------------------------------------------------------------------------------
 
 --- Which art layer to draw, as index and descriptor.
@@ -524,7 +520,7 @@ end
 -- outdoor zone maps and nothing else, no dungeon maps and no micro-dungeon
 -- maps, which is precisely why the world map was blank inside a dungeon and
 -- why walking into a mine changed nothing. A cave the client has no UiMapID
--- for is a cave this addon cannot draw — there is no art to ask for.
+-- for is a cave this addon cannot draw: there is no art to ask for.
 --
 -- So rather than switch on a feature that can never fire and leave the user
 -- watching for a window, the probe below answers the question outright and
@@ -574,22 +570,20 @@ function Cave:WarnIfUnsupported()
     -- The client having no interior maps is the expected case on this build
     -- and is no longer a problem, because the shipped table stands in for
     -- exactly the rows it is missing. Only say something when that is absent
-    -- too — which means CaveData.lua failed to load or was generated empty.
+    -- too, which means CaveData.lua failed to load or was generated empty.
     if ns.CaveTable:IsLoaded() then return false end
 
     P("|cffff7777Cave map: this client's UiMap table has no interior entries, "
-        .. "and the addon's own cave table did not load.|r The client lists "
-        .. "outdoor zones only, so C_Map will never report a cave or dungeon "
-        .. "map and the window has nothing to key off — it will not open "
-        .. "anywhere, including inside mines.")
-    P("|cff999999The art itself is not the problem: this build ships Blizzard's "
+        .. "and the addon's own cave table did not load.|r C_Map will never "
+        .. "report a cave or dungeon map, so the window has nothing to key "
+        .. "off and will not open anywhere, including inside mines.")
+    P("|cff999999The art isn't the problem: this build ships Blizzard's "
         .. "micro-dungeon map tiles under Interface\\WorldMap\\MicroDungeon "
-        .. "(Fargodeep Mine has two floors' worth). What is missing is the map "
-        .. "table that would point the client at them, and supplying it is "
-        .. "what CaveData.lua is for. Check that it is present beside this "
-        .. "addon's other files and listed in the .toc; rebuild it with "
-        .. "generateHFWM.py --caves-only. Run /hfwm debug from inside a cave "
-        .. "to see what the client does report.|r")
+        .. "(Fargodeep Mine has two floors' worth). What's missing is the map "
+        .. "table pointing the client at them, which is CaveData.lua's job. "
+        .. "Check it's present and listed in the .toc, or rebuild it with "
+        .. "generateHFWM.py --caves-only. Run /hfwm debug inside a cave to "
+        .. "see what the client reports.|r")
     return true
 end
 
@@ -742,7 +736,7 @@ function Cave:SuppressCurrent()
     local mapID = playerMapID or Config.caveCurrentFloorMapID
     Config.caveSuppressedKey = mapID and GroupKey(mapID) or nil
     -- Only an explicit close counts as "last visible = false" for the
-    -- Remember State option below — walking out of a cave that was still
+    -- Remember State option below: walking out of a cave that was still
     -- showing is not the player choosing to hide it.
     if Config.db then Config.db.caveLastVisible = false end
 end
@@ -767,7 +761,7 @@ function Cave:ForceShow()
     -- the instant the window comes back, not up to POLL_INTERVAL later.
     ns.CaveRenderer:SetReopenAvailable(false)
     -- The player asked for it open, so that is what Remember State should
-    -- reproduce next time — whether this was the reopen icon, /hfwm cave
+    -- reproduce next time, whether this was the reopen icon, /hfwm cave
     -- show, or anything else that lands here.
     if Config.db then Config.db.caveLastVisible = true end
     return true
@@ -790,8 +784,8 @@ function Cave:UpdateState()
     local inCave, playerMapID = self:IsPlayerInCave()
     if not inCave then
         -- Out of the cave: drop the suppression, the per-visit open/closed
-        -- decision, and the pinned floor, so walking back in — to this cave
-        -- or a different one — is unconditionally a clean slate.
+        -- decision, and the pinned floor, so walking back in, to this cave or
+        -- a different one, is unconditionally a clean slate.
         -- caveDecidedKey in particular has to go here even though
         -- caveAllFloors (below) sometimes doesn't: see its own comment in
         -- Config.lua for why leaning on caveAllFloors alone as "have I
@@ -807,13 +801,13 @@ function Cave:UpdateState()
 
     local groupKey = GroupKey(playerMapID)
 
-    -- A group we haven't already decided for is a new visit — the one
-    -- moment to decide whether it opens on its own, before falling into the
+    -- A group we haven't already decided for is a new visit: the one moment
+    -- to decide whether it opens on its own, before falling into the
     -- suppression check below. Remember State, when on, wins over Open
-    -- Automatically: it is the more specific of the two ("do what I did
+    -- Automatically since it's the more specific of the two ("do what I did
     -- last time" beats "always/never"). A "no" from either one is applied
-    -- the exact same way the close button is — pre-suppress this visit's
-    -- group key — so every branch below (the reopen icon, ForceShow undoing
+    -- the same way the close button is, by pre-suppressing this visit's
+    -- group key, so every branch below (the reopen icon, ForceShow undoing
     -- it) already handles it correctly without needing to know *why* it's
     -- suppressed.
     if Config.caveDecidedKey ~= groupKey then
@@ -828,7 +822,7 @@ function Cave:UpdateState()
     end
 
     -- Rebuild the floor list when the player has moved into a cave whose
-    -- floors we do not already have. Independent of the decision above —
+    -- floors we do not already have. Independent of the decision above:
     -- this can be stale on its own (e.g. a saved window position restored
     -- before the player ever walked anywhere) without that meaning the
     -- open/closed decision needs re-running too.
@@ -900,7 +894,7 @@ end
 
 function Cave:Start()
     -- Indexing the shipped table needs C_Map.GetAreaInfo, so it cannot happen
-    -- at file load — the AreaTable is not queryable until the player is in the
+    -- at file load: the AreaTable is not queryable until the player is in the
     -- world. Core.lua calls this from PLAYER_LOGIN, which is late enough.
     ns.CaveTable:Load()
     self:InvalidateSource()

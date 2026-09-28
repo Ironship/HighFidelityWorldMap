@@ -1,114 +1,101 @@
 -------------------------------------------------------------------------------
--- High Fidelity World Map Forever — Bootstrap
--- Wires up events and hooks after all modules are loaded.
+-- High Fidelity World Map Forever -- Bootstrap
+-- Wires up events and hooks once Ace3 initializes the addon.
 --
--- /hfwm             – toggle on / off
--- /hfwm on|off      – explicit enable / disable
--- /hfwm bg NAME     – map background: default | ocean | hybrid
--- /hfwm options     – open the options panel
--- /hfwm alpha 0-1   – set overlay opacity
--- /hfwm cave        – the cave map window (on|off|show|hide|reset|alpha N)
--- /hfwm remember    – remember world map zoom+pan across close/reopen
--- /hfwm zoom        – additional (closer) world map zoom levels
--- /hfwm clarity     – higher-detail Kalimdor/Eastern Kingdoms/Azeroth maps
+-- /hfwm             - toggle on / off
+-- /hfwm on|off      - explicit enable / disable
+-- /hfwm bg NAME     - map background: default | ocean | hybrid
+-- /hfwm options     - open the options panel
+-- /hfwm alpha 0-1   - set overlay opacity
+-- /hfwm cave        - the cave map window (on|off|show|hide|reset|alpha N)
+-- /hfwm remember    - remember world map zoom+pan across close/reopen
+-- /hfwm zoom        - additional (closer) world map zoom levels
+-- /hfwm clarity     - higher-detail Kalimdor/Eastern Kingdoms/Azeroth maps
 --                     (off by default; may render slower)
--- /hfwm debug       – print diagnostic info for current map
+-- /hfwm debug       - print diagnostic info for current map
 -------------------------------------------------------------------------------
 local addonName, ns = ...
+local addon = ns.addon
 
-local Config      = ns.Config
-local BaseArt     = ns.BaseArt
-local Exploration = ns.Exploration
-local Renderer    = ns.Renderer
-local Commands    = ns.Commands
-local Options     = ns.Options
-local Cave        = ns.Cave
-local CaveRenderer = ns.CaveRenderer
-local MapMemory   = ns.MapMemory
-local ZoomLevels  = ns.ZoomLevels
-local P           = ns.P
+local Config       = ns.Config
+local Renderer      = ns.Renderer
+local Commands      = ns.Commands
+local Options       = ns.Options
+local Cave          = ns.Cave
+local CaveRenderer  = ns.CaveRenderer
+local MapMemory     = ns.MapMemory
+local ZoomLevels    = ns.ZoomLevels
+local P             = ns.P
 
--------------------------------------------------------------------------------
--- Bootstrap
--------------------------------------------------------------------------------
-local loader = CreateFrame("Frame")
-loader:RegisterEvent("ADDON_LOADED")
-loader:RegisterEvent("PLAYER_LOGIN")
+--- Fires once, right after SavedVariables load. Same timing ADDON_LOADED
+--- used to mark.
+function addon:OnInitialize()
+    Config:InitDB()
+end
 
-loader:SetScript("OnEvent", function(self, event, arg1)
-    if event == "ADDON_LOADED" and arg1 == addonName then
-        Config:InitDB()
+--- Fires at PLAYER_LOGIN, once every addon has initialized. Same timing
+--- PLAYER_LOGIN used to mark.
+function addon:OnEnable()
+    self:RegisterEvent("MAP_EXPLORATION_UPDATED")
 
-    elseif event == "PLAYER_LOGIN" then
-        self:UnregisterAllEvents()
-        -- Fog of War's own reveal (see Renderer's DrawExploredPiece) needs
-        -- to hear about newly-explored ground while the map is already
-        -- open, not just whenever something else happens to trigger a
-        -- refresh — registered unconditionally rather than only while the
-        -- feature is on, since the handler below is what actually checks
-        -- that, and toggling a single event registration on and off with
-        -- it would be no cheaper.
-        self:RegisterEvent("MAP_EXPLORATION_UPDATED")
+    local canvas = WorldMapFrame.ScrollContainer.Child
+    Config.overlayFrame = CreateFrame(
+        "Frame", "HFWMForeverOverlay", canvas)
+    Config.overlayFrame:SetAllPoints(canvas)
+    Config.overlayFrame:SetFrameLevel(canvas:GetFrameLevel() + 500)
+    Config.overlayFrame:EnableMouse(false)
 
-        local canvas = WorldMapFrame.ScrollContainer.Child
-        Config.overlayFrame = CreateFrame(
-            "Frame", "HFWMForeverOverlay", canvas)
-        Config.overlayFrame:SetAllPoints(canvas)
-        Config.overlayFrame:SetFrameLevel(canvas:GetFrameLevel() + 500)
-        Config.overlayFrame:EnableMouse(false)
+    -- The cave map window is built lazily by CaveRenderer the first time a
+    -- cave is entered, parented to WorldMapFrame rather than the canvas so
+    -- it doesn't pan or zoom with the map under it.
 
-        -- The cave map window is built lazily by CaveRenderer the first time
-        -- a cave is entered, and is parented to WorldMapFrame rather than to
-        -- the canvas so that it does not pan or zoom with the map under it.
+    hooksecurefunc(WorldMapFrame, "OnMapChanged", function()
+        Config.lastMapID = nil
+        Renderer:Refresh(true)
+        Cave:UpdateState()
+    end)
 
-        hooksecurefunc(WorldMapFrame, "OnMapChanged", function()
-            Config.lastMapID = nil
-            Renderer:Refresh(true)
-            Cave:UpdateState()
-        end)
-
-        if MapCanvasDetailLayerMixin
-           and MapCanvasDetailLayerMixin.RefreshDetailTiles then
-            hooksecurefunc(
-                MapCanvasDetailLayerMixin, "RefreshDetailTiles", function()
-                    Cave:UpdateState()
-                end)
-        end
-
-        WorldMapFrame:HookScript("OnShow", function()
-            Config.lastMapID = nil
-            Renderer:Refresh(true)
-            Cave:UpdateState()
-        end)
-
-        Config.overlayFrame:SetScript("OnSizeChanged", function()
-            Renderer:ScheduleRefresh()
-        end)
-
-        -- The cave window is sized as a fraction of the map frame, so it has
-        -- to be re-laid-out when the map is maximised or restored.
-        WorldMapFrame:HookScript("OnSizeChanged", function()
-            CaveRenderer:Relayout()
-        end)
-
-        Cave:Start()
-        MapMemory:Start()
-        ZoomLevels:Start()
-
-        Commands:Register()
-        -- After Commands, so a Lua error while probing the client's options
-        -- APIs still leaves the slash commands working.
-        Options:Init()
-        P("loaded — /hfwm to toggle, /hfwm options for settings")
-
-    elseif event == "MAP_EXPLORATION_UPDATED" then
-        -- Only meaningful while Fog of War is on and the map is actually
-        -- open: exploration state is the only thing Renderer draws that
-        -- depends on it at all, so without both checks this would be a
-        -- full Refresh on every step the player takes, map open or not,
-        -- for no visible reason.
-        if Config:FogOfWarEnabled() and WorldMapFrame:IsShown() then
-            Renderer:Refresh(true)
-        end
+    if MapCanvasDetailLayerMixin
+       and MapCanvasDetailLayerMixin.RefreshDetailTiles then
+        hooksecurefunc(
+            MapCanvasDetailLayerMixin, "RefreshDetailTiles", function()
+                Cave:UpdateState()
+            end)
     end
-end)
+
+    WorldMapFrame:HookScript("OnShow", function()
+        Config.lastMapID = nil
+        Renderer:Refresh(true)
+        Cave:UpdateState()
+    end)
+
+    Config.overlayFrame:SetScript("OnSizeChanged", function()
+        Renderer:ScheduleRefresh()
+    end)
+
+    -- The cave window is sized as a fraction of the map frame, so it needs
+    -- relayout whenever the map is maximised or restored.
+    WorldMapFrame:HookScript("OnSizeChanged", function()
+        CaveRenderer:Relayout()
+    end)
+
+    Cave:Start()
+    MapMemory:Start()
+    ZoomLevels:Start()
+
+    Commands:Register()
+    -- After Commands, so a Lua error while probing the client's options
+    -- APIs still leaves the slash commands working.
+    Options:Init()
+    P("Loaded. /hfwm to toggle, /hfwm options for settings.")
+end
+
+--- Fog of War's own reveal (Renderer's DrawExploredPiece) needs to hear
+--- about newly-explored ground while the map is open. Only meaningful
+--- while Fog of War is on and the map is shown; both checks avoid a full
+--- Refresh on every step the player takes.
+function addon:MAP_EXPLORATION_UPDATED()
+    if Config:FogOfWarEnabled() and WorldMapFrame:IsShown() then
+        Renderer:Refresh(true)
+    end
+end

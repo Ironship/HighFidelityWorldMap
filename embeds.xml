@@ -1,0 +1,18 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/
+..\FrameXML\UI.xsd">
+    <!-- LibStub and CallbackHandler-1.0 are tiny and effectively frozen, so
+         they are committed directly rather than fetched at build time. -->
+    <Script file="Libs\LibStub\LibStub.lua"/>
+    <Script file="Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua"/>
+
+    <!-- Everything below is fetched by dev/fetch-libs.sh (local testing) and
+         by .pkgmeta's externals (CI/release packaging); not committed. -->
+    <Include file="Libs\AceAddon-3.0\AceAddon-3.0.xml"/>
+    <Include file="Libs\AceEvent-3.0\AceEvent-3.0.xml"/>
+    <Include file="Libs\AceConsole-3.0\AceConsole-3.0.xml"/>
+    <Include file="Libs\AceDB-3.0\AceDB-3.0.xml"/>
+    <Include file="Libs\AceDBOptions-3.0\AceDBOptions-3.0.xml"/>
+    <Include file="Libs\AceGUI-3.0\AceGUI-3.0.xml"/>
+    <Include file="Libs\AceConfigRegistry-3.0\AceConfigRegistry-3.0.xml"/>
+    <Include file="Libs\AceConfigDialog-3.0\AceConfigDialog-3.0.xml"/>
+</Ui>

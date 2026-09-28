@@ -2,36 +2,34 @@
 -- HFWM-Forever CaveRenderer
 --
 -- The cave map: a small window that floats over the world map and draws the
--- art for the cave / micro dungeon / indoor area the player is actually
--- standing in, for the very common case where the world map is showing the
--- zone above and has nothing to say about the hole you walked into.
+-- art for the cave, micro dungeon, or indoor area the player is actually
+-- standing in, since the world map itself has nothing to show for the hole
+-- you walked into.
 --
--- It is a *window*, not a full-canvas overlay, and that distinction drives
--- most of what follows:
+-- It is a *window*, not a full-canvas overlay:
 --
 --   * Parented to WorldMapFrame rather than to the scroll container's child,
---     so it neither pans nor zooms with the map underneath it — a cave map
---     that slid off screen when you dragged the zone would be useless — and
---     so it hides and shows with the map for free.
---   * Its own title bar carrying the area name, and a close button, because
---     anything drawn on top of the map has to be dismissable without being
---     told which slash command to type.
---   * Sized from the cave art's own aspect ratio, clamped to something that
---     leaves the world map visible around it. A cave stretched to the shape
---     of the canvas is unreadable.
+--     so it doesn't pan or zoom with the map underneath it (a cave map that
+--     slid off screen when you dragged the zone would be useless), and it
+--     hides and shows with the map for free.
+--   * Its own title bar carries the area name, plus a close button, so
+--     anything drawn on top of the map can be dismissed without a slash
+--     command.
+--   * Sized from the cave art's own aspect ratio, clamped to leave the
+--     world map visible around it. A cave stretched to the shape of the
+--     canvas is unreadable.
 --   * Draggable, with the position remembered across sessions.
 --   * The art inside the window can also be zoomed and panned in its own
---     right — mouse wheel over the content area zooms toward the cursor,
---     left-drag over it pans — independently of the window's own position
+--     right: mouse wheel over the content area zooms toward the cursor,
+--     left-drag over it pans, independently of the window's own position
 --     and of whatever the world map underneath is doing. See the "Zoom &
 --     pan" section below.
 --
 -- Multi-level caves get a vertical depth slider down the right-hand side,
--- one notch per floor, top floor at the top. The slider is the only widget
--- here that is hand-built rather than borrowed from FrameXML: the stock
--- slider templates are dressed for horizontal use and carry no notion of
--- discrete stops, and the depth of a dungeon is the one axis where "between
--- two floors" is a meaningless value to be able to drag to.
+-- one notch per floor, top floor at the top. It's hand-built rather than
+-- borrowed from FrameXML: the stock slider templates are horizontal only
+-- and have no notion of discrete stops, and "between two floors" is a
+-- meaningless value for a dungeon depth to drag to.
 -------------------------------------------------------------------------------
 local addonName, ns = ...
 local CaveRenderer = ns.CaveRenderer
@@ -41,29 +39,25 @@ local P            = ns.P
 -------------------------------------------------------------------------------
 -- Geometry
 -------------------------------------------------------------------------------
---- The border's two dimensions, and the reason they are separate.
+--- The border's two dimensions, kept separate on purpose.
 ---
---- ApplyNineSliceBorder builds this window's frame out of copies of
---- WorldMapFrame's own NineSlice pieces, and it used to draw each corner at
---- `src:GetWidth(), src:GetHeight()` — the piece's *native* size. That is
---- where this window's whole layout came apart: WorldMapFrame is a ~1000px
---- frame and its corner art is authored to match, so a native-size copy put a
---- 100px+ slab of trim on a 600px panel. Everything downstream was then
---- hand-tuned around that slab rather than around the border — which is how
---- TITLE_H ended up at 112 (a number with no relationship to the title font,
---- only to how far down the oversized top corners reached) and how the
---- background fill ended up inset far enough to read as a second, offset
---- panel sitting behind the header.
+--- ApplyNineSliceBorder builds this window out of copies of WorldMapFrame's
+--- own NineSlice pieces. It used to draw each corner at its native size
+--- (`src:GetWidth(), src:GetHeight()`), but WorldMapFrame is a ~1000px frame
+--- with corner art sized to match, so a native-size copy put a 100px+ slab
+--- of trim on a 600px panel. That is how TITLE_H ended up at 112 (unrelated
+--- to the title font, just how far the oversized corners reached), and how
+--- the background fill ended up inset far enough to read as a second,
+--- offset panel behind the header.
 ---
---- So the art is now drawn at a size this window chooses, not at whatever
---- size the map frame happens to want:
+--- Now the art is drawn at a size this window chooses, not whatever size
+--- the map frame wants:
 ---   BORDER_ART   - the square the corner pieces are drawn in, and the
 ---                  thickness of the four edges that span between them.
 ---   BORDER_INSET - window edge -> interior (title bar, content, footer).
---- Both are deliberately the same numbers DIALOG_BACKDROP below already
---- declares for the game's own dialog border art (edgeSize 32, insets 11/12),
---- so the NineSlice-copy path and the DIALOG_BACKDROP fallback path put their
---- interior in the same place instead of each needing its own tuning.
+--- Both match DIALOG_BACKDROP's own numbers below (edgeSize 32, insets
+--- 11/12), so the NineSlice-copy and DIALOG_BACKDROP fallback paths agree
+--- on where the interior starts.
 local BORDER_ART   = 32   -- corner square / edge thickness
 local BORDER_INSET = 12   -- window edge -> interior
 -- Frame levels above the window the border art is painted at. Has to clear
@@ -72,13 +66,13 @@ local BORDER_INSET = 12   -- window edge -> interior
 local BORDER_LEVEL = 10
 local PAD          = 8    -- text inset inside the interior
 --- Fallback height of the title bar, used only when the real map's title
---- strip cannot be measured (see CloneTitleStrip). Four numbers have been
---- hand-picked here across as many rounds — 112, 26, BORDER_ART, then
---- math.max(BORDER_ART, font + 2*PAD) — and every one of them was a guess at
---- a quantity the client already knows. The header now takes its height from
---- the strip it cloned, so this is a floor to fall back on, not a layout
---- decision. It still has to clear BORDER_ART, or the content would start
---- underneath the border's own top edge.
+--- strip cannot be measured (see CloneTitleStrip). Four numbers were
+--- hand-picked here across as many rounds (112, 26, BORDER_ART, then
+--- math.max(BORDER_ART, font + 2*PAD)), each a guess at a quantity the
+--- client already knows. The header now takes its height from the strip it
+--- cloned, so this is a floor to fall back on, not a layout decision. It
+--- still has to clear BORDER_ART, or the content would start underneath the
+--- border's own top edge.
 local TITLE_FONT_H = 22   -- GameFontNormal line height + padding above/below
 local TITLE_H      = math.max(BORDER_ART, TITLE_FONT_H + PAD * 2)
 --- The measured header height, once known: the bottom of the cloned title
@@ -92,34 +86,34 @@ local FOOT_H       = 16   -- floor readout under the content
 local SLIDER_COL_W = 30   -- depth slider gutter, only when there are floors
 local SLIDER_W     = 14   -- the track itself
 local NOTCH_W      = 18   -- tick mark width
--- The thumb never reaches the very ends of a vertical Slider's track — half
--- its height is always inside it — so anything else meant to line up with
+-- The thumb never reaches the very ends of a vertical Slider's track (half
+-- its height is always inside it), so anything else meant to line up with
 -- floor notches or a fraction of the track (LayoutNotches, the height-window
--- rectangle) has to live inside the same inset range, or it will not agree
--- with where the thumb itself can land.
+-- rectangle) has to live inside the same inset range, or it won't agree with
+-- where the thumb itself can land.
 local SLIDER_INSET = 10
 -- cave-satellite-v2 Phase 2's height-window rectangle: how wide, past the
--- window's exact edges, the widget's drag handles reach — a purely cosmetic
--- amount of extra grab room, not part of the elevation math.
+-- window's exact edges, the widget's drag handles reach. Purely cosmetic
+-- extra grab room, not part of the elevation math.
 local HEIGHT_WINDOW_HANDLE_H = 8
 -- Fixed cosmetic smoothing for a piece just outside the height window: fades
--- to invisible over this many yards rather than popping, the same way the
--- old fixed per-piece margin used to. Not user-adjustable — the window
--- rectangle itself is the adjustable control now.
+-- to invisible over this many yards rather than popping, same as the old
+-- fixed per-piece margin. Not user-adjustable; the window rectangle itself
+-- is the adjustable control now.
 local EDGE_FADE_YARDS = 2
 -- Fraction of the map frame the content is allowed to eat. A cave map that
--- covers the zone it is a hole in defeats the point of being a window, and
--- this is the control that is meant to do the governing: the window grows and
--- shrinks with the map, so it looks the same whether the map is windowed or
--- maximised on a 4K display.
+-- covers the zone it is a hole in defeats the point of being a window, so
+-- this is what governs that: the window grows and shrinks with the map, so
+-- it looks the same whether the map is windowed or maximised on a 4K
+-- display.
 local MAP_FRACTION_W = 0.46
 local MAP_FRACTION_H = 0.58
 
 -- Floor and ceiling on top of that fraction. The floor is legibility: below
--- about 200px a cave's corridors are a smudge. The ceiling is for the case
--- the fraction cannot reason about — a map stretched across an ultrawide,
--- where 46% is still more window than anyone wants — so it is set well clear
--- of ordinary resolutions rather than at a size that would quietly override
+-- about 200px a cave's corridors are a smudge. The ceiling covers the case
+-- the fraction can't reason about, a map stretched across an ultrawide,
+-- where 46% is still more window than anyone wants, so it's set well clear
+-- of ordinary resolutions instead of at a size that would quietly override
 -- MAP_FRACTION on every normal one. At 460 it did exactly that: a 1024-wide
 -- map already wants 471, so every map from a default-sized one upwards got
 -- the identical window and maximising did nothing.
@@ -127,13 +121,13 @@ local MIN_CONTENT  = 200
 local MAX_CONTENT  = 640
 
 -- Zoom range for the content area's own picture (see the "Zoom & pan"
--- section below). 1 is exactly the fit LayoutWindow already computes —
--- the whole cave visible, nothing cropped — so it doubles as "no zoom" and
--- as the floor no amount of zooming out can go past: there is nothing
--- beyond the fitted view to reveal. MAX_ZOOM is capped well short of the
--- point where the base layer's own tile resolution would be stretched into
--- an obviously blurry blob — this magnifies the art that's already drawn
--- rather than fetching a sharper source layer (see ArtLayer below).
+-- section below). 1 is exactly the fit LayoutWindow already computes, the
+-- whole cave visible and nothing cropped, so it doubles as "no zoom" and as
+-- the floor no amount of zooming out can go past: there is nothing beyond
+-- the fitted view to reveal. MAX_ZOOM is capped well short of the point
+-- where the base layer's own tile resolution would stretch into an obvious
+-- blurry blob, since this magnifies the art already drawn rather than
+-- fetching a sharper source layer (see ArtLayer below).
 local MIN_ZOOM  = 1
 local MAX_ZOOM  = 4
 -- Multiplicative step per wheel notch, so a handful of notches carries the
@@ -141,11 +135,11 @@ local MAX_ZOOM  = 4
 -- jarring jump or a fifty-notch crawl.
 local ZOOM_STEP = 1.25
 -- How far the cursor has to move, in content-local pixels, before ZoomBy
--- treats it as "moved" and re-samples a new zoom anchor rather than
--- reusing the one from the last notch — see the module comment above
--- zoomAnchorX. Comfortably above the sub-pixel jitter GetCursorPosition
--- can report while the physical mouse hasn't moved at all, comfortably
--- below any deliberate mouse movement.
+-- treats it as "moved" and re-samples a new zoom anchor instead of reusing
+-- the one from the last notch (see the module comment above zoomAnchorX).
+-- Comfortably above the sub-pixel jitter GetCursorPosition can report while
+-- the physical mouse hasn't moved at all, comfortably below any deliberate
+-- mouse movement.
 local ZOOM_ANCHOR_EPSILON = 1.5
 
 local PIN_TEXTURE = "Interface\\Minimap\\MinimapArrow"
@@ -153,15 +147,15 @@ local PIN_SIZE    = 26
 
 local PIN_UPDATE_INTERVAL = 0.05  -- 20fps is plenty for a map pin
 
--- Floor picker (dropdown) — see the "Floor picker" section below. Passed to
+-- Floor picker (dropdown); see the "Floor picker" section below. Passed to
 -- UIDropDownMenu_SetWidth, which sizes the *visible* text/button area; the
 -- template's own frame ends up wider than this (see EnsureFloorPicker's
 -- -40 note).
 local FLOOR_PICKER_W = 120
 
 --- Blizzard's own colour for a Battle.net-linked friend's name (Friends
---- List, whispers) — the closest thing the client already defines to an
---- official "Blizzard cyan", reused here for the "All" entry's text rather
+--- List, whispers), the closest thing the client already defines to an
+--- official "Blizzard cyan". Reused here for the "All" entry's text rather
 --- than a colour this addon picked itself. Falls back to the literal hex on
 --- a client build that doesn't expose the constant as a global.
 local BLIZZARD_CYAN_HEX = FRIENDS_BNET_NAME_COLOR_CODE or "|cff82c5ff"
@@ -173,7 +167,7 @@ local window        -- the frame the user sees and drags
 local titleBar      -- header band; its .hfwmStrip is the cloned map title art
 local closeBtn      -- the x, in the top-right corner
 local titleText     -- area name
-local floorText     -- "Level 2 of 4 — The Deadmines"
+local floorText     -- "Level 2 of 4: The Deadmines"
 local content       -- clipping frame the tiles and the pin live in
 local canvasScale   -- child of content: zoomed/panned, holds tiles + pin
 local backdropTex   -- flat dark fill behind the tiles
@@ -185,14 +179,14 @@ local notches       -- { {tick=Texture, hit=Button}, ... }
 -- Zoom/pan runtime state (see the "Zoom & pan" section below, just above
 -- EnsureWindow). `zoomScale` and `panX`/`panY` describe canvasScale's
 -- current transform and deliberately persist across floor switches and
--- window relayouts within the same cave — both funnel through ShowCave,
--- and resetting these on every call would throw away the user's zoom the
+-- window relayouts within the same cave: both funnel through ShowCave, and
+-- resetting these on every call would throw away the user's zoom the
 -- instant they touched the depth slider or resized the map. HideCave
--- resets them, so a freshly opened cave — this one again, or a different
--- one entirely — always starts at fit-to-window.
+-- resets them, so a freshly opened cave (this one again, or a different one
+-- entirely) always starts at fit-to-window.
 --
 -- `contentDrag`, when non-nil, is `{ startX, startY, startPanX, startPanY }`
--- for a pan drag in progress — the same hand-polled pattern as
+-- for a pan drag in progress, the same hand-polled pattern as
 -- `heightWindowDrag` below (OnMouseDown to start, OnUpdate plus a live
 -- IsMouseButtonDown check to follow and to notice release).
 local zoomScale    = MIN_ZOOM
@@ -202,21 +196,21 @@ local contentDrag
 -- `zoomAnchorX`/`zoomAnchorY`: the canvas-local point (see ContentCursorXY
 -- for the coordinate convention) that ZoomBy is currently zooming toward
 -- centering. Set from wherever the cursor is the first time it's needed,
--- then deliberately *not* recomputed on every notch — see ZoomBy's own
+-- then deliberately *not* recomputed on every notch: see ZoomBy's own
 -- comment for why re-sampling "what's under the cursor" fresh each notch,
 -- while the cursor sits still and the picture moves underneath it, is
 -- exactly what made a stationary scroll drift onto a different part of
 -- the map. `zoomAnchorCursorX`/`zoomAnchorCursorY` are the cursor position
 -- the anchor was last sampled at, purely so the next notch can tell
 -- whether the cursor has actually moved since. All four go back to nil
--- whenever the anchor would no longer mean anything — the content area
--- being resized (LayoutWindow) or the cave window closing (HideCave) —
+-- whenever the anchor would no longer mean anything (the content area
+-- being resized by LayoutWindow, or the cave window closing via HideCave),
 -- so the next notch always samples fresh rather than centering a point
 -- left over from a different layout.
 local zoomAnchorX, zoomAnchorY
 local zoomAnchorCursorX, zoomAnchorCursorY
 
--- Floor picker (dropdown), top-right of the content frame — see the "Floor
+-- Floor picker (dropdown), top-right of the content frame; see the "Floor
 -- picker" section below. A real UIDropDownMenuTemplate frame, built lazily;
 -- `floorPickerUnavailable` is set once and for all if that template turns
 -- out not to exist on this client, so EnsureFloorPicker stops retrying.
@@ -264,8 +258,8 @@ local activeCaveTiles = {}
 -- shown place has ns.Cave:HasContinuousDepth() for its floors (currently
 -- just Fargodeep Mine) *and* has more than one floor; every other cave keeps
 -- the original hard-swap behaviour. `continuousTileGroups` holds every
--- floor's tiles simultaneously in that mode — index i is floor i of
--- Config.caveAllFloors — so their alpha can be pushed independently as the
+-- floor's tiles simultaneously in that mode (index i is floor i of
+-- Config.caveAllFloors), so their alpha can be pushed independently as the
 -- slider moves, rather than the single floor's worth `activeCaveTiles` holds
 -- the rest of the time.
 local continuousActive     = false
@@ -273,7 +267,7 @@ local continuousTileGroups = {}
 
 -- cave-satellite-v2 Phase 2: per-piece continuous fade state. `piecesActive`
 -- is true only while the currently shown place has ns.Cave:GetPieces() for
--- its floors (currently just Fargodeep Mine) — a finer-grained replacement
+-- its floors (currently just Fargodeep Mine), a finer-grained replacement
 -- for `continuousActive`'s whole-floor crossfade, not an addition to it, so
 -- the two are mutually exclusive (see ShowCave). `continuousPieceGroups`
 -- holds every piece's texture and its own {zMin, zMax} simultaneously, so
@@ -282,13 +276,13 @@ local continuousTileGroups = {}
 -- every piece currently rendered (not any one floor's own zMin/zMax), which
 -- is what lets a 2-notch floor slider sweep continuously through every
 -- piece's height in between rather than just the two floor labels the
--- notches are drawn at — see ElevationForValue.
+-- notches are drawn at; see ElevationForValue.
 local piecesActive         = false
 local continuousPieceGroups = {}
 local piecesZMin, piecesZMax
 
 -- Snapshot of the most recent RenderTiles call, for /hfwm debug. Not used
--- for rendering itself — purely so Commands.lua can report, per tile,
+-- for rendering itself, purely so Commands.lua can report, per tile,
 -- whether the FDID_MAP lookup hit (real baked art) or fell through to a
 -- raw client FDID, without recomputing any of RenderTiles's own state. In
 -- continuous mode RenderTiles runs once per floor, so this ends up holding
@@ -302,7 +296,7 @@ local function PoolAcquire(group)
     local tex = tremove(cavePool)
     if not tex then
         -- On canvasScale, not `content` directly: see the "Zoom & pan"
-        -- section below EnsureReopenButton — this is what makes the tile
+        -- section below EnsureReopenButton. This is what makes the tile
         -- grid zoom and pan instead of sitting fixed in the viewport.
         tex = canvasScale:CreateTexture(nil, "ARTWORK", nil, 3)
     end
@@ -338,8 +332,8 @@ end
 -------------------------------------------------------------------------------
 
 --- The game's own dialog-box border: the thick ornate gold-scroll frame
---- used on every popup dialog, the Game Menu, and confirmation windows —
---- the "metal border" look, not the thin tooltip hairline this used to
+--- used on every popup dialog, the Game Menu, and confirmation windows.
+--- The "metal border" look, not the thin tooltip hairline this used to
 --- point at. Same two file names FrameXML has used since vanilla:
 --- Interface\DialogFrame\UI-DialogBox-Border (edge) and
 --- Interface\DialogFrame\UI-DialogBox-Background (tiled backing). Built
@@ -356,8 +350,8 @@ local DIALOG_BACKDROP = {
 }
 
 --- Bronze/gold hand-drawn fallback for a client old enough to lack
---- BackdropTemplate entirely (pre-8.0) — kept only so nothing goes fully
---- borderless on such a client, not the default treatment any more.
+--- BackdropTemplate entirely (pre-8.0). Kept only so nothing goes fully
+--- borderless on such a client; not the default treatment any more.
 local BORDER_BRONZE = { 0.45, 0.34, 0.16, 1 }
 local BORDER_GOLD    = { 0.80, 0.64, 0.32, 1 }
 
@@ -395,25 +389,23 @@ end
 --- another. Used by ApplyNineSliceBorder to rebuild this window's frame out
 --- of WorldMapFrame's own border pieces.
 ---
---- The other consumer is CloneTitleStrip, which copies the map's title bar the
---- same way. A note that used to sit here claimed, on the strength of an
---- /fstack dump, that "TitleContainer holds nothing but WorldMapFrameTitleText
---- — no art at all", and concluded the map has no header graphic because its
---- header *is* the top edge of its border. That was wrong, and believing it
---- cost three rounds of invented title bars: the map plainly does draw a title
---- band behind "Map & Quest Log". Whether the art hangs off TitleContainer or
---- off BorderFrame is exactly the sort of thing that differs between clients
---- and that an /fstack read once should not be generalised from, which is why
---- CollectTitleStrip now walks both and cares about neither.
+--- The other consumer is CloneTitleStrip, which copies the map's title bar
+--- the same way. A previous note here, based on one /fstack dump, claimed
+--- "TitleContainer holds nothing but WorldMapFrameTitleText, no art at all"
+--- and concluded the map has no header graphic. That was wrong (the map
+--- plainly draws a title band behind "Map & Quest Log") and cost three
+--- rounds of invented title bars. Whether the art hangs off TitleContainer
+--- or off BorderFrame differs between clients, so CollectTitleStrip now
+--- walks both and cares about neither.
 ---
 --- useAtlasSize is deliberately *false*. Every caller here sizes the copy
---- itself (the border to BORDER_ART, each title piece to its measured size), so
---- taking the atlas's authored size is at best redundant — and at worst it is
---- the thing that wins: a copy whose anchoring step fails part-way is left
---- holding an atlas-native size and no points at all, which renders it centred
---- on its parent at whatever size the artist drew it. That is a stray plaque
---- floating in the middle of the frame, not a band, and it is indistinguishable
---- on screen from "the title bar is the wrong size".
+--- itself (the border to BORDER_ART, each title piece to its measured
+--- size), so taking the atlas's authored size would be redundant at best.
+--- At worst it wins anyway: a copy whose anchoring step fails part-way is
+--- left holding an atlas-native size and no points at all, rendering it
+--- centred on its parent at whatever size the artist drew it, a stray
+--- plaque floating in the middle of the frame rather than a band, and
+--- indistinguishable on screen from "the title bar is the wrong size".
 local function CopyRegionArt(src, dst)
     local atlas = src.GetAtlas and src:GetAtlas()
     if atlas then
@@ -440,10 +432,11 @@ local NINE_SLICE_PIECES = {
     "TopEdge", "BottomEdge", "LeftEdge", "RightEdge",
 }
 
---- Neutralise a texture we decided not to keep. Textures cannot be destroyed,
---- and an abandoned half-built one is not harmless (see CopyRegionArt): art
---- set, anchors never applied, so it renders centred on its parent at native
---- size. Every step is its own pcall — one refusing must not skip the rest.
+--- Neutralise a texture we decided not to keep. Textures cannot be
+--- destroyed, and an abandoned half-built one is not harmless (see
+--- CopyRegionArt): art set, anchors never applied, so it renders centred on
+--- its parent at native size. Every step is its own pcall, so one refusing
+--- doesn't skip the rest.
 local function DiscardTexture(tex)
     if not tex then return end
     pcall(tex.ClearAllPoints, tex)
@@ -456,24 +449,22 @@ end
 -- Title bar: cloned off the live map, not composed here
 -------------------------------------------------------------------------------
 
---- Three rounds of this file tried to *compose* a title bar out of art chosen
---- here — first the border's own NineSlice.TopEdge, then a hardcoded
---- UI-DialogBox-Gold-Header path, then a hand-drawn fill with a gold hairline
---- — and each was wrong in its own way. They were all wrong for the same
---- reason, though, which is the only part worth keeping: "what art is the
---- map's title bar made of, and where exactly does it sit" is a question about
---- the running client, and it cannot be answered by picking assets in an addon
---- file. Every attempt to answer it from here was a guess dressed up as a
---- fallback chain.
+--- Three rounds of this file tried to *compose* a title bar out of art
+--- chosen here (first the border's own NineSlice.TopEdge, then a hardcoded
+--- UI-DialogBox-Gold-Header path, then a hand-drawn fill with a gold
+--- hairline), and each was wrong in its own way. All wrong for the same
+--- reason: "what art is the map's title bar made of, and where exactly does
+--- it sit" is a fact about the running client, not something an addon file
+--- can answer by picking assets. Every attempt to answer it from here was a
+--- guess dressed up as a fallback chain.
 ---
 --- So nothing below chooses any art. It measures the real map frame's title
---- strip at runtime and replays it: the same textures, at the same heights, at
---- the same offset below the frame's top, with the same horizontal insets. If
---- the map's title bar is a centred plaque, this window gets that plaque at
---- that width; if it is a full-width band, this window gets that band inset
---- the same amount at each end. The title text is placed by measuring the
---- map's own title FontString the same way, so the text sits on the band
---- exactly as far down as it does on the real thing.
+--- strip at runtime and replays it: the same textures, at the same heights,
+--- at the same offset below the frame's top, with the same horizontal
+--- insets. A centred plaque stays a plaque at the same width; a full-width
+--- band gets inset the same amount at each end. The title text is placed by
+--- measuring the map's own title FontString the same way, so it sits on the
+--- band exactly as far down as it does on the real thing.
 
 --- How far below a frame's top edge a texture can start and still belong to
 --- that frame's title strip rather than to its body. Generous enough for a
@@ -486,13 +477,13 @@ local TITLE_STRIP_DEPTH = 64
 --- under its own title text as ordinary chrome, the same category of thing
 --- as the NineSlice border pieces this window already rebuilds itself and
 --- deliberately excludes (see NINE_SLICE_PIECES/skip below) rather than
---- clones. A divider like that is also exactly what a mis-measured band
---- reads as on screen: a long, thin, otherwise-unexplained bar, since a
---- texture this thin has no visible shape of its own to look "wrong" by —
---- only its position and length do, and both are the two things CloneTitleStrip
---- is most at risk of getting wrong for a piece with no readable content to
---- sanity-check the math against. Filtering it out here, rather than fixing
---- its placement, means there's nothing left to mis-place.
+--- clones. A divider like that is also what a mis-measured band reads as on
+--- screen: a long, thin, otherwise-unexplained bar. A texture this thin has
+--- no visible shape of its own to look "wrong" by, only its position and
+--- length, which are exactly what CloneTitleStrip is most at risk of
+--- getting wrong for a piece with no readable content to sanity-check the
+--- math against. Filtering it out here, rather than fixing its placement,
+--- means there's nothing left to mis-place.
 local TITLE_STRIP_MIN_HEIGHT = 4
 
 --- A region's screen rect, or nil if it has none yet. A frame that has never
@@ -530,17 +521,17 @@ end
 --- size. Returns the pieces plus the reference frame's top edge and horizontal
 --- centre.
 ---
---- nil means one specific thing: the map frame has no rect yet, so the answer
---- is unknown and worth asking for again. An *empty* list is a different and
---- final answer — the frame was measured and has no title art — and the two
---- must not be conflated, or a client whose map genuinely has no title band
---- would be re-measured on every single layout, forever, waiting for an answer
---- that already arrived.
+--- nil means one specific thing: the map frame has no rect yet, so the
+--- answer is unknown and worth asking for again. An *empty* list is a
+--- different, final answer: the frame was measured and has no title art.
+--- The two must not be conflated, or a client whose map genuinely has no
+--- title band would be re-measured on every single layout forever, waiting
+--- for an answer that already arrived.
 ---
 --- The eight NineSlice pieces are excluded by *identity*, not by name or by
---- position: this window already rebuilds those as its own border, so cloning
---- them here too would paint the top trim twice — which is exactly the "two
---- stacked bars at the top" this dialog shipped with two rounds ago.
+--- position: this window already rebuilds those as its own border, so
+--- cloning them here too would paint the top trim twice, the "two stacked
+--- bars at the top" this dialog shipped with two rounds ago.
 local function CollectTitleStrip()
     local borderFrame = WorldMapFrame and WorldMapFrame.BorderFrame
     if not borderFrame then return nil end
@@ -569,7 +560,7 @@ local function CollectTitleStrip()
         -- the strip, and not tall enough to be the map's body art.
         if topInset < -0.5 or topInset > TITLE_STRIP_DEPTH then return end
         if height > TITLE_STRIP_DEPTH then return end
-        -- Nor thin enough to be a hairline/rule rather than art — see
+        -- Nor thin enough to be a hairline/rule rather than art; see
         -- TITLE_STRIP_MIN_HEIGHT.
         if height < TITLE_STRIP_MIN_HEIGHT then return end
         local layer, sublevel = "ARTWORK", 0
@@ -610,20 +601,20 @@ end
 --- centre it has on the map. Stretching a plaque to full width, or centring a
 --- band at its native width, are the two ways this can look wrong.
 ---
---- Getting that test scale-free took three tries, and the two rejected ones
---- are worth recording because both look obviously right:
+--- Getting that test scale-free took three tries; the two rejected ones are
+--- worth recording because both look obviously right:
 ---   width >= frameW - k   - reads correctly only while the frame is wide. A
 ---                           400px plaque is clearly not a band on a 1000px
 ---                           frame; the same test calls it one at 500px.
 ---   insets <= k           - same failure from the other side. A plaque on a
 ---                           narrow frame has small absolute margins.
---- Both compare the piece against the *frame*, which is the wrong reference:
---- whether something is trim or a plaque is a fact about the piece. Trim hugs
---- the edge it belongs to, so its inset is of the same order as its own
---- thickness; a plaque's margins are large multiples of its height. Comparing
---- the inset to the piece's own height is therefore scale-free in the way the
---- other two only appear to be. BORDER_INSET is a floor for the degenerate
---- case of art only a pixel or two tall.
+--- Both compare the piece against the *frame*, the wrong reference: whether
+--- something is trim or a plaque is a fact about the piece. Trim hugs the
+--- edge it belongs to, so its inset is of the same order as its own
+--- thickness; a plaque's margins are large multiples of its height.
+--- Comparing the inset to the piece's own height is scale-free in the way
+--- the other two only appear to be. BORDER_INSET is a floor for the
+--- degenerate case of art only a pixel or two tall.
 local function IsBand(p)
     local slack = math.max(p.height, BORDER_INSET)
     return p.leftInset <= slack and p.rightInset <= slack
@@ -661,7 +652,7 @@ local function CloneTitleStrip(bar)
                 copy:SetPoint("TOP", bar, "TOP", p.centerDX, -p.topInset)
                 -- Remembered so ClampTitleStripPlaques (below) can shrink
                 -- this back down once the cave window's own, much smaller,
-                -- width is known — see that function for why a plaque needs
+                -- width is known; see that function for why a plaque needs
                 -- this and a band does not.
                 copy.hfwmPlaqueNativeWidth = p.width
             end
@@ -691,7 +682,7 @@ end
 --- taller title area drops the text straight through the bottom of it. That is
 --- the "title is underneath the header" this window has already shipped once,
 --- so this path centres the text in the header it actually has. The font is
---- copied either way — that part is faithful regardless.
+--- copied either way; that part is faithful regardless.
 ---@return number|nil  the text's bottom, as a distance below the window top
 local function PlaceTitleText(text, bar, barHeight, cloned)
     text:ClearAllPoints()
@@ -716,12 +707,12 @@ end
 --- the map puts its own.
 ---
 --- Deliberately safe to call more than once. The map frame has no rect to
---- measure until it has been laid out at least once, and this runs while the
---- cave window is first built, which can be earlier than that — so a failure
---- here is not final and LayoutWindow calls it again until it takes. Retrying
---- is also why the previous clone is cleared first: a second strip layered over
---- the first would double every piece, which is the same "two bars at the top"
---- this window has already shipped once.
+--- measure until it has been laid out at least once, and this runs while
+--- the cave window is first built, which can be earlier than that, so a
+--- failure here is not final and LayoutWindow calls it again until it
+--- takes. Retrying is also why the previous clone is cleared first: a
+--- second strip layered over the first would double every piece, the same
+--- "two bars at the top" this window has already shipped once.
 ---
 --- On failure the header is left unpainted rather than filled in with
 --- something invented. An unpainted header is a visible, reversible state that
@@ -740,7 +731,7 @@ local function ApplyTitleStrip(bar)
         local textBottom = PlaceTitleText(titleText, bar, bottom, true)
             or bottom
         -- The header clears whichever reaches further down, art or text, and
-        -- can never be thinner than the border's own top edge — otherwise the
+        -- can never be thinner than the border's own top edge, otherwise the
         -- content below would begin underneath the trim.
         titleH = math.max(BORDER_ART,
             math.ceil(math.max(bottom, textBottom)) + 1)
@@ -789,21 +780,21 @@ end
 ---
 --- A band scales for free: it is anchored to `bar`'s own TOPLEFT/TOPRIGHT,
 --- so whatever width `bar` ends up at, the band matches it. A plaque is not
---- anchored that way — CloneTitleStrip gives it a literal SetSize(p.width,
+--- anchored that way: CloneTitleStrip gives it a literal SetSize(p.width,
 --- p.height), copied from WorldMapFrame, a frame this window is deliberately
 --- a fraction the size of (MAP_FRACTION_W/H, clamped by MIN_CONTENT/
---- MAX_CONTENT) — and that size is never revisited. A plaque modest enough
+--- MAX_CONTENT), and that size is never revisited. A plaque modest enough
 --- to sit quietly on the full map can easily be wider than this window's
 --- entire header, and CloneTitleStrip runs once, during EnsureWindow,
 --- *before* LayoutWindow has set this window's real size at all (see the
---- comment on StyleBox about the window having no size yet at that point) —
+--- comment on StyleBox about the window having no size yet at that point),
 --- so there was never a moment where the plaque's width could have been
 --- checked against anything meaningful. Left alone, that piece renders at
 --- full native width and sticks out past both edges of the header: the
 --- unexplained long bar an /fstack click on the title bar landed on.
 ---
 --- This does not re-decide what counts as a band vs. a plaque (see the
---- three-tries comment above IsBand — that heuristic is proven, fragile
+--- three-tries comment above IsBand; that heuristic is proven, fragile
 --- ground). It only ever shrinks a plaque that no longer fits, and leaves
 --- one that already fits untouched.
 local function ClampTitleStripPlaques(bar, maxWidth)
@@ -818,9 +809,9 @@ end
 
 --- Builds `frame`'s entire box border out of the same eight live
 --- WorldMapFrame.BorderFrame.NineSlice pieces the real map frames itself
---- with — the four corners placed at their real corners,
---- the four edges stretched to span between them — instead of the tinted
---- DIALOG_BACKDROP guess. CopyRegionArt keeps each piece's own native
+--- with (the four corners placed at their real corners, the four edges
+--- stretched to span between them) instead of the tinted DIALOG_BACKDROP
+--- guess. CopyRegionArt keeps each piece's own native
 --- vertex colour (no BORDER_GOLD tint applied here at all), so this is
 --- built from the identical asset family as the title bar and the two
 --- meet at exactly the same trim, seamlessly, rather than two different
@@ -841,7 +832,7 @@ local function ApplyNineSliceBorder(frame, r, g, b, a)
         -- every other child (title bar, content, slider), rather than on
         -- `frame` itself. A border is the one thing in a panel that should
         -- always win at the edges: with the art on `frame`, the content
-        -- frame — a sibling at the same frame level, created later — drew
+        -- frame (a sibling at the same frame level, created later) drew
         -- over it, which is what made the cave art read as overlapping its
         -- own frame instead of sitting inside it. Now the trim is painted
         -- last, so the interior can butt right up against it and the worst
@@ -897,7 +888,7 @@ local function ApplyNineSliceBorder(frame, r, g, b, a)
         -- a rectangle held one whole corner's width in from every side, and
         -- with the corners at their native (map-frame-sized) dimensions that
         -- rectangle was inset far enough to be plainly visible as its own
-        -- shape — a dark panel, narrower than the window and offset from the
+        -- shape: a dark panel, narrower than the window and offset from the
         -- content below it, showing through the gap between the header and
         -- the top of the cave art. That is the "second overlapping top
         -- section". It was never a second frame; it was this one texture
@@ -913,18 +904,18 @@ end
 --- Give `frame` the game's own border, preferring the live NineSlice-copy
 --- technique above (real border, real colour, guaranteed to match the
 --- title bar) and only falling back to the legacy tinted DIALOG_BACKDROP
---- table — or, lacking BackdropTemplate entirely, the hand-drawn
---- StyleBoxFallback — when this client build doesn't actually expose
+--- table, or, lacking BackdropTemplate entirely, the hand-drawn
+--- StyleBoxFallback, when this client build doesn't actually expose
 --- WorldMapFrame.BorderFrame.NineSlice.
 ---
 --- Both the ornate paths (NineSlice corners and DIALOG_BACKDROP's edgeSize)
---- are art sized for a whole window — BORDER_ART (32px) per corner at
+--- are art sized for a whole window: BORDER_ART (32px) per corner at
 --- minimum. On a frame smaller than roughly twice that in either
 --- dimension, opposite corners cross over each other and there is nothing
 --- left for a straight edge to span (this is exactly what the reopen
 --- icon's border hit before this guard existed). Below that floor, this
 --- skips straight to StyleBoxFallback's hairline, which has no minimum
---- size and is still the same BORDER_GOLD used everywhere else here — so a
+--- size and is still the same BORDER_GOLD used everywhere else here, so a
 --- small widget gets a thinner but genuinely matching border instead of a
 --- clipped, overlapping one.
 ---
@@ -1035,7 +1026,7 @@ end
 --- The native Slider widget always renders its minimum at the TOP of a
 --- VERTICAL track and its maximum at the BOTTOM (confirmed via
 --- https://warcraft.wiki.gg/wiki/API_Slider_SetOrientation: "Slider thumb
---- moves from top to bottom as the slider's value increases") — the
+--- moves from top to bottom as the slider's value increases"), the
 --- opposite of the "value" scale the rest of this section uses, which puts
 --- the minimum at the bottom of the track (deepest) and the maximum at the
 --- top (topmost), to match ElevationForValue, ValueToFractionalIndex,
@@ -1050,14 +1041,14 @@ end
 --- Triangular falloff around a fractional floor position: 1 at that floor's
 --- own index, fading linearly to 0 by the time the slider reaches either
 --- neighbour, and 0 beyond that. At most two floors are ever partially
---- visible at once — the same as a real crossfade dissolve.
+--- visible at once, the same as a real crossfade dissolve.
 local function ContinuousAlpha(index, fractionalIndex)
     return math.max(0, 1 - math.abs(index - fractionalIndex))
 end
 
 --- cave-satellite-v2 Phase 2: real-world elevation the slider's raw value
 --- corresponds to, spanning the aggregate zMin/zMax of every piece currently
---- rendered (piecesZMin/piecesZMax — set by RenderContinuousPieces, not any
+--- rendered (piecesZMin/piecesZMax, set by RenderContinuousPieces, not any
 --- one floor's own range) so that dragging between the two floor notches
 --- sweeps continuously through every piece's real height in between, which
 --- is the whole point of the per-piece rework (see the module-state comment
@@ -1074,7 +1065,7 @@ end
 
 --- The height-window rectangle's own real-world elevation bounds: its two
 --- 0..1 fractions (Config:CaveHeightWindow) scaled against the aggregate
---- zMin/zMax of every piece currently rendered (piecesZMin/piecesZMax — set
+--- zMin/zMax of every piece currently rendered (piecesZMin/piecesZMax, set
 --- by RenderContinuousPieces), the same span ElevationForValue scales
 --- against. Returns nil, nil before any piece has been rendered.
 ---@return number|nil windowBottomZ, number|nil windowTopZ
@@ -1090,7 +1081,7 @@ end
 --- falls inside [windowBottomZ, windowTopZ], fading linearly to 0 over
 --- EDGE_FADE_YARDS beyond whichever edge is nearer, and 0 past that. Unlike
 --- a single-point falloff, any number of pieces can be simultaneously fully
---- visible, partially faded, or invisible at once — there is no fixed
+--- visible, partially faded, or invisible at once: there is no fixed
 --- neighbour count once "floors" stop being the unit the fade is keyed on.
 local function PieceWindowAlpha(zMin, zMax, windowBottomZ, windowTopZ)
     if not windowBottomZ then return 1 end
@@ -1129,7 +1120,7 @@ local function EnsureSlider()
     -- narrow for DIALOG_BACKDROP's 32px ornate corners to tile correctly
     -- (StyleBox's dialog border is sized for whole windows, not a thin
     -- groove). Instead this uses the exact resource the real game uses for
-    -- every slider groove — Interface\Buttons\UI-SliderBar-Background and
+    -- every slider groove: Interface\Buttons\UI-SliderBar-Background and
     -- UI-SliderBar-Border, the same pair FrameXML's OptionsSliderTemplate
     -- draws under its thumb for the volume/camera-distance sliders and
     -- every other vertical slider in the default UI. Plain textures, not a
@@ -1191,7 +1182,7 @@ local function EnsureSlider()
         GameTooltip:AddLine("Depth", 1, 1, 1)
         for i, f in ipairs(floors) do
             local on = (i == idx)
-            -- Gold for the current floor, plain light gray otherwise — the
+            -- Gold for the current floor, plain light gray otherwise: the
             -- same selected-vs-normal convention Blizzard's own list UIs
             -- (spellbook, quest log, dropdown menus) use throughout.
             GameTooltip:AddLine(
@@ -1264,7 +1255,7 @@ local function LayoutNotches(floors, currentMapID)
         notch:SetPoint("BOTTOM", sliderTrack, "BOTTOM", 0, offset)
         notch:SetWidth(active and NOTCH_W or NOTCH_W - 4)
         notch:SetHeight(active and 3 or 1)
-        -- Gold for the active floor, dim tan/bronze for the rest — matches
+        -- Gold for the active floor, dim tan/bronze for the rest: matches
         -- the same gold-for-selected convention as the depth tooltip above.
         notch:SetColorTexture(
             active and 1.00 or 0.55,
@@ -1341,7 +1332,7 @@ end
 -- Built as one Button (`windowBody`, the whole rectangle, for the move
 -- drag) with two child Buttons (`windowTopHandle`/`windowBottomHandle`,
 -- thin grab strips overlapping its top and bottom edges, for the resize
--- drags) — the handles sit at a higher frame level than the body so a
+-- drags). The handles sit at a higher frame level than the body so a
 -- click on the edge strip reaches the handle first, and a click anywhere
 -- else in the rectangle falls through to the body.
 --
@@ -1446,7 +1437,7 @@ local function HeightWindowDragUpdate()
     CaveRenderer:UpdatePieceWindowAlphas()
 end
 
---- Build the rectangle and its two resize handles, lazily on first use —
+--- Build the rectangle and its two resize handles, lazily on first use,
 --- same pattern as EnsureSlider, which this calls first since the widget
 --- is anchored to the slider track it overlays.
 local function EnsureHeightWindow()
@@ -1567,21 +1558,21 @@ end
 -------------------------------------------------------------------------------
 -- Floor picker (dropdown)
 --
--- Top-right of the content frame — floating over the art itself rather than
+-- Top-right of the content frame, floating over the art itself rather than
 -- in the title bar (already carrying the area name and the close button) or
 -- the footer (already carrying the "Level X of Y" readout).
 --
--- Built from the client's own UIDropDownMenuTemplate — the same "long-lived"
--- dropdown Options.lua's TryLegacyDropdown reaches for, and reliably present
+-- Built from the client's own UIDropDownMenuTemplate, the same "long-lived"
+-- dropdown Options.lua's TryLegacyDropdown reaches for and reliably present
 -- on every flavour from vanilla through Dragonflight per that file's own
--- comment — rather than a hand-built button and popup list. Reading and
+-- comment, rather than a hand-built button and popup list. Reading and
 -- behaving exactly like every other dropdown in the default UI is the point:
 -- the native checkmark marks the active entry, the native highlight and
 -- click sound come for free, and there is no bespoke popup-list/click-away
 -- plumbing here to keep in sync with the real thing.
 --
 -- InitFloorPickerMenu reads Config.caveAllFloors / Config.caveFloorFilterAll
--- / Config.caveCurrentFloorMapID live, each time the menu opens —
+-- / Config.caveCurrentFloorMapID live, each time the menu opens.
 -- UIDropDownMenu_Initialize already means "call this again whenever the
 -- list needs to be current," so unlike the depth slider's hand-drawn
 -- notches there is nothing here that needs rebuilding ahead of time by a
@@ -1591,7 +1582,7 @@ end
 
 --- The menu list: "All" first, in Blizzard's own cyan (see
 --- BLIZZARD_CYAN_HEX), then every floor, topmost first, in plain default
---- text — the native checkmark (info.checked) is what marks whichever one
+--- text. The native checkmark (info.checked) is what marks whichever one
 --- is active, the same as every other Blizzard dropdown, so neither entry
 --- needs its own hand-picked highlight colour on top of that. Selecting
 --- either hands straight off to CaveRenderer:SelectAllFloors/
@@ -1606,8 +1597,7 @@ local function InitFloorPickerMenu(_, level)
     allInfo.text            = BLIZZARD_CYAN_HEX .. "All|r"
     allInfo.checked         = Config.caveFloorFilterAll and true or false
     allInfo.tooltipTitle    = "All"
-    allInfo.tooltipText     = "Layer every floor together, exactly as "
-        .. "before this control existed."
+    allInfo.tooltipText     = "Layer every floor together (the default)."
     allInfo.tooltipOnButton = true
     allInfo.func = function() CaveRenderer:SelectAllFloors() end
     UIDropDownMenu_AddButton(allInfo, level)
@@ -1627,9 +1617,9 @@ local function InitFloorPickerMenu(_, level)
     end
 end
 
---- Build the dropdown, lazily on first use — same pattern as EnsureSlider/
+--- Build the dropdown, lazily on first use, same pattern as EnsureSlider/
 --- EnsureHeightWindow. `floorPickerUnavailable` is set once and for all if
---- this client turns out not to expose the UIDropDownMenuTemplate API —
+--- this client turns out not to expose the UIDropDownMenuTemplate API,
 --- vanishingly unlikely (see the section comment above) but checked anyway,
 --- matching every other template lookup in this addon. There is
 --- deliberately no hand-built fallback this time: going without a floor
@@ -1671,7 +1661,7 @@ local function EnsureFloorPicker()
     -- +14, not flush: the template's own end-cap art sits inset from the
     -- frame's true edges, so anchoring flush would leave the *visible*
     -- widget floating short of content's own right edge. This is a
-    -- by-eye nudge, not a measured one — worth another look in-game.
+    -- by-eye nudge, not a measured one; worth another look in-game.
     dd:SetPoint("TOPRIGHT", content, "TOPRIGHT", 14, -2)
     -- Above content's own tiles: both are plain children of `window` and
     -- would otherwise share its default child level, which draw-order
@@ -1682,7 +1672,7 @@ local function EnsureFloorPicker()
 end
 
 --- Pull the closed dropdown's own text back from the current filter/floor,
---- and hide the whole control for a single-floor place — same gate the
+--- and hide the whole control for a single-floor place, same gate the
 --- depth slider itself uses (FloorCount() <= 1): a picker with only "All"
 --- and one floor to choose between has nothing to offer that showing the
 --- floor already didn't.
@@ -1852,15 +1842,15 @@ end
 -- canvasScale is a plain child frame of `content`, sized to match it
 -- exactly (see LayoutWindow) and holding every piece of the actual cave
 -- picture: the tile/piece textures RenderTiles and RenderContinuousPieces
--- draw, and the player pin. Neither of those functions knows zoom exists —
+-- draw, and the player pin. Neither of those functions knows zoom exists;
 -- they still size and place everything against plain contentW/contentH
 -- pixels, exactly as before this section existed. The magnification and
 -- the shift are applied in exactly one place, ApplyCanvasTransform, via
 -- canvasScale:SetScale and its own anchor offset from `content`'s TOPLEFT:
 -- a texture inside canvasScale at logical position (x, y) with size (w, h)
 -- ends up on screen at (panX + x*zoomScale, panY + y*zoomScale) sized
--- (w*zoomScale, h*zoomScale), simply from the chain of effective scales —
--- no per-tile math anywhere else has to change for that to be true.
+-- (w*zoomScale, h*zoomScale), simply from the chain of effective scales.
+-- No per-tile math anywhere else has to change for that to be true.
 --
 -- `content` still clips its children (see EnsureWindow), and that clip is
 -- based on content's own fixed on-screen rect regardless of what canvasScale
@@ -1869,7 +1859,7 @@ end
 -------------------------------------------------------------------------------
 
 --- Cursor position in content-local pixels: 0,0 at content's own TOPLEFT,
---- x growing right, y growing *down* as an increasingly negative number —
+--- x growing right, y growing *down* as an increasingly negative number,
 --- the same convention RenderTiles already anchors every tile with (see
 --- `-(row * tilePxH * scaleY)` there), so a point measured here lines up
 --- with the tile grid without a sign flip anywhere in this section.
@@ -1888,8 +1878,8 @@ end
 
 --- Keep canvasScale from panning far enough that the flat backdrop shows
 --- through inside the content viewport. At zoomScale 1 both bounds collapse
---- to 0 — no pan is possible, which is correct: there is nothing beyond the
---- fitted view to reveal.
+--- to 0: no pan is possible, which is correct, since there is nothing
+--- beyond the fitted view to reveal.
 local function ClampPan()
     local maxX = 0
     local minX = contentW * (1 - zoomScale)
@@ -1900,7 +1890,7 @@ local function ClampPan()
     panY = math.max(minY, math.min(maxY, panY))
 end
 
---- Push zoomScale/panX/panY onto canvasScale — the only place either value
+--- Push zoomScale/panX/panY onto canvasScale, the only place either value
 --- is actually read into the frame tree. Every other function in this
 --- section only ever changes the numbers and calls this (normally right
 --- after ClampPan).
@@ -1912,37 +1902,36 @@ local function ApplyCanvasTransform()
 end
 
 --- Change zoom by `factor` (>1 in, <1 out), driving the picture toward
---- centering whichever canvas point the cursor is anchored to — see the
+--- centering whichever canvas point the cursor is anchored to; see the
 --- module comment above zoomAnchorX for what "anchored to" means and why.
 ---
---- The two things this deliberately does *not* do, both tried first:
+--- Two approaches were tried and rejected first:
 ---
 ---   - Keep the exact pixel under the cursor pinned in place (the "browser
 ---     zoom" behaviour). Mathematically stable, but it never moves the
----     clicked point toward the centre at all — it stays exactly where the
----     cursor is, which for a click near an edge of a window this small
----     reads as the *rest* of the picture rushing past it rather than the
----     clicked thing settling into view.
----   - Recompute "what's under the cursor" fresh on every notch and try to
----     centre *that*. This is the one that actually shipped for a bit, and
----     it has a real bug with the cursor held still: the first notch moves
----     the clicked content most of the way to centre, which means the
----     *second* notch's fresh cursor sample lands on a different part of
----     the canvas than the first one did (the picture moved, the cursor
----     didn't), and centres *that* instead — so a stationary scroll visibly
----     hunts across the map from notch to notch instead of drilling into
----     one spot, exactly backwards from "keep the mouse still and zoom in
----     on that object."
+---     clicked point toward the centre: it stays exactly where the cursor
+---     is, which for a click near the edge of a window this small reads as
+---     the *rest* of the picture rushing past it rather than the clicked
+---     thing settling into view.
+---   - Recompute "what's under the cursor" fresh on every notch and centre
+---     *that*. This one actually shipped for a bit, and has a real bug with
+---     the cursor held still: the first notch moves the clicked content
+---     most of the way to centre, so the *second* notch's fresh cursor
+---     sample lands on a different part of the canvas than the first one
+---     did (the picture moved, the cursor didn't) and centres *that*
+---     instead. A stationary scroll visibly hunts across the map from
+---     notch to notch instead of drilling into one spot, backwards from
+---     "keep the mouse still and zoom in on that object."
 ---
 --- The fix behind zoomAnchorX/zoomAnchorY: sample the canvas point under
 --- the cursor once, the first notch after the cursor lands somewhere new,
---- and keep re-using that same point — not the cursor's live position —
---- for every notch until the cursor actually moves. Centering a *fixed*
---- canvas point at a *given* zoom is a direct formula with no dependency
---- on the pan that was in effect a moment ago (unlike either alternative
---- above), so back-to-back notches can't get stuck against a clamp or
---- drift onto the wrong content: each one just asks "where does zoomAnchorX
---- land at this new scale" and answers it fresh.
+--- and keep re-using that same point, not the cursor's live position, for
+--- every notch until the cursor actually moves. Centering a *fixed* canvas
+--- point at a *given* zoom is a direct formula with no dependency on the
+--- pan that was in effect a moment ago (unlike either alternative above),
+--- so back-to-back notches can't get stuck against a clamp or drift onto
+--- the wrong content: each one just asks "where does zoomAnchorX land at
+--- this new scale" and answers it fresh.
 ---@param factor number
 local function ZoomBy(factor)
     if not content or not canvasScale then return end
@@ -1951,7 +1940,7 @@ local function ZoomBy(factor)
     if newScale == zoomScale then return end
 
     local cx, cy = ContentCursorXY()
-    -- Only re-sample the anchor if the cursor moved since it was last set —
+    -- Only re-sample the anchor if the cursor moved since it was last set;
     -- see the module comment above zoomAnchorX.
     if not zoomAnchorX
         or math.abs(cx - zoomAnchorCursorX) > ZOOM_ANCHOR_EPSILON
@@ -1962,7 +1951,7 @@ local function ZoomBy(factor)
     end
 
     -- See ContentCursorXY for the sign convention (0,0 at content's own
-    -- top-left, y increasingly negative downward) — centerY is negative
+    -- top-left, y increasingly negative downward); centerY is negative
     -- for the same reason.
     local centerX, centerY = contentW / 2, -contentH / 2
     zoomScale = newScale
@@ -1974,7 +1963,7 @@ local function ZoomBy(factor)
 end
 
 --- Start tracking a drag of the map picture itself. Left button, same as
---- the window's own drag-to-move — the two never compete for it, because
+--- the window's own drag-to-move. The two never compete for it, because
 --- the window's drag is registered on `window` while this one is registered
 --- on `content`, and content sits on top over the art, so a press there
 --- reaches this handler first and never falls through to the window's.
@@ -1983,7 +1972,7 @@ local function BeginContentPan()
     contentDrag = { startX = cx, startY = cy, startPanX = panX, startPanY = panY }
 end
 
---- Polled every frame `content` is shown — the same hand-polled pattern as
+--- Polled every frame `content` is shown, the same hand-polled pattern as
 --- HeightWindowDragUpdate above, and for the same reason: release is
 --- detected from a live IsMouseButtonDown check rather than an OnMouseUp,
 --- so a fast drag that carries the cursor off of `content` before the
@@ -2023,7 +2012,7 @@ local function EnsureWindow()
     -- Above the border art rather than above the window. ApplyNineSliceBorder
     -- paints the trim on its own child frame at +BORDER_LEVEL so the border
     -- always wins at the edges (that is what stopped the cave art overlapping
-    -- its frame) — but the window's *text* has to beat the trim in turn, or
+    -- its frame), but the window's *text* has to beat the trim in turn, or
     -- it gets painted over by the very band it is meant to label. Both the
     -- title and the floor readout live on this one chrome frame above it: the
     -- readout sits inside the bottom border band exactly as the title sits
@@ -2050,14 +2039,14 @@ local function EnsureWindow()
     -- outside this bar's own rect. IsBand's leftInset/rightInset math (and
     -- ClampTitleStripPlaques' width clamp) are both best-efforts at getting
     -- a cloned piece's *placement* right; this is the unconditional fallback
-    -- for when one of them is wrong anyway — e.g. a piece whose measured
+    -- for when one of them is wrong anyway, e.g. a piece whose measured
     -- inset comes out sharply negative still passes IsBand's `<= slack`
     -- check (a negative number is always <= a positive one), so it gets
     -- anchored hundreds of pixels to the left of bar's own edge instead of
     -- inside it. That is the long horizontal bar that showed up bleeding out
     -- across the world map to the left of the cave window in practice.
     -- Clipping here does not fix the mis-measurement, but it does guarantee
-    -- the symptom — art escaping this window's own header — can't happen,
+    -- the symptom (art escaping this window's own header) can't happen,
     -- the same way `content` below already clips the cave art itself.
     if bar.SetClipsChildren then bar:SetClipsChildren(true) end
     titleBar = bar
@@ -2074,7 +2063,7 @@ local function EnsureWindow()
     local close = CreateFrameTry("Button", nil, window, "UIPanelCloseButton")
     close:SetFrameLevel(bar:GetFrameLevel() + 1)
     -- UIPanelCloseButton's template size is 32px square, which can be taller
-    -- than the header band — left at its native size it would stick out above
+    -- than the header band; left at its native size it would stick out above
     -- and below it. ApplyTitleHeight sizes it against the measured band; this
     -- is only the value it starts at.
     close:SetSize(CLOSE_BTN, CLOSE_BTN)
@@ -2128,7 +2117,7 @@ local function EnsureWindow()
     backdropTex:SetAllPoints(content)
     backdropTex:SetColorTexture(0.05, 0.04, 0.03, 1)
 
-    -- Zoom/pan canvas — see the "Zoom & pan" section above EnsureWindow.
+    -- Zoom/pan canvas; see the "Zoom & pan" section above EnsureWindow.
     -- Sized to match `content` exactly (LayoutWindow keeps the two in sync);
     -- ApplyCanvasTransform is what actually moves and scales it.
     canvasScale = CreateFrame("Frame", nil, content)
@@ -2158,7 +2147,7 @@ local function EnsureWindow()
     playerPin:SetSize(PIN_SIZE, PIN_SIZE)
     playerPin:Hide()
 
-    -- On `chrome`, not `window`: see the chrome comment above — on window it
+    -- On `chrome`, not `window`: see the chrome comment above. On window it
     -- sat below the border art frame and the bottom trim drew over it.
     floorText = chrome:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     -- Inside the bottom border, not on it: at PAD/4 the readout was hanging
@@ -2192,27 +2181,28 @@ end
 --- either way.
 ---
 --- Only the base layer is ever used. Where C_Map does answer it can return
---- more than one layer, and the extra ones are *zoom detail* levels: the same
---- map extent re-cut at a higher tile resolution, each carrying the canvas
---- scale range it applies to. The world map canvas swaps between them as it
---- zooms. This window's own zoom (see the "Zoom & pan" section above
---- EnsureWindow) magnifies whichever layer is already drawn rather than
---- swapping to a sharper one as the user zooms in — layer 1, the full-extent
---- base layer, is still the one it asks for, at every zoom level. Wiring
---- RenderTiles up to re-fetch and re-lay-out a detail layer's own tiles each
---- time zoomScale crosses one of its thresholds is a real option for later;
---- today it would multiply the tile count for art this addon doesn't control
---- the resolution of to begin with (see the FDID/bundled-art fallback
---- below), in exchange for sharpness only visible past MAX_ZOOM's midpoint —
---- so the simpler fixed-layer-then-magnify approach is what ships.
+--- more than one layer, and the extra ones are *zoom detail* levels: the
+--- same map extent re-cut at a higher tile resolution, each carrying the
+--- canvas scale range it applies to. The world map canvas swaps between
+--- them as it zooms. This window's own zoom (see the "Zoom & pan" section
+--- above EnsureWindow) magnifies whichever layer is already drawn rather
+--- than swapping to a sharper one as the user zooms in: layer 1, the
+--- full-extent base layer, is still the one it asks for at every zoom
+--- level. Wiring RenderTiles to re-fetch a detail layer's own tiles each
+--- time zoomScale crosses a threshold is a real option for later; today it
+--- would multiply the tile count for art this addon doesn't control the
+--- resolution of to begin with (see the FDID/bundled-art fallback below),
+--- for sharpness only visible past MAX_ZOOM's midpoint. So the simpler
+--- fixed-layer-then-magnify approach is what ships.
 ---
---- Renderer.lua's IsSubmerged() swap to layer 2 is a separate mechanism:
---- Vashj'ir's paired surface and underwater art, which is Cataclysm-only and
---- which Config.VASHJIR_MAPS is deliberately empty of on this client. Caves
---- have no such pairs, so keying the cave window's layer off IsSubmerged()
---- only ever picked a detail layer by accident — and did it in RenderTiles
---- while the aspect ratio was still being read from layer 1, which stretched
---- the art whenever the two layers were not cut to the same proportions.
+--- Renderer.lua's IsSubmerged() swap to layer 2 is a separate mechanism for
+--- Vashj'ir's paired surface and underwater art, which is Cataclysm-only
+--- and which Config.VASHJIR_MAPS is deliberately empty of on this client.
+--- Caves have no such pairs, so keying the cave window's layer off
+--- IsSubmerged() only ever picked a detail layer by accident, and did it in
+--- RenderTiles while the aspect ratio was still being read from layer 1,
+--- which stretched the art whenever the two layers were not cut to the
+--- same proportions.
 ---
 --- One function, so the shape of the box and the tiles that go in it can
 --- never again come from different layers.
@@ -2263,8 +2253,8 @@ local function LayoutWindow(floorMapID)
     local gutter    = hasSlider and (SLIDER_COL_W + 2) or 0
 
     -- Before anything is sized against titleH. EnsureWindow may have run
-    -- while WorldMapFrame still had no rect to measure — during login, or
-    -- before the map has ever been opened — in which case the header is
+    -- while WorldMapFrame still had no rect to measure (during login, or
+    -- before the map has ever been opened), in which case the header is
     -- unpainted and titleH is still the fallback. This is the retry, and it
     -- has to come first: it is what settles titleH, which the window's own
     -- height is computed from two statements below.
@@ -2280,9 +2270,9 @@ local function LayoutWindow(floorMapID)
     content:SetSize(w, h)
     -- canvasScale tracks content's own size exactly, so RenderTiles and
     -- RenderContinuousPieces can read canvasScale:GetSize() for the plain,
-    -- zoom-unaware pixel math they've always done — and, since w/h can
-    -- change floor to floor (each art layer has its own aspect ratio) or on
-    -- a world map resize, the previous pan is re-clamped against the new
+    -- zoom-unaware pixel math they've always done. Since w/h can change
+    -- floor to floor (each art layer has its own aspect ratio) or on a
+    -- world map resize, the previous pan is re-clamped against the new
     -- size rather than left pointing at a now-invalid offset.
     if canvasScale then
         canvasScale:SetSize(w, h)
@@ -2296,13 +2286,13 @@ local function LayoutWindow(floorMapID)
     end
     -- Height: the header band (titleH, measured off the map's own title strip),
     -- the art, the footer readout, then the bottom border inset. Only *one*
-    -- BORDER_INSET — the top one is subsumed by the header band, since the bar
+    -- BORDER_INSET: the top one is subsumed by the header band, since the bar
     -- is flush to the frame's top edge rather than inset below it.
     window:SetSize(w + BORDER_INSET * 2 + gutter,
         h + titleH + FOOT_H + BORDER_INSET)
     -- Now that the window (and therefore titleBar, flush to its top edges)
     -- has a real width, shrink any cloned title-strip plaque that no longer
-    -- fits it — see ClampTitleStripPlaques for why one can be wider than
+    -- fits it; see ClampTitleStripPlaques for why one can be wider than
     -- this window even after a "successful" clone.
     ClampTitleStripPlaques(titleBar, w + BORDER_INSET * 2 + gutter)
 
@@ -2326,33 +2316,32 @@ end
 -- Player pin
 -------------------------------------------------------------------------------
 --- Shown at the player's real position on whichever floor
---- ns.Cave:GetCurrentFloorMapID() resolves as current — but only when that
+--- ns.Cave:GetCurrentFloorMapID() resolves as current, but only when that
 --- matches the floor picker's own selection *and* the resolution actually
 --- says so with confidence. With the picker on "All"
 --- (Config.caveFloorFilterAll), every floor is layered together and there
 --- is no single floor to be wrong about, so the pin always shows, same as
 --- before this gate existed. With one floor picked out
 --- (Config.caveCurrentFloorMapID), a pin drawn on a floor the player isn't
---- standing on would be a lie, so it hides instead — but only once
+--- standing on would be a lie, so it hides instead, but only once
 --- GetCurrentFloorMapID's second return says the mismatch is real.
 ---
 --- That second return exists because of a case this gate got wrong before
 --- it existed: Fargodeep Mine's upper and lower floors overlap almost
 --- entirely in the shaft, and with no working elevation signal
 --- (UnitPosition's Z is a documented, permanent placeholder that is always
---- 0 — see PlayerWorldXY in CaveTable.lua) there is no way to tell them
+--- 0; see PlayerWorldXY in CaveTable.lua) there is no way to tell them
 --- apart from position alone. FindPlayerFloor's ambiguous-match fallback
---- (CaveTable.lua's FloorForPosition) handles that by deferring to
---- whichever floor is already on screen — which is exactly
---- Config.caveCurrentFloorMapID, the same value this gate compares
---- against. Comparing the two directly made the check tautological: it
---- always matched, so the pin never hid in Fargodeep no matter which
---- floor was picked or where the player actually was. `confident` is
---- false on exactly that deferral (and on the smallest-rectangle
---- fallback, another guess rather than a fix), so gating on it as well
---- keeps the hide/show behaviour for places position genuinely
---- discriminates between floors — Gnomeregan's four levels, say — without
---- resurrecting Fargodeep's false negatives.
+--- (CaveTable.lua's FloorForPosition) defers to whichever floor is already
+--- on screen, which is exactly Config.caveCurrentFloorMapID, the same
+--- value this gate compares against. Comparing the two directly made the
+--- check tautological: it always matched, so the pin never hid in
+--- Fargodeep no matter which floor was picked or where the player actually
+--- was. `confident` is false on exactly that deferral (and on the
+--- smallest-rectangle fallback, another guess rather than a fix), so
+--- gating on it too keeps the hide/show behaviour for places position
+--- genuinely discriminates between floors (Gnomeregan's four levels, say)
+--- without resurrecting Fargodeep's false negatives.
 local function UpdatePlayerPin()
     if not playerPin then return end
 
@@ -2388,10 +2377,10 @@ local function UpdatePlayerPin()
     -- positive values, so facing is used as-is. Negating it, as this used
     -- to, was the bug an in-game check caught: north/south are their own
     -- negatives mod 2*pi, so facing 0 and pi rotate the same way under
-    -- either sign and looked fine, while east/west landed mirrored — turn
+    -- either sign and looked fine, while east/west landed mirrored: turn
     -- left and the arrow swung right, turn right and it swung left.
     --
-    -- Nil while the camera is mid-transition (taxi, cinematic) — point the
+    -- Nil while the camera is mid-transition (taxi, cinematic); point the
     -- arrow north rather than erroring in an OnUpdate.
     local facing = GetPlayerFacing()
     playerPin:SetRotation(facing or 0)
@@ -2412,8 +2401,8 @@ end
 -- Tile rendering
 --
 -- Mirrors Renderer.lua's layout maths, against the content frame rather than
--- the map canvas. Cave and dungeon art is not in the bundled tile set — the
--- pipeline stitches outdoor zones — so in practice every lookup below misses
+-- the map canvas. Cave and dungeon art is not in the bundled tile set (the
+-- pipeline stitches outdoor zones), so in practice every lookup below misses
 -- and the client's own FileDataIDs are drawn. The lookup is done anyway so
 -- that a future art pass covering interiors needs no change here.
 -------------------------------------------------------------------------------
@@ -2421,7 +2410,7 @@ end
 ---@param sublevel number|nil  ARTWORK draw sublevel (-8..7); defaults to 3.
 --- Only ever varied by RenderContinuousFloors, so that a shallower floor's
 --- tiles paint over a deeper floor's while both are partially visible in a
---- crossfade — a single floor's tiles never need to stack against anything.
+--- crossfade; a single floor's tiles never need to stack against anything.
 ---@param group table|nil  when given, also collects each acquired texture
 --- here so the caller can drive this floor's alpha independently
 --- (the continuous crossfade path); omitted for the ordinary single-floor
@@ -2503,8 +2492,8 @@ function CaveRenderer:RenderTiles(floorMapID, sublevel, group)
     return #activeCaveTiles > 0
 end
 
---- Render every floor of a shared-canvas place at once — as opposed to
---- RenderTiles's usual one-floor-at-a-time — so UpdateContinuousAlphas has
+--- Render every floor of a shared-canvas place at once, as opposed to
+--- RenderTiles's usual one-floor-at-a-time, so UpdateContinuousAlphas has
 --- something to crossfade between as the depth slider moves. Only called
 --- when ns.Cave:HasContinuousDepth(floorMapID) is true (currently just
 --- Fargodeep Mine); every other multi-floor cave keeps the plain
@@ -2528,11 +2517,11 @@ function CaveRenderer:RenderContinuousFloors(floors)
 end
 
 --- Push per-floor alpha out to every continuous tile group, from a
---- fractional floor index (1 = topmost, matching FloorIndex — see
+--- fractional floor index (1 = topmost, matching FloorIndex; see
 --- ValueToFractionalIndex). This is the whole of what dragging the slider
 --- does while continuousActive; it never tears down or re-renders the tiles
---- themselves. The player pin no longer fades with the displayed floor —
---- see UpdatePlayerPin — so it isn't touched here.
+--- themselves. The player pin no longer fades with the displayed floor
+--- (see UpdatePlayerPin), so it isn't touched here.
 function CaveRenderer:UpdateContinuousAlphas(fractionalIndex)
     for i, grp in ipairs(continuousTileGroups) do
         local alpha = ContinuousAlpha(i, fractionalIndex)
@@ -2550,28 +2539,28 @@ function CaveRenderer:DebugContinuous()
     return continuousTileGroups
 end
 
---- Float slop for PieceInFloor's containment test — comfortably smaller
+--- Float slop for PieceInFloor's containment test, comfortably smaller
 --- than the gap between Fargodeep's two floors' ranges at their nearest
 --- point (Lower Mines tops out at 23.50, Upper's own floor starts at
---- 14.27, sharing that whole band — see PieceInFloor) while still forgiving
+--- 14.27, sharing that whole band; see PieceInFloor) while still forgiving
 --- a hand-typed CaveData.lua value that is a hair off its source.
 local PIECE_FLOOR_EPSILON = 0.1
 
---- Does `piece`'s own real-world-Z range (its baked zMin/zMax — see
+--- Does `piece`'s own real-world-Z range (its baked zMin/zMax; see
 --- CaveData.lua's Fargodeep `pieces` entries) sit entirely inside `floor`'s?
 ---
 --- This is an exact test today, not a heuristic: a floor's own zMin/zMax is
 --- *defined* as the min/max spanned by exactly the WMO groups baked into
 --- that floor (hfwm/cave_minimap.py's world_z_range_for_groups, run once
 --- over `upper_idx`/`lower_idx` for the floors and again per-group for the
---- pieces — see split_floors_by_height), so every one of Fargodeep's 21
+--- pieces; see split_floors_by_height), so every one of Fargodeep's 21
 --- pieces lands fully inside exactly one floor's range and never straddles
 --- both. Checked by hand against every piece in CaveData.lua before this
 --- was trusted (see the code review that added this function): none is
 --- ambiguous.
 ---
 --- Returns true (include, don't filter out) when either side has nothing to
---- compare — a future place with pieces but no per-floor zMin/zMax baked yet
+--- compare: a future place with pieces but no per-floor zMin/zMax baked yet
 --- degrades to showing extra art rather than silently losing a room.
 ---@param piece table  { zMin, zMax, ... } from ns.Cave:GetPieces
 ---@param floor table  an entry from Config.caveAllFloors
@@ -2585,14 +2574,14 @@ end
 
 --- Restrict a place's whole per-piece art list (every room, every floor) to
 --- just the one floor's worth the floor picker (see the "Floor picker"
---- section below) currently has selected — or hand the list back untouched
+--- section below) currently has selected, or hand the list back untouched
 --- when the picker is set to "All", which is today's default and the only
 --- behaviour this place had before the picker existed.
 ---
 --- Called from ShowCave before RenderContinuousPieces, so piecesZMin/
 --- piecesZMax (set from whatever list actually gets drawn) come out scoped
---- to one floor too — which is what makes the depth slider's own range
---- independent per floor rather than always spanning the whole place: see
+--- to one floor too, which is what makes the depth slider's own range
+--- independent per floor rather than always spanning the whole place. See
 --- ElevationForValue and HeightWindowElevationBounds, neither of which
 --- needed to change, because both already just read piecesZMin/piecesZMax.
 ---@param pieces table[]|nil  ns.Cave:GetPieces's full list for the place
@@ -2618,15 +2607,15 @@ local function FilterPiecesByFloor(pieces, floors, floorMapID)
     end
     -- An empty result means the containment test above didn't recognise
     -- anything as belonging to this floor (a future place's data doesn't
-    -- cleanly partition the way Fargodeep's does) — showing everything is
+    -- cleanly partition the way Fargodeep's does). Showing everything is
     -- a better failure than showing nothing.
     return #out > 0 and out or pieces
 end
 
---- cave-satellite-v2 Phase 2: draw every piece of a per-piece place at once —
+--- cave-satellite-v2 Phase 2: draw every piece of a per-piece place at once,
 --- each as its own full-canvas texture, baked to the exact same shared
 --- canvas as the old floor composites (see cave_minimap.py's
---- generate_fargodeep_pieces) — so UpdatePieceWindowAlphas has something to
+--- generate_fargodeep_pieces), so UpdatePieceWindowAlphas has something to
 --- fade independently as the height-window rectangle moves or resizes. Only
 --- called when ns.Cave:GetPieces(floorMapID) returns a non-empty list
 --- (currently just Fargodeep Mine).
@@ -2644,7 +2633,7 @@ function CaveRenderer:RenderContinuousPieces(pieces, pieceCanvasW, pieceCanvasH)
         return false
     end
 
-    -- canvasScale, not content — see the same note in RenderTiles above.
+    -- canvasScale, not content; see the same note in RenderTiles above.
     local canvasW, canvasH = canvasScale:GetSize()
     if canvasW <= 0 or canvasH <= 0 then return false end
 
@@ -2661,8 +2650,9 @@ function CaveRenderer:RenderContinuousPieces(pieces, pieceCanvasW, pieceCanvasH)
 
         -- Paint order: a piece with a higher ceiling paints over one with a
         -- lower ceiling for as long as both are partially visible, spread
-        -- across every ARTWORK sublevel (-8..7) rather than one per piece —
-        -- there can be (and with Fargodeep, are) more pieces than sublevels.
+        -- across every ARTWORK sublevel (-8..7) rather than one per piece,
+        -- since there can be (and with Fargodeep, are) more pieces than
+        -- sublevels.
         local sublevel = 3
         if n > 1 then
             sublevel = math.floor(-8 + (order - 1) / (n - 1) * 15 + 0.5)
@@ -2697,7 +2687,7 @@ end
 --- Snapshot of the most recent RenderTiles call (layer dims + per-tile FDID
 --- lookup results), for /hfwm debug. Returns nil if no floor has been
 --- rendered yet this session. In continuous mode this is whichever floor
---- RenderContinuousFloors rendered last (the deepest) — see
+--- RenderContinuousFloors rendered last (the deepest); see
 --- CaveRenderer:DebugContinuous for the other floors' state.
 function CaveRenderer:DebugTiles()
     return lastRenderInfo
@@ -2735,14 +2725,14 @@ function CaveRenderer:ShowCave(floorMapID)
     local n = floors and #floors or 0
 
     -- cave-satellite-v2 Phase 2: per-piece fading, when the place has piece
-    -- data, supersedes the whole-floor crossfade below — it is the
+    -- data, supersedes the whole-floor crossfade below. It is the
     -- finer-grained replacement for it, not an addition to it, so the two
     -- are mutually exclusive (see the module-state comment above
     -- continuousPieceGroups). Fetched regardless of floor count: a
-    -- single-floor place can have pieces too (Echo Ridge Mine does — this
+    -- single-floor place can have pieces too (Echo Ridge Mine does; this
     -- used to read `if n > 1 then`, on the since-outdated assumption that
     -- only a multi-floor place ever would). FilterPiecesByFloor is already
-    -- a safe no-op without multiple floors to distinguish between — its
+    -- a safe no-op without multiple floors to distinguish between: its
     -- own first check returns `pieces` unchanged whenever
     -- Config.caveFloorFilterAll is true, which it stays at by default when
     -- there's only one floor (SyncFloorPicker hides the picker itself in
@@ -2750,8 +2740,8 @@ function CaveRenderer:ShowCave(floorMapID)
     local pieces = ns.Cave:GetPieces(floorMapID)
     -- Floor picker (see FilterPiecesByFloor): scoped to one floor's own
     -- pieces when the picker isn't set to "All", which is also what
-    -- narrows piecesZMin/piecesZMax — and therefore the depth slider's
-    -- whole range — to that floor alone.
+    -- narrows piecesZMin/piecesZMax, and therefore the depth slider's
+    -- whole range, to that floor alone.
     pieces = FilterPiecesByFloor(pieces, floors, floorMapID)
     local pieceCanvasW, pieceCanvasH
     if pieces then
@@ -2826,7 +2816,7 @@ end
 
 --- Floor picker: scope the cave map to one floor's own pieces rather than
 --- every floor layered together. Hands straight off to SelectFloor, which
---- already does everything a floor change needs (pin, rerender) — the
+--- already does everything a floor change needs (pin, rerender); the
 --- picker only adds the filter flag on top of it, so it and the depth
 --- slider/mouse-wheel step can never disagree about which floor is current.
 ---@param floorMapID number
@@ -2837,7 +2827,7 @@ end
 
 --- Floor picker: go back to every floor layered together (the default, and
 --- this place's only behaviour before the picker existed). Doesn't change
---- which floor is "current" — only the filter does, so there is nothing
+--- which floor is "current"; only the filter does, so there is nothing
 --- here for SelectFloor's pin logic to get involved in.
 function CaveRenderer:SelectAllFloors()
     if Config.caveFloorFilterAll then return end
@@ -2966,7 +2956,7 @@ end
 ---
 --- This is the tool that should have existed three rounds ago. Every wrong
 --- header in this file's history came from *deciding* what the map's title bar
---- is made of instead of asking, and a screenshot cannot answer the question —
+--- is made of instead of asking, and a screenshot cannot answer that question:
 --- an atlas name and a set of offsets can.
 function CaveRenderer:TitleStripReport()
     local pieces, frameTop, frameCX, frameW = CollectTitleStrip()
@@ -3023,7 +3013,7 @@ end
 
 --- cave-satellite-v2 Phase 2: true while the currently shown place is
 --- fading individual pieces by real elevation rather than crossfading whole
---- floors — see the module-state comment above continuousPieceGroups for
+--- floors; see the module-state comment above continuousPieceGroups for
 --- why the two are mutually exclusive.
 function CaveRenderer:IsPiecesActive()
     return piecesActive

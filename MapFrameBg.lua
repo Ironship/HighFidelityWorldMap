@@ -1,45 +1,37 @@
 -------------------------------------------------------------------------------
 -- HFWM-Forever MapFrameBg
--- Hide / show the world map frame's own backing — the layer *behind* the map.
+-- Hide/show the world map frame's own backing: the layer behind the map.
 --
--- BaseArt next door deals with Blizzard's map art: the detail layer that
--- draws the zone itself. This deals with what is behind that art. The map
--- frame paints its own panel backing, and when maximised it covers the 3D
--- world with a blackout frame. Leave those in place and the "Transparent"
--- background isn't transparent at all — the erased sea becomes a hole onto a
--- flat panel, which is only barely distinguishable from Hybrid. Take them
--- away and the sea is a hole straight through the UI onto the world, which is
--- the whole point of the entry.
+-- BaseArt deals with Blizzard's map art (the zone detail layer). This deals
+-- with what's behind it: the map frame's own panel backing, and (when
+-- maximised) the blackout frame covering the 3D world. Leave those in place
+-- and "Transparent" isn't transparent: the erased sea becomes a hole onto a
+-- flat panel, barely different from Hybrid. Hide them and the sea is a hole
+-- straight through the UI onto the world.
 --
--- Only Transparent asks for this (Config's `seeThrough` field). Ocean Blue
--- paints its own colour over the backing, Hybrid wants Blizzard's art in
--- front of it, and Original's tiles are opaque, so for those three the
--- backing is invisible anyway and is left exactly as the client set it.
+-- Only Transparent asks for this (Config's `seeThrough` field); Ocean Blue,
+-- Hybrid and Original all leave the backing as the client set it.
 --
--- Targets are found two ways, neither of them by frame name — the names
--- differ between the windowed and the maximised map and between client
--- builds, and a name that is merely absent would fail silently. First, every
--- texture at the BACKGROUND draw layer on the handful of frames that make up
--- the map's own panel; border art lives on BORDER and OVERLAY and is not
--- touched, so the frame keeps its edges and title. Second, a sweep of the
--- rest of the chrome tree for any BACKGROUND texture covering most of the map
--- frame, wherever it turns out to live. That second pass is what catches a
--- backing the first one has never heard of, and the size gate is what keeps
--- it from swallowing the small BACKGROUND textures that sit behind buttons
--- and dropdowns. `/hfwm framebg` lists what the search currently finds.
+-- Targets are found two ways, not by frame name (names differ between
+-- windowed/maximised and between client builds, and a missing name would
+-- fail silently). First, every BACKGROUND-layer texture on the handful of
+-- frames making up the map's own panel (BORDER/OVERLAY art, like edges and
+-- title, is left alone). Second, a sweep of the rest of the chrome tree for
+-- any BACKGROUND texture covering most of the map frame, size-gated so it
+-- doesn't also grab small backgrounds behind buttons and dropdowns.
+-- `/hfwm framebg` lists what the search currently finds.
 --
--- Concealment is Hide(), not alpha 0. Alpha was the first attempt, on the
--- theory that the client owns these regions' shown state and would win any
--- Show/Hide fight while leaving alpha alone. The second half of that turned
--- out to be false — the panel templates re-assert alpha along with shown
--- state when the map opens or is maximised, so an alpha-0 backing came back
--- opaque and Transparent was indistinguishable from Hybrid. Hide() is the
--- stronger claim, and what does undo it is hooked below: Show, and SetShown
--- as well, which is a separate entry point and does not run the Show hook.
+-- Concealment is Hide(), not alpha 0. Alpha was tried first, on the theory
+-- the client would leave alpha alone while fighting over shown state; that
+-- turned out false, since the panel templates re-assert alpha along with
+-- shown state when the map opens or maximises, so an alpha-0 backing came
+-- back opaque. Hide() is hooked against being undone: both Show and
+-- SetShown, since SetShown is a separate entry point that skips the Show
+-- hook.
 --
--- Restore only re-Shows what this module actually hid, tracked per region in
--- `hidden`. Recording the client's shown state up front instead would get
--- BlackoutFrame wrong: it is hidden while windowed, so a state captured then
+-- Restore only re-Shows what this module actually hid, tracked in `hidden`.
+-- Recording the client's shown state up front instead would get
+-- BlackoutFrame wrong: it's hidden while windowed, so a state captured then
 -- and replayed later would keep the world visible through a maximised map.
 -------------------------------------------------------------------------------
 local addonName, ns = ...
@@ -51,10 +43,10 @@ local Config     = ns.Config
 MapFrameBg.visible = true
 
 -- Everything this module has hidden and not yet put back: a set for the
--- membership test, an array for ordered restore. Kept for the lifetime of the
--- session rather than rebuilt, because maximising swaps regions in and out —
--- a region hidden while windowed may not be found by the next search, and
--- must still be restored.
+-- membership test, an array for ordered restore. Kept for the lifetime of
+-- the session rather than rebuilt, since maximising swaps regions in and
+-- out; a region hidden while windowed may not be found by the next search,
+-- and must still be restored.
 MapFrameBg.hidden = {}
 MapFrameBg.order  = {}
 
@@ -163,9 +155,9 @@ local function collect()
         end
     end
 
-    -- Pass two: anywhere else in the chrome, anything map-sized. Stops at the
-    -- canvas, because everything under that is content — detail layers, pins,
-    -- our own overlay — and BaseArt owns the detail layers.
+    -- Pass two: anywhere else in the chrome, anything map-sized. Stops at
+    -- the canvas, since everything under that is content (detail layers,
+    -- pins, our own overlay) and BaseArt owns the detail layers.
     local scroll = WorldMapFrame and WorldMapFrame.ScrollContainer
     local canvas = scroll and scroll.Child
     local visited = {}
@@ -201,16 +193,13 @@ local function collect()
 
     -- Confirmed with `/hfwm framebg big`: on the World map (two continents
     -- that don't fill the frame), the wood/parchment showing through
-    -- Transparent's holes is WorldMapFrame.OverscrollBG — Blizzard's own
-    -- fallback fill for whatever space the canvas leaves uncovered, texture
-    -- atlas "gamepad-mapquestlog-bgtile-2k". It sits at BACKGROUND layer, so
-    -- pass one would take it if it were one of backingHosts(), but it isn't;
-    -- and pass two's sweep does reach it but rejects it on size, because it
-    -- comes in at 697x465 against a 1035x534 frame — 67% wide, just under
-    -- isFullSize's 70% gate, so a map that doesn't quite fill its own frame
-    -- was exactly the case that gate was blind to. Taking the frame
-    -- directly, the same way BlackoutFrame is, needs neither gate: hiding it
-    -- also hides the texture on it.
+    -- Transparent's holes is WorldMapFrame.OverscrollBG, Blizzard's own
+    -- fallback fill for whatever space the canvas leaves uncovered (atlas
+    -- "gamepad-mapquestlog-bgtile-2k"). It sits at BACKGROUND layer but
+    -- isn't one of backingHosts(), and pass two's sweep reaches it but
+    -- rejects it on size: 697x465 against a 1035x534 frame is 67% wide,
+    -- just under isFullSize's 70% gate. Taking the frame directly, like
+    -- BlackoutFrame, needs neither gate: hiding it also hides its texture.
     take(WorldMapFrame and WorldMapFrame.OverscrollBG)
 
     return out
@@ -278,12 +267,12 @@ function MapFrameBg:SetVisible(visible)
 end
 
 --- Human-readable list of what SetVisible would act on right now, each with
---- its own actual IsShown()/GetAlpha() — not just whether the search found
---- it. Purely for `/hfwm framebg`: "found it, hidden it, and it is still
---- reported as shown" is a different, more specific bug than "never found
---- it at all", and the two used to print identically here, with only the
---- one blanket MapFrameBg.visible flag (which says what SetVisible was
---- last *told*, not what any one region actually *is*) to go on.
+--- its own actual IsShown()/GetAlpha(), not just whether the search found
+--- it. Purely for `/hfwm framebg`: "found it, hidden it, and it's still
+--- reported as shown" is a different bug than "never found it at all", and
+--- the two used to print identically, with only one blanket
+--- MapFrameBg.visible flag (what SetVisible was last told, not what any
+--- region actually is) to go on.
 ---@return table[] rows { name, shown, alpha, weHid }
 function MapFrameBg:Describe()
     local out = {}
@@ -403,12 +392,12 @@ function MapFrameBg:Survey()
 end
 
 --- Hide every texture the survey found, ours excepted, and remember it for
---- Unnuke. The point is not to be a setting — it is to answer one question:
---- can this map be made see-through at all? If it can, the survey rows tell
---- us which region mattered and the ordinary search can be taught to find it.
+--- Unnuke. The point is not to be a setting: it answers one question, can
+--- this map be made see-through at all? If so, the survey rows tell us
+--- which region mattered and the ordinary search can be taught to find it.
 --- Hide() rather than alpha 0, for the reason at the top of the file: alpha
---- does not survive the client's own refreshes, so an alpha-based nuke could
---- answer "no" to a map that is in fact perfectly see-through.
+--- doesn't survive the client's own refreshes, so an alpha-based nuke could
+--- answer "no" to a map that's actually perfectly see-through.
 function MapFrameBg:Nuke()
     self._nuked = self._nuked or {}
     local n = 0

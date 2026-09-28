@@ -91,73 +91,49 @@ end
 --- Fog of War: draw the slice of this addon's own tile grid that falls
 --- under one of Blizzard's own, currently-active exploration reveal
 --- textures (Exploration:EnumerateOverlayTextures), cropped to that exact
---- texture's own alpha shape — the same torn, irregular edge Blizzard's
---- own map uses right now — instead of a hard rectangle.
+--- texture's own alpha shape (the same torn, irregular edge Blizzard's
+--- own map uses right now) instead of a hard rectangle.
 ---
---- This was tried, reverted, and now tried again; here is why. Blizzard's
---- own client code (MapExplorationPinMixin:RefreshOverlays, in
+--- Blizzard's own client code (MapExplorationPinMixin:RefreshOverlays, in
 --- Blizzard_SharedMapDataProviders/MapExplorationDataProvider.lua) draws
---- *blizTex*'s file plainly, with no masking of its own -- which reads
---- like proof this file carries no useful shape, and that is what this
---- comment used to conclude. It doesn't hold up: a texture's own alpha
---- channel still applies when it's simply drawn, with or without any
---- extra masking code around it, so "Blizzard's code doesn't crop it"
---- never actually proved the file itself was flat. `/hfwm testmask`
---- (Commands.lua) settled it properly by showing *blizTex*'s file raw, at
---- full size, with no masking and no slicing into this addon's own tile
---- grid at all -- confirmed on a live client to be a real irregular
---- shape, parchment visible through it where it's transparent. The
---- fragmentation seen the first time this was tried came from a
---- different bug active in the same test (a SetGradient call elsewhere
---- in this file, since fixed, that fragmented piece alpha for unrelated
---- reasons) -- not from this masking approach, which the corrected
---- history above suggests was sound all along.
+--- *blizTex*'s file plainly, with no masking of its own. That does not
+--- mean the file is flat, though: a texture's own alpha channel still
+--- applies when it's simply drawn. `/hfwm testmask` (Commands.lua)
+--- confirmed on a live client that *blizTex*'s file is a real irregular
+--- shape, with parchment visible through it where it's transparent.
+--- Fragmentation seen on an earlier attempt was wrongly blamed on this
+--- masking approach; the real cause was an unrelated SetGradient call
+--- elsewhere in this file (since fixed) that fragmented piece alpha.
 ---
---- Restoring it a second time still came out wrong -- not the original
---- fragmentation, but a fresh misalignment, because that first restore
---- rebuilt blizTex's screen rect and texture-coordinate rect by hand: it
---- read the numbers off blizTex once, converted them into this
---- function's own chunkX0..chunkY1 layer-pixel space, sliced that into a
---- fractional texcoord sub-rect per piece, and built one MaskTexture per
---- piece from that fraction. Every one of those steps is a chance for
---- this addon's own math to drift from what blizTex is actually showing
---- right now (rounding, a wrong axis, a frame that moved between the
---- read and the draw), and any drift shows up as exactly this kind of
+--- A later attempt came out misaligned instead, because it rebuilt
+--- blizTex's screen rect and texture-coordinate rect by hand: read once,
+--- converted into this function's own layer-pixel space, then sliced
+--- into a fractional texcoord sub-rect per piece. Any rounding, wrong
+--- axis, or frame movement between that read and the draw shows up as a
 --- wrong-shaped edge. The fix is to stop rebuilding blizTex's rect at
 --- all: one MaskTexture is anchored directly to blizTex itself with
 --- SetPoint (TOPLEFT/BOTTOMRIGHT, no coordinates of our own) and given
---- blizTex's own file and its exact, unmodified GetTexCoord() -- not a
---- fraction of it -- so its screen rect and mapping ARE blizTex's,
---- continuously, rather than a snapshot this function computed once.
---- That single mask is then handed to every one of this addon's own
---- pieces that overlaps it via AddMaskTexture; the client itself works
---- out the overlap between each piece's real screen rect and the mask's
---- real screen rect, which is the one piece of this whole picture that
---- was never going to drift, because it isn't derived at all.
+--- blizTex's own file and its exact, unmodified GetTexCoord(), so its
+--- screen rect and mapping stay blizTex's own, continuously, rather than
+--- a snapshot computed once. That single mask is then handed to every
+--- piece that overlaps it via AddMaskTexture; the client works out the
+--- overlap itself, so nothing here can drift.
 ---
---- The whole point of reading *blizTex* at all, rather than only ever
---- using C_MapExplorationInfo directly (see DrawFillPiece below): it is a
---- live Texture object Blizzard's own client already positioned, sized,
---- textured and cropped correctly this very frame — HidePins only set
---- its alpha to 0, it is still doing everything else a normal,
---- undisturbed exploration overlay does — so its geometry is read
---- directly off it (GetLeft/Top/Right/Bottom, GetTexture, GetTexCoord)
---- rather than rebuilt from raw offsets and an assumed tile size /
---- file-padding scheme this addon has no way to verify holds on every
---- client.
+--- *blizTex* is read directly (GetLeft/Top/Right/Bottom, GetTexture,
+--- GetTexCoord) rather than reconstructed from raw offsets, since it is a
+--- live Texture Blizzard's own client already positioned, sized, textured
+--- and cropped correctly this very frame (HidePins only zeroes its alpha;
+--- otherwise it behaves like a normal, undisturbed exploration overlay).
+--- Its screen rect rarely lines up with this addon's own tile grid, so it
+--- is usually split across several tiles, each getting its own texture
+--- but sharing the one mask anchored to *blizTex*, so the pieces still
+--- line up into that one true shape once drawn.
 ---
---- *blizTex*'s own screen rect only rarely lines up with this addon's own
---- tile grid, so it is usually split across more than one of this
---- addon's own tiles; each such split gets its own texture, all sharing
---- the one mask anchored to *blizTex* itself, so the pieces still line
---- up into that one true shape once drawn.
----
---- Not a complete picture on its own, though: tracing showed real,
---- currently-explored ground with no live reveal texture behind it at
---- all. See DrawFillPiece below (and the *filled* param this writes
---- into) for the pass that plugs exactly that gap -- DrawFillPiece has
---- no comparable mask of its own to borrow, so it stays hard-edged; only
---- this pass's own pieces get the organic edge.
+--- Not a complete picture on its own: tracing showed explored ground with
+--- no live reveal texture behind it at all. See DrawFillPiece below (and
+--- the *filled* param this writes into) for the pass that plugs that gap;
+--- it has no comparable mask to borrow, so it stays hard-edged. Only this
+--- pass's pieces get the organic edge.
 ---@param blizTex table live Texture from Exploration:EnumerateOverlayTextures
 ---@param frameLeft number Config.overlayFrame:GetLeft(), screen space
 ---@param frameTop number Config.overlayFrame:GetTop(), screen space
@@ -190,8 +166,8 @@ local function DrawExploredPiece(
     filled, pieceTex, trace)
 
     -- isShownByMouseOver pieces (Blizzard's own RefreshOverlays) start
-    -- Hidden and only Blizzard's own mouse-over handling ever Shows them
-    -- — nothing this addon does touches that — so an unshown texture here
+    -- Hidden, and only Blizzard's own mouse-over handling ever Shows them;
+    -- nothing this addon does touches that. So an unshown texture here
     -- means Blizzard itself is not currently revealing anything with it,
     -- same as if it were not in the list at all.
     if not blizTex:IsShown() then
@@ -204,12 +180,11 @@ local function DrawExploredPiece(
     if not (texLeft and texTop and texRight and texBottom
         and frameLeft and frameTop) then
         -- GetLeft/Top/Right/Bottom return nil until a region has actually
-        -- been laid out on screen at least once -- shown is not the same
-        -- as laid out. The very first time this addon ever lets
-        -- Blizzard's own exploration provider populate on a given map
-        -- (previously always suppressed via RemoveAllData before it could
-        -- draw anything), that first frame's freshly (re)acquired chunk
-        -- textures can still read nil here even though IsShown() is
+        -- been laid out on screen at least once; shown is not the same as
+        -- laid out. The first time this addon lets Blizzard's exploration
+        -- provider populate on a given map (previously always suppressed
+        -- via RemoveAllData), that first frame's freshly (re)acquired
+        -- chunk textures can still read nil here even though IsShown() is
         -- already true; see the retry in the caller.
         if trace then
             P(("  fog piece SKIPPED: not laid out yet (left=%s top=%s "
@@ -260,27 +235,13 @@ local function DrawExploredPiece(
             (colEnd - colStart + 1) * (rowEnd - rowStart + 1)))
     end
 
-    -- The mask, this time, is not a copy this function derives at all --
-    -- it *is* blizTex's own existing fog frame. Every previous attempt
-    -- (including the one just reverted, which recomputed a fractional
-    -- texcoord sub-rect per piece from chunkX0..chunkY1 and our own
-    -- scaleX/scaleY) rebuilt blizTex's screen rect and texture mapping
-    -- from our own derived numbers, and any drift between that
-    -- reconstruction and blizTex's real, live layout showed up as
-    -- fragmented or misaligned pieces -- exactly the "wrong shape again"
-    -- failure this replaces. So instead of rebuilding it, one
-    -- MaskTexture is pointed AT blizTex directly: anchored with
-    -- SetPoint to blizTex's own two corners (so its screen rect tracks
-    -- blizTex's actual current layout every frame, not a snapshot this
-    -- function computed once) and given blizTex's own texture file and
-    -- exact, unmodified GetTexCoord() (not a fraction of it). That
-    -- reproduces blizTex's own displayed shape pixel-for-pixel by
-    -- construction, and it only has to be built once per blizTex, not
-    -- once per piece: AddMaskTexture lets the same MaskTexture crop any
-    -- number of target Textures, and the client's own overlap math
-    -- between each piece's screen rect and this mask's screen rect does
-    -- the actual per-piece cropping -- no more fraction math on this
-    -- addon's side at all.
+    -- The mask here is not a copy: it's anchored directly to blizTex's
+    -- own corners via SetPoint and uses its exact, unmodified
+    -- GetTexCoord(), so it tracks blizTex's real layout instead of a
+    -- reconstruction (see this function's doc comment for why rebuilding
+    -- it went wrong before). Built once per blizTex, then handed to every
+    -- overlapping piece via AddMaskTexture; the client does the per-piece
+    -- overlap math.
     local maskFile = blizTex:GetTexture()
     if not maskFile then
         if trace then P("  fog piece SKIPPED: no texture file") end
@@ -290,27 +251,18 @@ local function DrawExploredPiece(
     local mulX, mulY, mllX, mllY, murX, murY, mlrX, mlrY =
         blizTex:GetTexCoord()
 
-    -- CLAMPTOBLACKADDITIVE (the usual choice for a mask, e.g. a circular
-    -- minimap mask that really does need everything past its own edge to
-    -- read as fully transparent) is wrong here and is what the seams the
-    -- user reported turned out to be. Blizzard lays this map's exploration
-    -- reveal out as a whole grid of separate chunk textures, each its own
-    -- blizTex with its own file and its own mask built here -- so every
-    -- one of this mask's four edges is, ordinarily, sitting exactly on
-    -- the seam against the next chunk's own mask, not against empty
-    -- space. GPU texture filtering blends the texel right at texcoord
-    -- 0.0/1.0 with whatever lies just past it, and CLAMPTOBLACKADDITIVE
-    -- makes that "just past it" pure black / zero alpha -- so every chunk
-    -- faded slightly toward fully-masked-out right at its own border,
-    -- and two adjoining chunks doing that on both sides of the same seam
-    -- is exactly the thin line of bare background this was reported as.
-    -- Plain "CLAMP" repeats the true edge texel's own alpha instead of
-    -- fading it toward black, which removes the seam without weakening
-    -- the mask anywhere that actually matters: this addon's own pieces
-    -- never sample outside a mask's true 0..1 range in the first place
-    -- (each one is clipped to this chunk's own screen rect before it is
-    -- ever drawn), so there was never any real "beyond the edge" content
-    -- for CLAMPTOBLACKADDITIVE to be protecting here.
+    -- CLAMPTOBLACKADDITIVE (the usual mask choice) is wrong here and was
+    -- the cause of seams users reported. Each chunk's mask edge normally
+    -- sits exactly on the seam against the next chunk's mask. GPU texture
+    -- filtering blends the texel at texcoord 0.0/1.0 with whatever lies
+    -- just past it, and CLAMPTOBLACKADDITIVE makes that "just past it"
+    -- pure black, so every chunk faded slightly toward masked-out right
+    -- at its border, and two adjoining chunks doing that produced a
+    -- visible seam. Plain "CLAMP" repeats the true edge texel's alpha
+    -- instead, which removes the seam: this addon's pieces never sample
+    -- outside a mask's 0..1 range anyway (each is clipped to its chunk's
+    -- own screen rect before drawing), so there was nothing for
+    -- CLAMPTOBLACKADDITIVE to protect here.
     local mask = MaskPool:Acquire()
     mask:ClearAllPoints()
     mask:SetPoint("TOPLEFT", blizTex, "TOPLEFT")
@@ -380,29 +332,23 @@ end
 --- Fade one edge of *tex* to transparent, keeping the opposite edge fully
 --- opaque, on whichever gradient API this client build actually has.
 ---
---- `Texture:SetGradientAlpha(orientation, r,g,b,a, r,g,b,a)` is the classic
---- signature every prior client build had; Patch 10.0.0 merged it into
+--- `Texture:SetGradientAlpha(orientation, r,g,b,a, r,g,b,a)` was the
+--- classic signature; Patch 10.0.0 merged it into
 --- `TextureBase:SetGradient(orientation, minColor, maxColor)`, taking two
---- ColorMixin objects (CreateColor(r,g,b,a)) instead of eight raw floats.
---- This client is missing SetGradientAlpha entirely (confirmed by the
---- crash that motivated this function existing at all), so it always
---- takes the SetGradient branch.
+--- ColorMixin objects instead of eight raw floats. This client is
+--- missing SetGradientAlpha entirely (confirmed by the crash that
+--- motivated this function), so it always takes the SetGradient branch.
 ---
---- Both the exact signature and the orientation convention below are
---- confirmed against https://warcraft.wiki.gg/wiki/API:TextureBase_SetGradient
---- rather than guessed: for "VERTICAL", minColor applies at the BOTTOM
---- and maxColor at the TOP; for "HORIZONTAL", minColor is on the LEFT and
---- maxColor on the RIGHT -- the same convention SetGradientAlpha always
---- used, which the merge preserved. A first attempt at this function
+--- Signature and orientation are confirmed against
+--- https://warcraft.wiki.gg/wiki/API:TextureBase_SetGradient rather than
+--- guessed: for "VERTICAL", minColor applies at the BOTTOM and maxColor
+--- at the TOP; for "HORIZONTAL", minColor is on the LEFT and maxColor on
+--- the RIGHT, same convention SetGradientAlpha used. A first attempt
 --- assumed "start" meant whichever edge was being faded from regardless
---- of orientation, which is backwards for two of the four directions; it
---- also came back from a live client with far more than a backwards
---- fade wrong (solid ground reduced to scattered fragments), for reasons
---- that were never fully isolated, so this rewrite takes the documented
---- per-orientation/per-argument mapping literally, spelled out per
---- *transparentSide* rather than through a generic "fadeAtStart" that
---- has to be re-derived correctly for all four directions by whoever
---- calls it.
+--- of orientation, which is backwards for two of the four directions, and
+--- also broke solid ground into scattered fragments for reasons never
+--- fully isolated. This version follows the documented mapping literally,
+--- spelled out per *transparentSide* instead of a generic "fadeAtStart".
 ---@param tex table
 ---@param transparentSide "TOP"|"BOTTOM"|"LEFT"|"RIGHT" which edge of *tex*
 ---                        fades to transparent; the opposite edge stays
@@ -438,34 +384,28 @@ end
 --- Fog of War gap-filler: C_MapExplorationInfo.GetExploredMapTextures'
 --- own top-level rects (offsetX, offsetY, textureWidth, textureHeight),
 --- used WHOLE rather than split into Blizzard's internal per-chunk
---- pieces. That internal chunking is exactly what an earlier version of
---- this addon tried to recompute from these same rects and got visibly
---- wrong (scattered, misplaced squares) on this client, since it needed
---- assumptions about tile size, file padding and chunk order this addon
---- has no way to verify. The plain rect itself needed none of that, and
---- was already confirmed correctly placed back when this addon only
---- ever drew rects, before any masking was attempted.
+--- pieces. An earlier version tried recomputing that internal chunking
+--- from these same rects and got it visibly wrong (scattered, misplaced
+--- squares), since it needed assumptions about tile size, file padding
+--- and chunk order this addon has no way to verify. The plain rect
+--- needed none of that, and was already confirmed correctly placed back
+--- when this addon only ever drew rects, before any masking existed.
 ---
 --- Live Blizzard reveal textures (DrawExploredPiece above) cover most of
---- the explored area with a real, organically-torn mask, borrowed
---- straight off Blizzard's own live objects — but tracing proved they
---- are not a complete raster of it: every one of them drew full,
---- zero-gap coverage of its OWN bounds, yet real gaps still showed up
---- BETWEEN them, meaning some ground C_MapExplorationInfo calls
---- genuinely explored simply has no live reveal-pin object behind it
---- any more (pruned, never created this session, or otherwise not
---- currently live). This plugs exactly those gaps: any tile cell
---- C_MapExplorationInfo says is explored, that DrawExploredPiece did not
---- already mark in *filled*, gets drawn here as a plain, unmasked full
---- tile. Left at a hard edge on purpose -- SoftenFogEdges, once both
---- passes have finished, is what decides which of these cells (and which
---- of DrawExploredPiece's) actually sit on the outer boundary of the
---- final assembled shape and fades only those; on this client Blizzard's
---- own live reveal texture turned out to carry no organic tear of its own
---- at all (tracing showed a plain 0,0-1,1 texture-coordinate crop, mask
---- file notwithstanding), so relying on that mask alone for a soft edge,
---- as this addon used to, left every piece — from both passes — hard
---- rectangular.
+--- the explored area with a real mask borrowed off Blizzard's own live
+--- objects, but tracing proved they are not a complete raster of it:
+--- each one gives full, zero-gap coverage of its OWN bounds, yet real
+--- gaps still show up BETWEEN them, meaning some explored ground simply
+--- has no live reveal-pin object behind it any more (pruned, never
+--- created this session, or otherwise not currently live). This plugs
+--- exactly those gaps: any explored cell DrawExploredPiece didn't already
+--- mark in *filled* gets drawn here as a plain, unmasked full tile, left
+--- at a hard edge on purpose. On this client Blizzard's own live reveal
+--- texture turned out to carry no organic tear of its own at all
+--- (tracing showed a plain 0,0-1,1 texture-coordinate crop, mask file
+--- notwithstanding), so SoftenFogEdges, once both passes finish, is what
+--- decides which cells sit on the outer boundary and fades only those,
+--- instead of each piece fading its own edge.
 ---@param offsetX number rect.offsetX, in Blizzard's OWN art-layer pixels
 ---@param offsetY number rect.offsetY
 ---@param rectW number rect.textureWidth
@@ -519,17 +459,15 @@ local function DrawFillPiece(
     local rowStart = math.max(0, math.floor(chunkY0 / tilePxH))
     local rowEnd   = math.min(rows - 1, math.ceil(chunkY1 / tilePxH) - 1)
 
-    -- A hard-edged rectangle is exactly what "very square" meant the first
-    -- time this addon tried plain rects, before any masking existed. There
-    -- is no per-file organic art to borrow for a cell nothing else covers
-    -- (that is the whole reason this pass exists) -- softening the outer
-    -- edge is SoftenFogEdges' job now, once every pass (this one included)
-    -- has run and the true outer boundary of the whole assembled shape is
-    -- known; doing it per-rect here, before that, used to mean a cell on
-    -- the border between two adjacent rects got faded on both sides of the
-    -- seam, and a cell that just looked like a rect's own edge from here
-    -- (but was actually still interior once the full shape was assembled)
-    -- got faded for no reason.
+    -- A hard-edged rectangle is what "very square" meant the first time
+    -- this addon tried plain rects, before any masking existed. There is
+    -- no per-file organic art to borrow for a cell nothing else covers
+    -- (that is the whole reason this pass exists); softening the outer
+    -- edge is SoftenFogEdges' job now, once every pass has run and the
+    -- true outer boundary is known. Doing it per-rect here used to fade a
+    -- cell on both sides of a seam between two adjacent rects, and fade
+    -- cells that only looked like a rect's edge but were actually
+    -- interior once the full shape was assembled.
     local piecesDrawn = 0
     for row = rowStart, rowEnd do
         for col = colStart, colEnd do
@@ -589,30 +527,22 @@ end
 --- Fog of War's last pass: close one-tile pinholes left after both passes
 --- above.
 ---
---- Both DrawExploredPiece (Blizzard's live per-chunk reveal textures) and
---- DrawFillPiece (C_MapExplorationInfo's own per-parcel rects) chunk the
---- real world at whatever granularity BLIZZARD's exploration data happens
---- to use, which on this client is coarser and raggeder than this addon's
---- own tile grid -- a player who has genuinely, solidly explored a stretch
---- of ground can still come back from both passes with scattered single
---- tiles that never got a piece of their own, because neither pass's
---- source data drew a boundary through THAT tile specifically. Tracing
---- confirmed this: piece counts from both passes together fell well short
---- of every tile inside the plainly-explored footprint, and the shortfall
---- was not clustered at the edges (where an unexplored border would
---- explain it) but scattered as isolated cells throughout it -- a
---- checkerboard of one-tile holes rather than a ragged coastline.
+--- DrawExploredPiece and DrawFillPiece both chunk the world at whatever
+--- granularity Blizzard's exploration data uses, which on this client is
+--- coarser and raggeder than this addon's own tile grid. A solidly
+--- explored stretch can still come back with scattered single tiles that
+--- never got a piece of their own, because neither pass's source data
+--- drew a boundary through that tile specifically. Tracing confirmed
+--- this: piece counts fell short throughout the explored footprint, not
+--- just at its edges, as a checkerboard of one-tile holes rather than a
+--- ragged coastline.
 ---
---- Filling a hole only when most of ITS OWN immediate neighbours are
---- already filled is what keeps this safe: a real unexplored region
---- borders filled ground on at most one or two sides where the two passes
---- above left off, never on three or four, so this can only ever close
---- pinholes already boxed in by real, already-drawn ground -- it cannot
---- propagate outward into ground nothing above ever marked explored. A
---- single pass suffices (no iterating to a fixed point): every hole this
---- is meant to catch is already fully surrounded by the time this runs,
---- rather than becoming so only after an earlier hole in the same pass
---- gets filled.
+--- Filling a hole only when most of its own neighbours are already
+--- filled keeps this safe: a real unexplored region borders filled
+--- ground on at most one or two sides, never three or four, so this can
+--- only close pinholes already boxed in by real ground, never propagate
+--- outward. A single pass suffices since every hole this catches is
+--- already fully surrounded by the time it runs.
 ---@param cols number
 ---@param rows number
 ---@param tileSource table
@@ -684,29 +614,23 @@ end
 --- now-fully-assembled explored shape, rather than trusting any one piece
 --- above to have already brought its own soft edge.
 ---
---- Both DrawExploredPiece and DrawFillPiece used to fade their own outer
---- edges as they went, on the assumption that DrawExploredPiece's mask
---- brought a real organic tear the rest of the time. Tracing on this
---- client disproved that assumption (DrawExploredPiece's own mask turned
---- out to be a plain, uncropped 0,0-1,1 rectangle -- see its call site's
---- comment) and exposed the deeper problem with fading per-piece at all:
---- each piece only knows its OWN local rect, not the shape of everything
---- else that ends up next to it, so a cell that is really deep in the
---- interior of the final assembled area -- just sitting at the edge of
---- the one rect or chunk that happened to cover it -- got faded for no
---- reason, and a cell that really is on the true outer boundary but was
---- covered by two overlapping pieces could end up faded once and then
---- redrawn solid by the other, or vice versa depending on draw order.
---- Waiting until every cell this Refresh will fill is already filled, and
---- looking at each one's actual neighbours rather than the bounds of
---- whichever single rect drew it, is the only way to get a boundary that
---- means the whole shape rather than any one piece's contribution to it.
+--- DrawExploredPiece and DrawFillPiece used to fade their own outer edges
+--- as they went, assuming DrawExploredPiece's mask brought a real organic
+--- tear. Tracing disproved that on this client (the mask turned out to be
+--- a plain, uncropped 0,0-1,1 rectangle; see its call site's comment) and
+--- exposed a deeper problem with fading per-piece at all: each piece only
+--- knows its own local rect, not the shape of what ends up next to it, so
+--- an interior cell could get faded for no reason, and a boundary cell
+--- covered by two overlapping pieces could end up faded by one and
+--- redrawn solid by the other depending on draw order. Waiting until
+--- every cell is filled, then looking at each one's actual neighbours, is
+--- the only way to get a boundary for the whole shape rather than any one
+--- piece's contribution.
 ---
---- Same safety property as CloseFogGaps: a cell's own already-drawn
---- neighbours are what decide whether and how it fades, so this can only
---- ever soften the true edge of ground something above already marked
---- explored -- it cannot dim interior cells (all four neighbours filled)
---- and cannot invent a fade along ground nothing above ever drew.
+--- Same safety property as CloseFogGaps: a cell's own neighbours decide
+--- whether and how it fades, so this can only soften the true edge of
+--- ground already marked explored; it cannot dim interior cells or
+--- invent a fade along ground nothing above ever drew.
 ---@param cols number
 ---@param rows number
 ---@param filled table cell (row*cols+col) -> true; read only here
@@ -785,16 +709,17 @@ local function DoRefresh(force)
 
     -- A replaced canvas doesn't just need re-parenting: MapFrameBg's
     -- Transparent-mode concealment (and BaseArt's) is keyed off specific
-    -- region objects it found and hid — WorldMapFrame.ScrollContainer.Child
-    -- .TiledBackground among them, the wood-grain placeholder the canvas
-    -- itself paints behind everything else. A *new* canvas object means a
-    -- brand new TiledBackground region that was never found, hidden or
-    -- hooked, and it stays visible until something forces a fresh
-    -- concealment pass. Without this, "canvasChanged" was silently absorbed
-    -- by the "skip if nothing changed" check below whenever the swap didn't
-    -- also change mapID/size/layerIdx — which is the ordinary case — so
-    -- Transparent could come back from a canvas swap permanently showing
-    -- Blizzard's wood backing with no further Refresh ever re-checking it.
+    -- region objects it found and hid, including
+    -- WorldMapFrame.ScrollContainer.Child.TiledBackground, the wood-grain
+    -- placeholder the canvas paints behind everything else. A *new*
+    -- canvas object means a brand new TiledBackground region that was
+    -- never found, hidden or hooked, and it stays visible until something
+    -- forces a fresh concealment pass. Without this, "canvasChanged" was
+    -- silently absorbed by the "skip if nothing changed" check below
+    -- whenever the swap didn't also change mapID/size/layerIdx, the
+    -- ordinary case, so Transparent could come back from a canvas swap
+    -- permanently showing Blizzard's wood backing with no further Refresh
+    -- ever re-checking it.
     local canvasChanged = (canvas ~= Config.lastCanvas)
 
     local canvasW, canvasH = canvas:GetSize()
@@ -921,8 +846,8 @@ local function DoRefresh(force)
     end
 
     -- Resolve tile source (legacy path: only when this map has no native
-    -- geometry above — continent/world maps, or a native zone whose art
-    -- wasn't actually built, in which case this safely falls back to
+    -- geometry above, i.e. continent/world maps, or a native zone whose
+    -- art wasn't actually built, in which case this safely falls back to
     -- Blizzard's own client art rather than erroring).
     local fdids
     if not useNative then
@@ -981,22 +906,18 @@ local function DoRefresh(force)
 
     --- Switch the overlay on, and return the background entry in force.
     ---
-    --- The *tile* half of the background setting only means anything where
-    --- we are drawing our own transparent tiles: on a map with no bundled
-    --- BLPs the tiles are the client's own opaque art regardless of which
-    --- background is selected, so this skips ApplyBackground's tile/backdrop
-    --- branches and behaves exactly as before — hide the detail layer, draw
-    --- no backdrop of our own, return nil to say that half of the setting
-    --- does not apply here.
+    --- The *tile* half of the background setting only matters where we
+    --- draw our own transparent tiles: on a map with no bundled BLPs the
+    --- tiles are the client's own opaque art regardless of background, so
+    --- this skips ApplyBackground's tile/backdrop branches, hides the
+    --- detail layer, draws no backdrop, and returns nil.
     ---
-    --- The map-frame-backing half is a different question, and this used to
-    --- get it wrong: it called MapFrameBg:SetVisible(true) unconditionally,
-    --- regardless of which background was actually selected. Nothing here
-    --- draws over that backing on this kind of map (no bundled tiles, no
-    --- backdrop texture), so Transparent still needs it hidden for the same
-    --- reason ApplyBackground hides it — otherwise Transparent shows
-    --- Blizzard's own wood-grain map-frame backing on every map this addon
-    --- has no replacement art for, no matter what the user picked.
+    --- The map-frame-backing half used to get this wrong by calling
+    --- MapFrameBg:SetVisible(true) unconditionally. Nothing here draws
+    --- over that backing on this kind of map, so Transparent still needs
+    --- it hidden for the same reason ApplyBackground hides it: otherwise
+    --- Transparent would show Blizzard's wood-grain map-frame backing on
+    --- every map this addon has no replacement art for.
     local function Activate()
         Config.overlayActive = true
         local bg
@@ -1064,9 +985,9 @@ local function DoRefresh(force)
     -- (or slices of tiles) that fall under one of Blizzard's own, live
     -- exploration reveal textures. `fogActive` is deliberately the gate
     -- for which loop below runs, not a separate flag next to it, so every
-    -- way this can end up unusable — the feature off, or this map having
-    -- no bundled art of ours to selectively show — falls back to exactly
-    -- the ordinary full grid rather than needing its own case.
+    -- way this can end up unusable (feature off, or this map having no
+    -- bundled art of ours to selectively show) falls back to the
+    -- ordinary full grid rather than needing its own case.
     local fogActive = fogOfWar and useBundled
     local blizExploredTextures = fogActive
         and Exploration:EnumerateOverlayTextures()
@@ -1099,18 +1020,15 @@ local function DoRefresh(force)
 
         -- GetLeft/Top/Right/Bottom on a region only resolve once it has
         -- actually rendered at least one frame after being (re)shown or
-        -- repositioned. The very first time this addon lets Blizzard's own
-        -- exploration provider populate on a given map -- previously
-        -- always pre-empted by RemoveAllData before it ever got to lay
-        -- anything out -- its freshly (re)acquired chunk textures can
-        -- still be mid-layout this same tick even though EnumerateOverlay
-        -- Textures() just forced them to exist. That shows up here as
-        -- real entries but zero usable geometry: not Fog of War's
-        -- legitimate "nothing explored yet" (which wouldn't have produced
-        -- any entries in the first place), so retry exactly once next
-        -- frame, by which point the layout pass has caught up, rather than
-        -- leaving the map looking blank until something else happens to
-        -- trigger another refresh.
+        -- repositioned. The first time this addon lets Blizzard's own
+        -- exploration provider populate on a given map (previously always
+        -- pre-empted by RemoveAllData), its freshly (re)acquired chunk
+        -- textures can still be mid-layout this same tick even though
+        -- EnumerateOverlayTextures() just forced them to exist. That shows
+        -- up as real entries but zero usable geometry, not Fog of War's
+        -- legitimate "nothing explored yet", so retry exactly once next
+        -- frame rather than leaving the map blank until something else
+        -- triggers another refresh.
         if fogPiecesDrawn == 0 and #blizExploredTextures > 0
             and not Config._fogRetryPending then
             if trace then P("  fog: 0 pieces from real entries -- retrying next frame") end
@@ -1123,27 +1041,20 @@ local function DoRefresh(force)
             end)
         end
 
-        -- Separately: reported symptom was the *shape*, not a blank map --
-        -- the very first Fog of War draw right after a map opens (or its
-        -- canvas is swapped) came out hard-edged and blocky, as if drawn
-        -- with no mask at all, even though real pieces were drawn
-        -- (fogPiecesDrawn > 0, so the retry above never fires) and blizTex
-        -- itself reported valid geometry. What's still catching up in that
-        -- case is not blizTex's layout but this addon's own MaskTexture:
-        -- SetTexture(maskFile, ...) on a freshly (re)acquired mask points
-        -- at the same file blizTex is already displaying, but as its own,
-        -- separate texture resource -- and a texture resource reads back
-        -- fully opaque (i.e. no crop at all -- exactly "blocky") for
-        -- however long it takes that resource to actually finish loading,
-        -- independent of whether blizTex's own, already-loaded copy is
-        -- long since ready. Panning or zooming "fixed" this by accident,
-        -- because both happen to trigger their own later Refresh, well
-        -- past that load latency; this makes that not depend on the player
-        -- doing that first, by forcing exactly one more refresh, a beat
-        -- (not just a frame) after the first, whenever this is the first
-        -- time Fog of War draws on a map that just (re)opened or swapped
-        -- canvases -- whether or not that first draw looked like it drew
-        -- anything.
+        -- Separate issue: the very first Fog of War draw after a map opens
+        -- (or its canvas swaps) could come out hard-edged and blocky, as
+        -- if drawn with no mask, even with real pieces drawn and valid
+        -- blizTex geometry. The cause is not blizTex's layout but this
+        -- addon's own MaskTexture: SetTexture(maskFile, ...) on a freshly
+        -- acquired mask points at the same file blizTex already displays,
+        -- but as its own separate texture resource, which reads back
+        -- fully opaque (no crop, i.e. "blocky") until that resource
+        -- actually finishes loading, regardless of whether blizTex's own
+        -- copy is already ready. Panning or zooming "fixed" this by
+        -- accident, since both trigger a later Refresh past that load
+        -- latency. This forces one more refresh, a beat (not just a
+        -- frame) after the first, whenever Fog of War draws for the first
+        -- time on a map that just (re)opened or swapped canvases.
         if isFreshMapOpen and not Config._fogStreamRetryPending then
             Config._fogStreamRetryPending = true
             C_Timer.After(0.2, function()
@@ -1154,20 +1065,11 @@ local function DoRefresh(force)
             end)
         end
 
-        -- Gap fill: live reveal textures above cover most of the explored
-        -- area with a real organic edge, but tracing proved they are not
-        -- a complete raster of it -- every one of them filled its own
-        -- bounds with zero internal gaps, yet real gaps still showed up
-        -- BETWEEN them, on ground C_MapExplorationInfo still calls
-        -- explored. This is the authoritative, always-complete source
-        -- for "which ground is explored" (confirmed correctly placed
-        -- back when this addon only ever drew plain rects from it,
-        -- before any masking was attempted), used here as a WHOLE rect
-        -- per entry rather than split into Blizzard's own internal
-        -- per-chunk pieces -- that splitting is what went wrong the one
-        -- time this addon tried to recompute it. filled already has
-        -- every cell the pass above covered, so this only ever plugs
-        -- what that pass could not reach.
+        -- Gap fill: C_MapExplorationInfo is the authoritative,
+        -- always-complete source for "which ground is explored" (see
+        -- DrawFillPiece's doc comment for why it's used as whole rects).
+        -- filled already has every cell the pass above covered, so this
+        -- only plugs what that pass could not reach.
         local explored = C_MapExplorationInfo
             and C_MapExplorationInfo.GetExploredMapTextures(mapID)
         if explored then
@@ -1193,18 +1095,15 @@ local function DoRefresh(force)
             cols, rows, tileSource, filled, pieceTex, layerW, layerH,
             tilePxW, tilePxH, scaleX, scaleY, trace)
 
-        -- SoftenFogEdges is deliberately NOT called here. Confirmed
-        -- against Blizzard's own client source (MapExplorationPinMixin:
-        -- RefreshOverlays, see DrawExploredPiece's doc comment) that it
-        -- draws these hard-edged, no gradient at all -- and tried live,
-        -- fading the boundary just turned a correctly-shaped hard-edged
-        -- area into a blurry one, which is a worse match for Blizzard's
-        -- own look, not a better one. The irregular look this addon is
-        -- actually chasing comes from the SHAPE of the explored-chunk
-        -- data itself (many chunks tracing a path), not from any per-edge
-        -- fade -- there is no post-processing trick that turns a hard
+        -- SoftenFogEdges is deliberately NOT called here. Blizzard's own
+        -- client (MapExplorationPinMixin:RefreshOverlays) draws these
+        -- hard-edged with no gradient, and fading the boundary live just
+        -- turned a correctly-shaped area blurry, a worse match for
+        -- Blizzard's look. The irregular look this addon wants comes from
+        -- the SHAPE of the explored-chunk data itself, not a per-edge
+        -- fade; there's no post-processing trick that turns a hard
         -- rectangle into an organic outline. Left in place, unused, in
-        -- case a future data source actually calls for it.
+        -- case a future data source calls for it.
         -- SoftenFogEdges(cols, rows, filled, pieceTex, trace)
     else
         local tileIdx = 1
@@ -1235,14 +1134,14 @@ local function DoRefresh(force)
         end
     end
 
-    -- Fog of War genuinely can mean zero tiles here — a map the player has
-    -- not explored any of yet, or has no live reveal textures to read this
-    -- particular refresh — which is not the failure this is meant to
-    -- catch: fogActive being true at all already means this is Fog of
+    -- Fog of War genuinely can mean zero tiles here: a map the player has
+    -- not explored yet, or one with no live reveal textures to read this
+    -- particular refresh. That's not the failure this check is meant to
+    -- catch, since fogActive being true already means this is Fog of
     -- War's own intentionally-partial grid, not a lookup that came back
     -- empty by mistake, so there is nothing to fall back from.
     if Pool:ActiveCount() == 0 and not fogActive then
-        P("No textures created for mapID " .. mapID .. " — restoring default art")
+        P("No textures for mapID " .. mapID .. ", restoring default map art")
         RestoreDefaults()
     end
 end
@@ -1255,31 +1154,27 @@ local refreshing = false
 --- Main overlay refresh.
 ---
 --- Guards DoRefresh against being re-entered while it is already running.
---- That is not a theoretical concern here: DoRefresh's own Fog of War
---- section calls Exploration:EnumerateOverlayTextures, which calls
+--- Not theoretical: DoRefresh's Fog of War section calls
+--- Exploration:EnumerateOverlayTextures, which calls
 --- WorldMapFrame:RefreshAllDataProviders, which on this client can
---- synchronously fire MAP_EXPLORATION_UPDATED -- and Core.lua's handler
---- for that event calls this same Refresh again, before the outer call
---- has returned. Letting that inner call proceed used to run
---- Pool:ReleaseAll()/MaskPool:ReleaseAll() out from under the outer call's
---- own in-progress drawing, discarding some of its pieces and leaving
---- others orphaned -- tiles silently missing at what looked like regular
---- intervals despite every individual piece's own math being correct,
---- because the piece *was* correctly drawn, by whichever of the two
---- overlapping calls drew it last, while the pool bookkeeping the other
---- call was still relying on had already been swept out from under it.
---- The inner call is redundant anyway: whatever changed that it wanted to
---- redraw for, the outer call is about to finish drawing the current
---- state fresh regardless.
+--- synchronously fire MAP_EXPLORATION_UPDATED, whose handler (Core.lua)
+--- calls this same Refresh again before the outer call returns. Letting
+--- that inner call proceed used to run Pool:ReleaseAll()/
+--- MaskPool:ReleaseAll() out from under the outer call's in-progress
+--- drawing, discarding some pieces and orphaning others: tiles went
+--- silently missing at seemingly regular intervals even though each
+--- piece's own math was correct, because the pool bookkeeping one call
+--- relied on had been swept out from under it by the other. The inner
+--- call is redundant anyway: the outer call is about to finish drawing
+--- the current state fresh regardless.
 ---@param force boolean|nil
 function Renderer:Refresh(force)
     if refreshing then
-        -- Dropped, not just ignored: the outer call already in progress is
-        -- about to draw the current state fresh regardless (see above), but
-        -- schedule a debounced follow-up anyway in case whatever triggered
-        -- this specific call raced ahead of that -- cheap insurance against
-        -- ever again silently dropping a real update instead of only ever
-        -- dropping the redundant ones this guard exists for.
+        -- Dropped, not just ignored: the outer call is about to draw the
+        -- current state fresh regardless, but schedule a debounced
+        -- follow-up anyway in case this call raced ahead of that; cheap
+        -- insurance against dropping a real update instead of only the
+        -- redundant ones this guard exists for.
         self:ScheduleRefresh()
         return
     end

@@ -6,17 +6,53 @@ A fork of [HighFidelityWorldMap](https://github.com/Sectimus/HighFidelityWorldMa
 It replaces the world map's hand-painted art with a satellite-style view stitched from the game's
 own minimap terrain tiles, drawn inside Blizzard's native map framework rather than replacing it.
 
-Type `/hfwm` in game to toggle, `/hfwm options` for the settings panel.
+Type `/hfwm` in game to toggle, `/hfwm options` for the settings panel. Built on
+[Ace3](https://www.wowace.com/projects/ace3) (AceAddon/AceConsole/AceDB/AceConfig), so the
+settings panel supports profiles and lives in the client's own Interface Options / Escape menu.
 
 ## Layout
 
 Two halves, no server component.
 
-- **Lua addon** (13 files, load order defined in the `.toc` and load-bearing) — hooks
-  `WorldMapFrame`, hides Blizzard's detail-layer art and exploration pins, and draws the bundled
-  tiles from a texture pool. `Renderer.lua` is the core; `Options.lua` is the settings panel.
-- **Python pipeline** (`generateHFWM.py` → `hfwm/`) — runs offline, produces `WorldMap/` and
+- **Lua addon** (load order defined in the `.toc` and load-bearing): hooks `WorldMapFrame`,
+  hides Blizzard's detail-layer art and exploration pins, and draws the bundled tiles from a
+  texture pool. `Renderer.lua` is the core; `Options.lua` is the settings panel. Ace3 libraries
+  are fetched at build/dev time rather than committed; see `.pkgmeta` and `dev/fetch-libs.sh`.
+- **Python pipeline** (`generateHFWM.py` → `hfwm/`): runs offline, produces `WorldMap/` and
   `FDIDMap.lua`.
+
+## Local development setup
+
+The addon runs on [Ace3](https://www.wowace.com/projects/ace3) (AceAddon, AceConsole, AceDB,
+AceConfig, AceGUI). Those libraries aren't committed. `LibStub` and `CallbackHandler-1.0` are
+the exception: they're tiny and effectively frozen, so they're committed directly under `Libs/`
+instead of fetched.
+
+Two sources feed `Libs/`, for two different jobs:
+
+- **Release builds** (CurseForge, GitHub releases): `.pkgmeta`'s `externals:` pull from the
+  canonical WowAce svn trunk, the source Ace3's own docs say a `.pkgmeta` should reference.
+  Handled entirely by the packager (`.github/workflows/release.yml`); nothing to do locally.
+- **Dev and CI checkouts**: `dev/fetch-libs.sh` pulls the same libraries from
+  [WoWUIDev/Ace3](https://github.com/WoWUIDev/Ace3) (the GitHub mirror Ace3's project page
+  names as its development repository), so testing from source only needs `git`, not `svn`.
+
+To test the addon from a checkout of this repo (as opposed to a downloaded release zip, which
+already has `Libs/` baked in):
+
+1. From the addon's folder, run:
+   ```sh
+   ./dev/fetch-libs.sh
+   ```
+   This populates `Libs/AceAddon-3.0`, `Libs/AceConsole-3.0`, etc. (about 8 folders). Re-run it
+   any time you want to pick up upstream Ace3 changes.
+2. `/reload` or relaunch the client. `embeds.xml` (in the `.toc`) loads everything from `Libs/`
+   before the addon's own files.
+
+If `Libs/` is missing or incomplete, the addon won't load at all (Lua errors on `LibStub` or one
+of the Ace3 calls in `Namespace.lua`/`Core.lua`), so step 1 above isn't optional for a fresh
+checkout. CI runs the same script before linting (see `.github/workflows/ci.yml`), so a broken
+or renamed mirror path fails there rather than silently at release time.
 
 ## Regenerating the map art
 
@@ -170,10 +206,11 @@ knocked out a moment later.
 
 ## In game
 
-`/hfwm options` opens the settings panel — registered into the client's own AddOns options list
-where the API for that exists, and openable as a standalone movable window either way. It carries
-the enable toggle, the overlay opacity slider, the map background dropdown, and the cave map
-toggle with its own opacity slider.
+`/hfwm options` opens the settings panel, built as an AceConfig-3.0 options table
+(`Options.lua`). AceConfigDialog registers it into the client's own AddOns options list where
+that API exists, and it's openable as a standalone window either way. It carries the enable
+toggle, the map background dropdown, the overlay opacity slider, the cave map section, and a
+profiles tab (AceDBOptions-3.0) for splitting off a character-specific profile.
 
 ### Map background
 
@@ -246,11 +283,9 @@ Everything is drawn with ordinary `BLEND`, so the opacity slider applies to all 
 version drew Original's predecessor with `SetBlendMode("DISABLE")` and had to grey the slider out;
 that never worked in game (see `--alpha-sea` above) and the plumbing is gone.
 
-The background selector is the client's own settings dropdown, whichever one this client ships:
-`WowStyle1DropdownTemplate` driven by a menu generator, else `UIDropDownMenuTemplate`, else a
-hand-built widget. `CreateFrame` *errors* on an unknown frame type or template rather than returning
-nil, and a pinned beta client can't be asked in advance, so each is constructed inside a `pcall` and
-all three expose the same `Sync()` / `CloseMenu()` to the panel.
+The background selector is an ordinary AceConfig `select` control; AceGUI-3.0 draws it the same
+way on every client flavour, so `Options.lua` no longer has to probe which dropdown template a
+given client ships.
 
 Two implementation notes, both non-obvious:
 

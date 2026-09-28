@@ -3,11 +3,11 @@
 --
 -- Optional "Additional Zoom Levels" feature (off by default): appends extra,
 -- closer zoom steps onto the world map's own zoom ladder, so the higher-
--- resolution art this addon ships (see hfwm/db2.py's _hires_geometry --
--- every Type=Zone map uncapped, plus Kalimdor/Eastern Kingdoms/Azeroth
--- capped) can actually be zoomed into past whatever ceiling Blizzard's own
--- map data happens to allow, instead of that extra detail going to waste
--- once the built-in max zoom is reached.
+-- resolution art this addon ships (see hfwm/db2.py's _hires_geometry: every
+-- Type=Zone map uncapped, plus Kalimdor/Eastern Kingdoms/Azeroth capped) can
+-- be zoomed into past whatever ceiling Blizzard's own map data allows,
+-- instead of that extra detail going to waste once the built-in max zoom is
+-- reached.
 --
 -- WorldMapFrame.ScrollContainer (MapCanvasScrollControllerMixin) keeps its
 -- own zoom ladder in self.zoomLevels, a plain array of { scale, layerIndex }
@@ -15,20 +15,20 @@
 -- shown map or the canvas size changes. Zoom-in/out (buttons, mouse wheel,
 -- and the clamp inside :SetZoomTarget) all read the *last* entry through
 -- :GetScaleForMaxZoom(), which is nothing more than
--- self.zoomLevels[#self.zoomLevels].scale — so appending further, larger-
--- scale entries to that same table right after Blizzard finishes building
--- it raises the ceiling for every normal zoom path at once, with no need to
+-- self.zoomLevels[#self.zoomLevels].scale, so appending further, larger-
+-- scale entries to that table right after Blizzard finishes building it
+-- raises the ceiling for every normal zoom path at once, with no need to
 -- touch OnMouseWheel or SetZoomTarget directly. This is a plain post-hook
--- (hooksecurefunc), so a client that ever ships something incompatible here
--- just leaves the ladder as Blizzard built it — the option quietly does
--- nothing rather than erroring.
+-- (hooksecurefunc), so a client that ships something incompatible here just
+-- leaves the ladder as Blizzard built it; the option quietly does nothing
+-- rather than erroring.
 --
 -- Each extra level keeps the *last* real level's layerIndex: there is no
 -- further Blizzard art layer to switch to (Classic-era zones have exactly
 -- one), so every extra step is purely a bigger on-screen scale of the same
--- bundled tiles Renderer.lua already draws — which only ever reads
--- canvas:GetSize() (see Renderer.lua's Refresh), so it needs no changes at
--- all to benefit from this.
+-- bundled tiles Renderer.lua already draws. Renderer only ever reads
+-- canvas:GetSize() (see its Refresh), so it needs no changes to benefit
+-- from this.
 -------------------------------------------------------------------------------
 local addonName, ns = ...
 local Config     = ns.Config

@@ -7,27 +7,26 @@
 -- sea monsters, all baked into the client's own art tiles. It draws behind
 -- the addon's tiles, so on every background but Hybrid it has to go.
 --
--- Two things here were wrong for a long time and hid each other.
+-- Two bugs used to hide each other here. The layers were reached only
+-- through `WorldMapFrame.detailLayerPool`, with an early `return` if that
+-- field was missing, so on a client that keeps its detail layers anywhere
+-- else, SetVisible was a silent no-op. Nobody noticed, since the default
+-- Ocean Blue background paints an opaque colour on the overlay frame *in
+-- front* of the detail layer, covering Blizzard's art either way. Only
+-- Transparent shows the bug, and it shows it as "Transparent looks exactly
+-- like Hybrid".
 --
--- The layers were reached only through `WorldMapFrame.detailLayerPool`, with
--- an early `return` if that field was missing — so on a client that keeps its
--- detail layers anywhere else, SetVisible was a silent no-op. Nobody noticed,
--- because the default Ocean Blue background paints an opaque colour on the
--- overlay frame *in front* of the detail layer, which covers Blizzard's art
--- whether or not it was ever hidden. Only Transparent shows the bug, and it
--- shows it as "Transparent looks exactly like Hybrid".
+-- Fix: layers are now found by duck type, any frame under the canvas with a
+-- RefreshDetailTiles method, whatever the pool is called or whether there is
+-- one. The pool, if it exists, is just one source among several, not the
+-- only one.
 --
--- So the layers are now found by duck type — any frame under the canvas with
--- a RefreshDetailTiles method is a detail layer, whatever the pool is called
--- and whether or not there is one — and the pool, if it exists, is treated as
--- one source among several rather than the only one.
---
--- And concealment is Hide(), not alpha 0, for the reason written up in
--- MapFrameBg: the client re-asserts alpha along with shown state when it
--- re-tiles, so an alpha-0 layer comes back opaque. Hide() is the stronger
--- claim, and everything that undoes it — Show, SetShown, RefreshDetailTiles —
--- is hooked below. Restore re-Shows only what this module actually hid, so a
--- layer the client had already released and hidden is not resurrected.
+-- Concealment is Hide(), not alpha 0 (same reasoning as MapFrameBg's): the
+-- client re-asserts alpha along with shown state when it re-tiles, so an
+-- alpha-0 layer comes back opaque. Hide() is the stronger claim, so
+-- everything that undoes it (Show, SetShown, RefreshDetailTiles) is hooked
+-- below. Restore re-Shows only what this module actually hid, so a layer the
+-- client had already released and hidden is not resurrected.
 -------------------------------------------------------------------------------
 local addonName, ns = ...
 local BaseArt = ns.BaseArt
@@ -35,9 +34,9 @@ local Config  = ns.Config
 
 -- Last visibility asked for. The client re-Shows and re-tiles its detail
 -- layers behind our back (on pan, zoom and map change), so the hooks below
--- have to re-assert our choice afterwards — and they need to know what that
--- choice was. Keyed off this rather than Config.overlayActive, because the
--- Hybrid background wants the overlay active *and* Blizzard's art visible.
+-- re-assert this choice afterward. Keyed off this rather than
+-- Config.overlayActive, since Hybrid wants the overlay active *and*
+-- Blizzard's art visible.
 BaseArt.visible = true
 
 -- Everything this module has hidden and not yet put back. Same shape and same
@@ -116,9 +115,10 @@ local function collectLayers()
     return out
 end
 
---- Every texture a detail layer draws its art with. The three sources overlap
---- — a tile in `textures` is usually also a region of the frame — so they are
---- deduplicated, or the diagnostic below would report every tile twice.
+--- Every texture a detail layer draws its art with. The three sources
+--- overlap (a tile in `textures` is usually also a region of the frame), so
+--- they are deduplicated, or the diagnostic below would report every tile
+--- twice.
 ---@param layer table
 ---@return table[]
 local function layerTextures(layer)

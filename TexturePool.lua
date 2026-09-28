@@ -24,13 +24,12 @@ end
 function Pool:ReleaseAll()
     for i = #activeTextures, 1, -1 do
         local tex = activeTextures[i]
-        -- Fog of War (Renderer's DrawExploredPiece) may have masked
-        -- this texture to a slice of Blizzard's own torn-edge exploration
-        -- art; strip that back off before it goes back in the pool, or a
-        -- later Acquire could hand it to the ordinary, unmasked tile-layout
-        -- loop still secretly clipped to whatever shape was last on it.
-        -- The mask objects themselves are MaskPool's to recycle, not this
-        -- pool's -- this only ever detaches, never keeps or destroys one.
+        -- Fog of War (Renderer's DrawExploredPiece) may have masked this
+        -- texture to a slice of Blizzard's torn-edge exploration art; strip
+        -- that off before it goes back in the pool, or a later Acquire
+        -- could hand it out still clipped to whatever shape was last on it.
+        -- The mask objects are MaskPool's to recycle, not this pool's; this
+        -- only ever detaches, never keeps or destroys one.
         for i2 = tex:GetNumMaskTextures(), 1, -1 do
             tex:RemoveMaskTexture(tex:GetMaskTexture(i2))
         end
@@ -51,14 +50,13 @@ end
 
 -------------------------------------------------------------------------------
 -- MaskPool: the same recycling, for the MaskTexture objects Fog of War
--- attaches to Pool's own textures (see Renderer's DrawExploredPiece)
--- to crop them to Blizzard's real exploration art instead of a hard
--- rectangle. Its own pool because MaskTexture is its own widget type
--- (Frame:CreateMaskTexture, not Frame:CreateTexture) and is never itself
--- shown or hidden the way an ordinary texture is -- Pool:ReleaseAll above
--- is what detaches a mask from whatever it was cropping; this is only
--- ever responsible for hanging on to the (now unattached) object so
--- Acquire does not have to create a fresh one every refresh.
+-- attaches to Pool's own textures (see Renderer's DrawExploredPiece) to
+-- crop them to Blizzard's real exploration art instead of a hard rectangle.
+-- Its own pool because MaskTexture is its own widget type
+-- (Frame:CreateMaskTexture, not Frame:CreateTexture) and is never shown or
+-- hidden like an ordinary texture. Pool:ReleaseAll is what detaches a mask
+-- from whatever it was cropping; this just holds the unattached object so
+-- Acquire doesn't have to create a fresh one every refresh.
 -------------------------------------------------------------------------------
 local maskPool    = {}
 local activeMasks = {}

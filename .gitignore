@@ -16,3 +16,13 @@ __pycache__/
 # BigWigs packager staging dir (and a local copy of release.sh, if you keep one)
 .release/
 .env
+
+# Ace3 libraries, fetched at build/dev time (see .pkgmeta's externals and
+# dev/fetch-libs.sh), not committed. LibStub and CallbackHandler-1.0 are
+# tiny, stable shims committed directly instead. embeds.xml lives at the
+# repo root (see the .toc), so it isn't under this Libs/* rule at all.
+Libs/*
+!Libs/LibStub/
+!Libs/LibStub/**
+!Libs/CallbackHandler-1.0/
+!Libs/CallbackHandler-1.0/**

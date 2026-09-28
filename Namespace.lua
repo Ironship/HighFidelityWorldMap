@@ -1,10 +1,14 @@
 -------------------------------------------------------------------------------
 -- HFWM-Forever Namespace
--- Shared addon namespace table initialised here.
--- Every other Lua module receives this via the "..." idiom:
+-- Shared addon namespace table. Every other Lua module receives this via
+-- the "..." idiom:
 --     local addonName, ns = ...
 -------------------------------------------------------------------------------
 local addonName, ns = ...
+
+-- The AceAddon-3.0 object. AceConsole-3.0 gives it slash commands,
+-- AceEvent-3.0 gives it :RegisterEvent. See Core.lua for OnInitialize/OnEnable.
+ns.addon = LibStub("AceAddon-3.0"):NewAddon(addonName, "AceConsole-3.0", "AceEvent-3.0")
 
 -- Public sub-tables filled by individual modules
 ns.Config      = {}

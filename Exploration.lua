@@ -1,7 +1,7 @@
 -------------------------------------------------------------------------------
 -- HFWM-Forever Exploration
 -- Hide / show exploration overlay ("fog of war cleared" textures), and (for
--- Fog of War — see EnumerateOverlayTextures) hand their live geometry back
+-- Fog of War, see EnumerateOverlayTextures) hand their live geometry back
 -- to Renderer.lua instead of just hiding them.
 -- Searches pin pools and data providers directly on WorldMapFrame.
 --
@@ -61,12 +61,9 @@ local function HookDPs()
             hookedDPs[dp] = true
             hooksecurefunc(dp, "RefreshAllData", function()
                 -- Always re-hidden, Fog of War included: Renderer.lua's own
-                -- tiles are what Fog of War shows instead of these (see
-                -- DrawExploredPiece), reusing the geometry and art of the
-                -- very textures this hides -- alpha 0 on the original
-                -- object has no bearing on a *different* MaskTexture later
-                -- pointed at the same file, so there is nothing here for
-                -- Fog of War to make conditional.
+                -- tiles (see DrawExploredPiece) reuse the same geometry and
+                -- art, but as a separate MaskTexture object, so alpha 0 here
+                -- has no bearing on those.
                 if Config.db and Config.db.enabled and Config.overlayActive then
                     Exploration:HidePins()
                 end
@@ -149,38 +146,31 @@ function Exploration:SetVisible(visible)
 end
 
 --- Every currently-active "explored" reveal texture Blizzard's own
---- exploration data provider is drawing right now — hidden (see HidePins,
---- called from the RefreshAllData hook above, and by this too) but very
---- much still real Texture objects with their own correct position, size,
---- texture and texture coordinates, kept and refreshed rather than
---- released the way SetVisible(false) releases them.
+--- exploration data provider is drawing right now: hidden (see HidePins)
+--- but still real Texture objects with correct position, size, texture and
+--- coordinates, kept and refreshed rather than released the way
+--- SetVisible(false) releases them.
 ---
---- This is Fog of War's whole way of finding what to reveal (see
---- Renderer's DrawExploredPiece): read the real geometry Blizzard's own
---- client already computed correctly, rather than recomputing it from
---- C_MapExplorationInfo ourselves, which turned out to need assumptions
---- (tile size, file-padding, coordinate space) this addon has no way to
---- verify hold on every client. RefreshAllDataProviders (same call
---- SetVisible(true) already makes) first, so this is never reading data
---- that predates whatever most recently changed it.
+--- This is how Fog of War finds what to reveal (see Renderer's
+--- DrawExploredPiece): read the real geometry the client already computed,
+--- rather than recompute it from C_MapExplorationInfo, which would need
+--- assumptions (tile size, file padding, coordinate space) this addon has
+--- no way to verify hold on every client. RefreshAllDataProviders runs
+--- first, so this never reads data that predates the latest change.
 ---
---- Two different client implementations are covered, since this addon
---- has no way to know in advance which one it is talking to:
----   - Retail-style: the data provider itself pools plain Texture objects
----     directly (dp.overlayTexturePool) -- each pooled object already IS
----     the reveal texture.
+--- Two client implementations are covered, since this addon has no way to
+--- know in advance which one it's talking to:
+---   - Retail-style: the data provider pools plain Texture objects directly
+---     (dp.overlayTexturePool); each pooled object already IS the reveal
+---     texture.
 ---   - Pin-style (the one this addon actually ships on, confirmed by
 ---     tracing): there is exactly ONE active "MapExplorationPinTemplate"
----     pin per map, sized to the *entire canvas* -- not one pin per
----     explored area, which is what this addon's very first bug report
----     (real chunk-shaped squares of Blizzard's own art appearing over
----     explored ground) actually was: one single pin frame, hidden as a
----     whole by HidePins/ForEachPin, that Blizzard has papered with one
----     child Texture region PER real explored area, each individually
----     positioned/sized to its own true rect rather than to the pin's own
----     (whole-canvas) bounds. Taking only the first such region (an
----     earlier version of this function) threw away every explored area
----     but one; this collects all of them.
+---     pin per map, sized to the *entire canvas*, not one pin per explored
+---     area. Blizzard papers that single pin with one child Texture region
+---     PER real explored area, each individually positioned/sized to its
+---     own true rect rather than to the pin's whole-canvas bounds. Taking
+---     only the first such region (an earlier version of this function)
+---     threw away every explored area but one; this collects all of them.
 ---@return table[] textures
 function Exploration:EnumerateOverlayTextures()
     HookDPs()
@@ -209,13 +199,11 @@ function Exploration:EnumerateOverlayTextures()
         end
     end
 
-    -- Per-template breakdown, trace-only: "exploration" as a substring
-    -- can just as easily match a thin animated boundary-line pin template
-    -- as the actual fill-chunk template, and only one of those is real
-    -- reveal art -- if more than one template shows up here, whichever
-    -- one has pin sizes far smaller than a map chunk is almost certainly
-    -- the wrong one to be feeding into DrawExploredPiece as if it were a
-    -- fill piece.
+    -- Per-template breakdown, trace-only: "exploration" as a substring can
+    -- match a thin boundary-line pin template as well as the real
+    -- fill-chunk template. If more than one template shows up here, the one
+    -- with much smaller pin sizes than a map chunk is probably not real
+    -- reveal art.
     if Config.tracing and WorldMapFrame.pinPools then
         for templateName, pinPool in next, WorldMapFrame.pinPools do
             if templateName:lower():find("exploration") then
@@ -239,18 +227,11 @@ function Exploration:EnumerateOverlayTextures()
         end
     end
 
-    -- One pin per map, not one per explored area -- confirmed by tracing
-    -- (a single active MapExplorationPinTemplate sized to the entire
-    -- canvas), matching this file's header comment ("pure art stretched
-    -- over the whole canvas"). The real per-area reveal pieces are its
-    -- CHILD regions, each individually positioned/sized to its own true
-    -- explored rect rather than to the whole pin -- collecting only the
-    -- first Texture-type region (the previous version of this loop) threw
-    -- away every piece but one, which is exactly why only a single small
-    -- sliver was showing up regardless of how much ground was actually
-    -- explored. pin.Texture, if the pin happens to expose one, is already
-    -- one of these regions and would otherwise be double-counted, so
-    -- there is no separate special case for it here.
+    -- One pin per map, not one per explored area (confirmed by tracing).
+    -- The real per-area reveal pieces are its CHILD regions, each
+    -- positioned/sized to its own explored rect. pin.Texture, when the pin
+    -- exposes one, is already one of these regions, so there's no separate
+    -- case for it here to avoid double-counting.
     local pinCount, pinTexCount = 0, 0
     ForEachPin(function(pin)
         pinCount = pinCount + 1

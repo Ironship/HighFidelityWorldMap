@@ -1,6 +1,7 @@
 -------------------------------------------------------------------------------
 -- HFWM-Forever Commands
--- Slash command handler (/hfwm, /highfidelity).
+-- Slash command handler (/hfwm, /hfwmforever), registered through
+-- AceConsole-3.0.
 -------------------------------------------------------------------------------
 local addonName, ns = ...
 local Commands = ns.Commands
@@ -25,7 +26,7 @@ function Commands:Handle(msg)
         -- get it back would be to walk out and back in.
         if sub == "show" or sub == "open" then
             if not db.caveEnabled then
-                P("Cave map is off — |cff999999/hfwm cave on|r first.")
+                P("Cave map is off. |cff999999/hfwm cave on|r first.")
             elseif not ns.Cave:ForceShow() then
                 P("Nothing to show: you are not in a cave, or the world map "
                     .. "is already showing the one you are in.")
@@ -48,13 +49,11 @@ function Commands:Handle(msg)
             return
         elseif sub == "titledump" then
             -- The cave window's title bar is a clone of the world map's own
-            -- (CaveRenderer's CollectTitleStrip). When it looks wrong, the
-            -- question is always "what is the map's title bar actually made
-            -- of, and where does it sit" — which no screenshot can answer and
-            -- this prints outright.
+            -- (CaveRenderer's CollectTitleStrip). When it looks wrong, this
+            -- prints exactly what it's made of and where it sits.
             local r = ns.CaveRenderer:TitleStripReport()
             if not r or not r.frameTop then
-                P("Cannot measure the map frame — open the world map first.")
+                P("Cannot measure the map frame. Open the world map first.")
                 return
             end
             P(("Map title strip: frame %dpx wide, %d piece%s"):format(
@@ -68,7 +67,7 @@ function Commands:Handle(msg)
                     p.layer, p.sublevel))
             end
             if #r.pieces == 0 then
-                P("  |cffff4444none|r — nothing to clone, so the cave "
+                P("  |cffff4444none|r: nothing to clone, so the cave "
                     .. "header will be left unpainted.")
             end
             if r.title then
@@ -92,7 +91,7 @@ function Commands:Handle(msg)
             db.caveAlpha = math.max(0.2, math.min(1, val))
             ns.CaveRenderer:ApplyAlpha()
             P(("Cave map opacity: %.0f%%"):format(db.caveAlpha * 100))
-            if ns.Options.panel then ns.Options:Refresh() end
+            ns.Options:Refresh()
             return
         elseif sub == "autoopen" then
             local want = args[3]
@@ -101,7 +100,7 @@ function Commands:Handle(msg)
             else db.caveAutoOpen = not db.caveAutoOpen end
             P(("Cave map auto-open: %s"):format(
                 db.caveAutoOpen and "|cff00ff00on|r" or "|cffff4444off|r"))
-            if ns.Options.panel then ns.Options:Refresh() end
+            ns.Options:Refresh()
             return
         elseif sub == "remember" then
             local want = args[3]
@@ -110,7 +109,7 @@ function Commands:Handle(msg)
             else db.caveRememberState = not db.caveRememberState end
             P(("Cave map remember state: %s"):format(
                 db.caveRememberState and "|cff00ff00on|r" or "|cffff4444off|r"))
-            if ns.Options.panel then ns.Options:Refresh() end
+            ns.Options:Refresh()
             return
         elseif sub == "on" or sub == "enable" then
             db.caveEnabled = true
@@ -121,7 +120,7 @@ function Commands:Handle(msg)
         end
 
         if db.caveEnabled then
-            P("|cff00ff00Cave map enabled|r — opens over the world map when "
+            P("|cff00ff00Cave map enabled|r. Opens over the world map when "
                 .. "you are somewhere it cannot show.")
             -- On a client with no interior maps the line above is a promise
             -- that will never be kept, so qualify it immediately rather than
@@ -133,7 +132,7 @@ function Commands:Handle(msg)
             P("|cffff4444Cave map disabled|r")
             ns.CaveRenderer:HideCave()
         end
-        if ns.Options.panel then ns.Options:Refresh() end
+        ns.Options:Refresh()
         return
     elseif cmd == "remember" then
         local want = args[2]
@@ -149,7 +148,7 @@ function Commands:Handle(msg)
         end
         P(("Remember map zoom+pan: %s"):format(
             db.rememberMapZoomPan and "|cff00ff00on|r" or "|cffff4444off|r"))
-        if ns.Options.panel then ns.Options:Refresh() end
+        ns.Options:Refresh()
         return
     elseif cmd == "zoom" then
         local want = args[2]
@@ -163,7 +162,7 @@ function Commands:Handle(msg)
         ns.ZoomLevels:Refresh()
         P(("Additional zoom levels: %s"):format(
             db.additionalZoomLevels and "|cff00ff00on|r" or "|cffff4444off|r"))
-        if ns.Options.panel then ns.Options:Refresh() end
+        ns.Options:Refresh()
         return
     elseif cmd == "clarity" then
         local want = args[2]
@@ -179,9 +178,9 @@ function Commands:Handle(msg)
             db.worldMapClarity and "|cff00ff00on|r" or "|cffff4444off|r")
             .. (db.worldMapClarity
                 and " |cff999999(Kalimdor/Eastern Kingdoms/Azeroth at higher "
-                    .. "detail — may render a bit slower)|r"
+                    .. "detail, may render a bit slower)|r"
                 or ""))
-        if ns.Options.panel then ns.Options:Refresh() end
+        ns.Options:Refresh()
         return
     elseif cmd == "fog" or cmd == "fogofwar" then
         local want = args[2]
@@ -196,11 +195,10 @@ function Commands:Handle(msg)
         P(("Fog of War: %s"):format(
             db.fogOfWarEnabled and "|cff00ff00on|r" or "|cffff4444off|r")
             .. (db.fogOfWarEnabled
-                and " |cff999999(Blizzard's original grayscale map shows "
-                    .. "through unexplored ground; explored ground still "
-                    .. "shows this addon's own art)|r"
+                and " |cff999999(shows through unexplored ground; explored "
+                    .. "ground still shows this addon's own art)|r"
                 or ""))
-        if ns.Options.panel then ns.Options:Refresh() end
+        ns.Options:Refresh()
         return
     elseif cmd == "bg" or cmd == "background" then
         local want = args[2] or ""
@@ -221,9 +219,9 @@ function Commands:Handle(msg)
         end
         local applied = Config:SetBackground(want)
         if applied then
-            P(("Map background: |cff33ccff%s|r — %s"):format(
+            P(("Map background: |cff33ccff%s|r. %s"):format(
                 applied.label, applied.desc))
-            if ns.Options.panel then ns.Options:Refresh() end
+            ns.Options:Refresh()
         else
             local keys = {}
             for _, bg in ipairs(list) do
@@ -232,7 +230,7 @@ function Commands:Handle(msg)
             P(("Unknown background '%s'. Options: %s"):format(
                 want, table.concat(keys, ", ")))
             if not Config:BackgroundAvailable({ tiles = "original" }) then
-                P("  (|cff999999original|r needs the raw tile dump — rebuild "
+                P("  (|cff999999original|r needs the raw tile dump, rebuild "
                     .. "the art with --original)")
             end
         end
@@ -253,8 +251,8 @@ function Commands:Handle(msg)
         end
     elseif cmd == "baseart" then
         -- Blizzard's own detail layer: the parchment, the sea labels and the
-        -- compass rose. Every background but Hybrid hides it, but only
-        -- Transparent puts nothing opaque in front — so if the search below
+        -- compass rose. Every background but Hybrid hides it, and only
+        -- Transparent puts nothing opaque in front, so if the search below
         -- comes back empty, Transparent is the one entry that shows it.
         local BaseArt = ns.BaseArt
         local found = BaseArt:Describe()
@@ -264,14 +262,14 @@ function Commands:Handle(msg)
             print(("  %d. %s"):format(i, line))
         end
         if #found == 0 then
-            print("  (none found — open the map first; if the map is open and "
-                .. "this is still empty, the client keeps its detail layers "
-                .. "somewhere the search does not look)")
+            print("  (none found. open the map first; if the map is open "
+                .. "and this is still empty, the client keeps its detail "
+                .. "layers somewhere the search does not look)")
         end
         return
     elseif cmd == "framebg" then
-        -- What the Transparent background hides, and — when the answer turns
-        -- out to be "not enough" — what else is down there. The search is by
+        -- What the Transparent background hides, and, when the answer turns
+        -- out to be "not enough", what else is down there. The search is by
         -- draw layer and size rather than by name, so a miss is invisible
         -- unless something walks the whole tree and says so.
         local MapFrameBg = ns.MapFrameBg
@@ -289,16 +287,15 @@ function Commands:Handle(msg)
                     r.owner, r.region, r.tex))
             end
             if #rows == 0 then
-                print("  (nothing found — open the map first)")
+                print("  (nothing found, open the map first)")
             end
             return
         elseif sub == "big" then
-            -- `all` dumps everything under WorldMapFrame — hundreds of rows
+            -- `all` dumps everything under WorldMapFrame, hundreds of rows
             -- once quest log panels etc. are open, which scrolls straight
             -- out of chat history. This is the same survey, filtered down to
             -- what could plausibly BE the map-frame backing: currently shown
-            -- and covering a real fraction of the map frame. The wood/parchment
-            -- backdrop has to be one of these few rows, reached or not.
+            -- and covering a real fraction of the map frame.
             local wmf = WorldMapFrame
             local fw, fh = wmf and wmf:GetWidth() or 0, wmf and wmf:GetHeight() or 0
             local frac = tonumber(args[3]) or 0.3
@@ -320,15 +317,15 @@ function Commands:Handle(msg)
                     r.layer, r.sublevel, r.owner, r.region, r.tex))
             end
             if #shown == 0 then
-                print("  (nothing shown at that size — try a smaller fraction, "
+                print("  (nothing shown at that size, try a smaller fraction, "
                     .. "e.g. |cff999999framebg big 0.15|r)")
             end
             return
         elseif sub == "nuke" then
             -- Not a setting: a bisection tool. If this makes the map
             -- see-through then the backing is in the survey and the ordinary
-            -- search can be taught to reach it; if it does not, nothing in
-            -- the UI is what we are looking at.
+            -- search can be taught to reach it; if not, nothing in the UI is
+            -- what we are looking at.
             local n = MapFrameBg:Nuke()
             P(("hid %d widget(s) under WorldMapFrame. "):format(n)
                 .. "|cffff4444/hfwm framebg restore|r puts them back.")
@@ -347,7 +344,7 @@ function Commands:Handle(msg)
                 tostring(row.weHid)))
         end
         if #found == 0 then
-            print("  (nothing found — open the map first)")
+            print("  (nothing found, open the map first)")
         end
         print("  |cff999999framebg all|r surveys the whole frame tree; "
             .. "|cff999999framebg big|r narrows that to what's shown and "
@@ -355,18 +352,11 @@ function Commands:Handle(msg)
             .. "all of it")
         return
     elseif cmd == "testmask" then
-        -- Throwaway diagnostic, not part of the real render path: shows
-        -- each live exploration reveal texture's own raw file, full size,
-        -- at 0,0-1,1 texture coordinates, with no masking and no slicing
-        -- into this addon's own tile grid -- exactly what that file's own
-        -- alpha channel looks like on its own. Settles, with one
-        -- screenshot, whether that file carries a real organic/torn
-        -- shape (parchment showing through where it's transparent) or is
-        -- just an ordinary opaque terrain tile, without having to trust
-        -- either this addon's prior masked attempt (which fragmented,
-        -- but could have fragmented from the slicing math instead of the
-        -- file) or Blizzard's own client code (which never crops it
-        -- either way, so it can't answer the question by itself).
+        -- Throwaway diagnostic, not part of the real render path: shows each
+        -- live exploration reveal texture's own raw file, full size, with no
+        -- masking or slicing, exactly what that file's own alpha channel
+        -- looks like on its own. One screenshot settles whether it carries a
+        -- real organic/torn shape or is just an ordinary opaque terrain tile.
         local sub = args[2] or ""
         if sub == "off" or sub == "clear" then
             if ns._testMaskTextures then
@@ -380,7 +370,7 @@ function Commands:Handle(msg)
         end
 
         if not Config.overlayFrame then
-            P("testmask: overlay frame not built yet -- enable the addon first")
+            P("testmask: overlay frame not built yet. enable the addon first")
             return
         end
 
@@ -416,7 +406,7 @@ function Commands:Handle(msg)
             end
         end
         P(("testmask: showing %d raw reveal file(s), unmasked and "
-            .. "un-sliced -- look for parchment showing through in an "
+            .. "un-sliced. Look for parchment showing through in an "
             .. "organic/torn shape (real reveal mask) vs. a plain solid "
             .. "rectangle (ordinary terrain tile). "
             .. "|cff999999/hfwm testmask off|r removes them."):format(shown))
@@ -507,8 +497,7 @@ function Commands:Debug()
     print(("  frame backing: %d region(s) touched, currently %s"):format(
         #ns.MapFrameBg.order,
         ns.MapFrameBg.visible and "shown" or "hidden"))
-    print(("  options: dropdown=%s  registered=%s"):format(
-        tostring(ns.Options.dropdownKind),
+    print(("  options: registered=%s"):format(
         tostring(ns.Options.clientRegistered)))
 
     local mapID = WorldMapFrame:GetMapID()
@@ -526,16 +515,16 @@ function Commands:Debug()
         tostring(bestMapID),
         bestInfo and bestInfo.name or "?"))
     -- Where the cave feature is getting its interiors from. On this build the
-    -- client's UiMap has none, so this should read "baked" — if it says
-    -- "client" while the window refuses to open, CaveData.lua is the thing to
-    -- look at, not C_Map.
+    -- client's UiMap has none, so this should read "baked". If it says
+    -- "client" while the window refuses to open, look at CaveData.lua, not
+    -- C_Map.
     local tableDesc = "not loaded"
     if ns.CaveTable:IsLoaded() then
         local tableBuild = ns.CaveTable:GetBuild()
-        -- GetBuildInfo returns version, build, ... — "1.60.1" and "69913" —
+        -- GetBuildInfo returns version, build, ... ("1.60.1" and "69913"),
         -- and the generator stamps the table with the two joined. A mismatch
         -- is not fatal (the art rarely moves between patches) but it is the
-        -- first thing to suspect if tiles come out wrong, so say so.
+        -- first thing to suspect if tiles come out wrong.
         local version, build = GetBuildInfo()
         local clientBuild = version and build
             and (version .. "." .. build) or nil
@@ -548,7 +537,7 @@ function Commands:Debug()
         ns.Cave:SourceName(), tableDesc))
     -- Which map the cave feature actually believed, and what it is called:
     -- mapType is the trigger, so this is the first line to read when the
-    -- window will not open. Resolved through the same source, because a baked
+    -- window will not open. Resolved through the same source, since a baked
     -- floor ID means nothing to C_Map.
     local resolved     = ns.Cave:GetCurrentFloorMapID()
     local bakedFloor   = resolved and ns.CaveTable:GetFloor(resolved)
@@ -561,10 +550,6 @@ function Commands:Debug()
         resolvedInfo and tostring(resolvedInfo.mapType) or "?",
         bakedFloor and ("shipped table: " .. bakedFloor.place.name)
             or (resolved == bestMapID and "position" or "minimap")))
-    -- Zero interior maps used to explain every "nothing happens" report at a
-    -- stroke. It no longer does on its own: zero is the expected reading on
-    -- this build, and the shipped table is what covers for it. Zero *and* no
-    -- shipped table is the broken combination.
     local interiors = ns.Cave:CountInteriorMaps()
     print(("  interior maps in this client's map tree: %s%s"):format(
         interiors == nil and "unknown (no API)" or tostring(interiors),
@@ -578,7 +563,7 @@ function Commands:Debug()
     print(("  submerged: %s  outdoors: %s  hybridMinimap: %s"):format(
         tostring(IsSubmerged()), tostring(IsOutdoors()), tostring(hybridMinimap)))
     -- Step-by-step replay of the baked lookup itself. "resolved floor" above
-    -- only says it fell back to C_Map — this says which check let go:
+    -- only says it fell back to C_Map; this says which check let go:
     -- instance routing, the outdoors gate, the name index, or the rectangle.
     if ns.CaveTable:IsLoaded() then
         for _, line in ipairs(ns.CaveTable:DebugTrace()) do
@@ -604,12 +589,10 @@ function Commands:Debug()
         end
     end
 
-    -- Cave window header geometry. Screenshots cannot distinguish a band of
-    -- the wrong height from a band drawing nothing from a stray unanchored
-    -- texture, so the numbers are printed with the two questions that matter
-    -- already answered: does the banner cover the bar, and is the title inside
-    -- the band. If either says no, that is the bug, whatever the pixels look
-    -- like.
+    -- Cave window header geometry. A screenshot can't distinguish a band of
+    -- the wrong height from one drawing nothing, or from a stray unanchored
+    -- texture, so the numbers below answer the two questions that matter
+    -- directly: does the banner cover the bar, and is the title inside it.
     local hdr = ns.CaveRenderer:HeaderReport()
     if hdr then
         print(("  cave header: source=%s  art=%s%s"):format(
@@ -617,7 +600,7 @@ function Commands:Debug()
             hdr.unverified and "  <-- UNVERIFIED" or ""))
         local function say(label, r)
             if not r then
-                print(("    %-8s (no rect — never anchored or not shown)")
+                print(("    %-8s (no rect, never anchored or not shown)")
                     :format(label))
                 return
             end
@@ -711,8 +694,8 @@ function Commands:Debug()
         end
 
         -- Check detail layer pool. The pool is only one of the places BaseArt
-        -- looks, and a NIL here used to mean BaseArt gave up entirely — so
-        -- report what it actually found alongside it.
+        -- looks, so this reports what it actually found alongside it, rather
+        -- than treating a NIL pool as BaseArt having given up entirely.
         local dlp = WorldMapFrame.detailLayerPool
         local dlpCount = 0
         if dlp and dlp.EnumerateActive then
@@ -797,9 +780,9 @@ function Commands:Debug()
         print("        last render: none yet (no floor rendered this session)")
     end
     -- Per-floor alpha from the continuous crossfade, when active: replaces
-    -- the plain "<-- ACTIVE" marker (which is still printed alongside it —
-    -- ACTIVE means "the slider's anchor floor", not "the only one visible")
-    -- with what's actually on screen right now.
+    -- the plain "<-- ACTIVE" marker (which is still printed alongside it,
+    -- since ACTIVE means "the slider's anchor floor", not "the only one
+    -- visible") with what's actually on screen right now.
     local continuousInfo = ns.CaveRenderer:DebugContinuous()
     if Config.caveAllFloors then
         for i, f in ipairs(Config.caveAllFloors) do
@@ -813,8 +796,8 @@ function Commands:Debug()
                 i, f.mapID, f.relativeHeightIndex, f.name or "?", alphaText, marker))
         end
     end
-    -- cave-satellite-v2 Phase 2: per-piece alpha, when piece mode is active —
-    -- floors above still print (they still drive player-location/title/
+    -- cave-satellite-v2 Phase 2: per-piece alpha, when piece mode is active.
+    -- Floors above still print (they still drive player-location/title/
     -- suppression per the Phase 2 design), but the art actually on screen is
     -- these pieces, each fading independently by its own real world-Z range
     -- rather than by floor index.
@@ -844,8 +827,9 @@ function Commands:Debug()
     end
 end
 
+--- Register /hfwm and /hfwmforever through AceConsole-3.0.
 function Commands:Register()
-    SLASH_HFWMF1 = "/hfwm"
-    SLASH_HFWMF2 = "/hfwmforever"
-    SlashCmdList["HFWMF"] = function(msg) self:Handle(msg) end
+    ns.addon.OnChatCommand = function(_, input) Commands:Handle(input) end
+    ns.addon:RegisterChatCommand("hfwm", "OnChatCommand")
+    ns.addon:RegisterChatCommand("hfwmforever", "OnChatCommand")
 end

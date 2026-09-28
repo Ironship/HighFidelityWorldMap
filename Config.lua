@@ -1,135 +1,80 @@
 -------------------------------------------------------------------------------
 -- HFWM-Forever Config
--- Defaults, SavedVariables init, and overlay state tracking.
+-- Defaults, AceDB-3.0 profile database, and overlay state tracking.
 -------------------------------------------------------------------------------
 local addonName, ns = ...
 local Config = ns.Config
 
--- Defaults (persisted in HighFidelityWorldMapForeverDB)
+-- Defaults (persisted per-profile in HighFidelityWorldMapForeverDB)
 Config.DEFAULTS = {
     enabled       = true,
     alpha         = 1.0,
     mapBackground = "ocean",  -- see Config.BACKGROUNDS below
 
-    -- Cave map: the window that opens over the world map when the player is
-    -- inside a cave / micro dungeon the map above has nothing to say about.
-    -- Enabled by default: the whole point of this addon is a map that keeps
-    -- working underground, and a feature nobody knows exists (short of
-    -- reading Options or `/hfwm cave on`) may as well be missing. Anyone who
-    -- doesn't want the extra panel can turn it off from Options or with
-    -- `/hfwm cave off`.
+    -- Cave map: a window that opens over the world map when the player is
+    -- somewhere the map above it has nothing to show (caves, mines, micro
+    -- dungeons). On by default; turn it off from Options or /hfwm cave off.
     caveEnabled = true,
     caveAlpha   = 0.95,
 
-    -- Cave map (beta): how the window decides to show itself, as opposed to
-    -- whether the feature exists at all (caveEnabled above).
+    -- How the cave window decides to show itself, as opposed to whether
+    -- the feature exists at all (caveEnabled above).
     --
-    -- caveAutoOpen: the plain rule when Remember State (below) is off —
-    -- show the window the instant a tracked cave is entered, same as this
-    -- addon has always done. Off means it waits at the reopen icon instead,
-    -- every time, until clicked.
+    -- caveAutoOpen: show the window the instant a tracked cave is entered.
+    -- Off means it waits at the reopen icon instead, until clicked.
     --
-    -- caveRememberState: instead of the fixed rule above, reproduce
-    -- whichever of open/closed the player left it as last time — set
-    -- automatically as caveLastVisible below, never through Options
-    -- directly. Wins over caveAutoOpen when both would otherwise apply,
-    -- since "what I did last time" is the more specific instruction.
+    -- caveRememberState: reproduce whichever of open/closed the window was
+    -- left as last time, instead of the fixed rule above. Wins over
+    -- caveAutoOpen when both apply.
     --
-    -- caveLastVisible: true means the last thing to happen to the window
-    -- was it being shown (auto-opened, Remember-State-opened, or the
-    -- reopen icon/ForceShow); false means the player explicitly closed it
-    -- (the X button, or /hfwm cave hide). Only read when caveRememberState
-    -- is on, but tracked unconditionally so turning Remember State on for
-    -- the first time already has something real to go on.
+    -- caveLastVisible: true if the window's last state change was being
+    -- shown; false if the player closed it. Only read when
+    -- caveRememberState is on, but tracked unconditionally.
     caveAutoOpen      = true,
     caveRememberState = false,
     caveLastVisible   = true,
 
-    -- Cave map height window: the real-world elevation range that stays
-    -- visible as a per-piece place's rooms (currently just Fargodeep Mine)
-    -- are drawn, expressed as two fractions of that place's own aggregate
-    -- [zMin, zMax] span (0 = the bottom of the span, 1 = the top). The user
-    -- drags this directly as a rectangle on the cave map's own depth
-    -- slider (see CaveRenderer's height-window widget) rather than through
-    -- a separate Options control. Defaulting to the full 0..1 span means a
-    -- first-time user sees every piece at once, which is the loosest
-    -- setting asked for.
+    -- Cave map depth window: the real-world elevation range a per-piece
+    -- place's rooms (currently just Fargodeep Mine) stay visible within,
+    -- as two fractions (0..1) of that place's own [zMin, zMax] span.
+    -- Dragged directly on the cave map's own depth slider rather than
+    -- through Options; see CaveRenderer's height-window widget.
     caveHeightWindowTop    = 1.0,
     caveHeightWindowBottom = 0.0,
 
-    -- Remember map zoom + pan: keep the world map at whatever zoom and pan
-    -- position it was left at, instead of the client's own behaviour of
-    -- resetting to the current zone every time the map is reopened — the
-    -- same job PersistentWorldMap does, folded in here as a single
-    -- opt-out rather than a separate addon. On by default for the same
-    -- reason caveEnabled is: a feature worth having is worth having on
-    -- unless the player says otherwise. See MapMemory.lua.
+    -- Keep the world map at whatever zoom and pan it was left at, instead
+    -- of resetting to the current zone every time it reopens -- the same
+    -- job the separate PersistentWorldMap addon does. See MapMemory.lua.
     rememberMapZoomPan = true,
 
-    -- Additional Zoom Levels: appends 8 extra, closer steps onto the world
-    -- map's own zoom ladder (see ZoomLevels.lua) so the native-resolution
-    -- zone art this addon ships can actually be zoomed into past whatever
-    -- ceiling Blizzard's own map data allows. Off by default — it changes
-    -- how far the built-in zoom control reaches, which is a bigger behaviour
-    -- change than anything else here defaults to on, so it is opt-in rather
-    -- than assumed.
+    -- Appends 8 extra, closer zoom steps onto the world map so the
+    -- native-resolution zone art this addon ships can be zoomed into past
+    -- Blizzard's own ceiling. Off by default: it changes how far the
+    -- built-in zoom control reaches. See ZoomLevels.lua.
     additionalZoomLevels = false,
 
-    -- Increase world map clarity: draws the three continent/world maps
-    -- (Kalimdor, Eastern Kingdoms, Azeroth) from this addon's own capped
-    -- hi-res tile grid instead of Blizzard's stock art -- see
-    -- HFWMF_NATIVE_ZONES' `continent` flag and Config:GetNativeZone below.
-    -- Off by default, unlike the zone maps' native art (which ships
-    -- unconditionally): a continent map is many more tiles than a zone
-    -- ever is, and opening the world map is common enough that a slow
-    -- machine finding that out for the first time mid-session would look
-    -- like this addon breaking the game rather than an opt-in trade-off.
-    -- Falls straight back to the client's own art when off, exactly as if
-    -- this feature did not exist.
+    -- Draws the three continent/world maps (Kalimdor, Eastern Kingdoms,
+    -- Azeroth) from this addon's own capped hi-res tile grid instead of
+    -- Blizzard's stock art. Off by default: a continent map is many more
+    -- tiles than any single zone, and could slow down a weaker machine.
+    -- See HFWMF_NATIVE_ZONES' `continent` flag and GetNativeZone below.
     worldMapClarity = false,
 
-    -- Fog of War: re-introduce the original, grayscale-until-explored look
-    -- Blizzard's own map has always drawn, in place of this addon's usual
-    -- "every zone in full, hi-res detail the instant the map opens" pitch
-    -- — which is exactly what this option deliberately works against, so
-    -- it is opt-in rather than assumed, the same reasoning as
-    -- worldMapClarity and additionalZoomLevels below.
-    --
-    -- With it on, Blizzard's own detail-layer art (BaseArt) is left visible
-    -- underneath this addon's tiles instead of hidden, and the tile-layout
-    -- section of Renderer's Refresh draws this addon's own tiles only
-    -- where one of Blizzard's own, live exploration reveal textures says
-    -- the player has actually explored -- Exploration:HidePins() keeps
-    -- those textures populated and enumerable (just invisible) rather
-    -- than releasing them the way plain suppression does, and
-    -- Exploration:EnumerateOverlayTextures hands them to Renderer's
-    -- DrawExploredPiece, which reads each one's own real screen position,
-    -- size, texture and texture coordinates directly off it and crops
-    -- this addon's tiles to that exact same shape as a MaskTexture. That
-    -- shape is Blizzard's own already-correct, torn/feathered reveal
-    -- outline, borrowed wholesale rather than recomputed, so it matches
-    -- the game's own map pixel for pixel instead of looking like a crop
-    -- (an earlier attempt recomputed the same shape from
-    -- C_MapExplorationInfo's raw offsets and an assumed tile-chunking
-    -- scheme, which produced scattered, misplaced pieces on at least one
-    -- client and was abandoned for this instead). Blizzard's own
-    -- exploration overlay pins (Exploration.lua) stay suppressed exactly
-    -- as always; they would only ever restate the same area in Blizzard's
-    -- own lower-resolution art on top of this addon's tiles.
-    -- See Renderer's Activate() and the tile-layout section of Refresh,
-    -- and Core.lua's MAP_EXPLORATION_UPDATED hook for keeping this live
-    -- while the map stays open.
+    -- Restores the original grayscale-until-explored look instead of this
+    -- addon's usual full hi-res coverage. Off by default since it works
+    -- against the addon's whole point. With it on, ground stays grayscale
+    -- until C_MapExplorationInfo says the player has explored it, then
+    -- switches to this addon's tiles cropped to Blizzard's own reveal
+    -- shape. See Renderer's Activate() and DrawExploredPiece.
     fogOfWarEnabled = false,
 }
--- The db also carries `caveWindowPoint` — { point, relPoint, x, y, toMap } —
--- written by CaveRenderer when the window is dragged. It is deliberately not
--- in DEFAULTS: absent means "wherever the window opens by default", and a nil
--- entry in a defaults table would not survive the pairs() copy in InitDB
--- anyway. /hfwm cave reset clears it.
+-- The db also carries `caveWindowPoint` -- { point, relPoint, x, y, toMap }
+-- -- written by CaveRenderer when the window is dragged. Deliberately not
+-- in DEFAULTS: absent means "wherever the window opens by default".
+-- /hfwm cave reset clears it.
 
---- Cave window opacity, clamped, with a floor: a cave map faded to nothing is
---- indistinguishable from the feature being broken, and the window has a
---- close button for the case where it is genuinely not wanted.
+--- Cave window opacity, clamped with a floor so it can never fade to
+--- invisible (the window has a close button for that).
 ---@return number
 function Config:CaveAlpha()
     local a = self.db and self.db.caveAlpha or self.DEFAULTS.caveAlpha
@@ -141,15 +86,14 @@ end
 -- Cave height window
 --
 -- The rectangle CaveRenderer's height-window widget drags directly on the
--- cave map's own depth slider: not a single point, but a top and bottom
--- fraction (each 0..1 against the currently-shown place's aggregate
--- [zMin, zMax]) bounding the real-world elevation range a per-piece
--- place's rooms stay visible within. Dragging an edge resizes the window
--- (narrows or widens the range); dragging the body moves it as a unit.
+-- cave map's depth slider: a top and bottom fraction (each 0..1 against
+-- the shown place's aggregate [zMin, zMax]) bounding which elevation range
+-- stays visible. Dragging an edge resizes the window; dragging the body
+-- moves it as a unit.
 -------------------------------------------------------------------------------
 
---- The smallest gap kept between the top and bottom fractions, so the
---- window can never collapse to nothing and become ungrabbable.
+--- Smallest gap kept between top and bottom, so the window can never
+--- collapse to nothing and become ungrabbable.
 Config.HEIGHT_WINDOW_MIN_SPAN = 0.04
 
 --- Current window bounds, clamped to 0..1 and ordered (top >= bottom).
@@ -169,10 +113,8 @@ end
 
 --- Persist new window bounds. Order-independent (swapped if `top < bottom`)
 --- and enforces HEIGHT_WINDOW_MIN_SPAN by pushing out whichever edge the
---- caller did *not* just move — e.g. dragging the top handle down onto the
---- bottom one stops at the minimum span rather than dragging the bottom
---- edge down with it. Callers still need to push the change out to
---- anything already on screen — see CaveRenderer's height-window widget.
+--- caller did *not* just move. Callers still need to push the change out to
+--- anything already on screen -- see CaveRenderer's height-window widget.
 ---@param top number
 ---@param bottom number
 function Config:SetCaveHeightWindow(top, bottom)
@@ -194,54 +136,31 @@ end
 -------------------------------------------------------------------------------
 -- Map background
 --
--- The bundled BLPs are generated by the pipeline's default "alpha-sea" art
--- pass, which leaves the sea and every cell the terrain grid does not cover
--- *transparent* rather than baking a colour or Blizzard's art underneath.
--- That is what makes the backdrop a runtime choice instead of a 175 MB
--- regenerate: three of the four backgrounds draw the same tiles and differ
--- only in what sits behind them.
+-- The bundled BLPs leave the sea and every cell the terrain grid doesn't
+-- cover transparent rather than baking in a colour or Blizzard's art, so
+-- the backdrop is a runtime choice instead of a 175 MB regenerate.
 --
--- Two independent fields decide how an entry is drawn. What goes behind the
--- tiles:
+-- What goes behind the tiles:
+--   rgb          -> fill the canvas with this colour.
+--   blizzardArt  -> leave the client's own detail-layer art showing through.
+--   seeThrough   -> hide the map frame's own backing too, so the holes go
+--                   all the way through the UI. See MapFrameBg.lua.
+--   (none of the above) -> nothing behind the tiles.
 --
---   rgb ~= nil       -> fill the canvas with this colour.
---   blizzardArt      -> nothing of ours; leave the client's own detail-layer
---                       art on screen so it shows through the transparent
---                       sea.
---   neither          -> nothing at all. Either the tiles are opaque and a
---                       backdrop could never be seen, or the holes are the
---                       point.
---   seeThrough       -> and, on top of that, hide the map frame's own backing
---                       so the holes really do go through the UI. Without it
---                       "nothing behind the tiles" only reaches as far as the
---                       frame's panel art, one layer down, and the result is
---                       near enough indistinguishable from Hybrid. See
---                       MapFrameBg.lua.
+-- Which tiles to draw:
+--   tiles == nil  -> the bundled transparent art, FDID_MAP.
+--   tiles         -> an alternate lookup table. Only "original" exists: a
+--                     raw, un-alpha'd dump written under WorldMap/Original/
+--                     when the pipeline runs with --original. Hidden by
+--                     Config:BackgroundAvailable when that art isn't built.
 --
--- and which tiles to draw:
---
---   tiles == nil     -> the bundled transparent art, FDID_MAP.
---   tiles            -> an alternate lookup table. Only "original" exists: a
---                       separate, raw dump of the stitch that the pipeline
---                       writes under WorldMap/Original/ when --original is
---                       on. Unlike the other three entries this one really
---                       is a second set of BLPs, because the raw stitch
---                       cannot be recovered from the transparent art at draw
---                       time — an earlier attempt to do that with
---                       SetBlendMode("DISABLE") turned out not to work on
---                       this client, which honours the alpha channel
---                       regardless of blend mode. Config:BackgroundAvailable
---                       below hides the entry when that art is not installed.
---
--- Ordered: Options.lua builds its dropdown straight from this list, so
--- adding a background here is all it takes to offer it in game.
+-- Ordered: Options.lua builds its dropdown straight from this list.
 -------------------------------------------------------------------------------
 Config.BACKGROUNDS = {
     {
         key   = "ocean",
         label = "Ocean Blue",
-        -- The game's own coastal water, #1A3245 — the same colour the
-        -- pipeline's --ocean pass bakes in (DEFAULT_OCEAN_COLOR).
+        -- The game's own coastal water colour (DEFAULT_OCEAN_COLOR).
         desc  = "One flat sea colour, measured from the game's own water.",
         rgb   = { 26 / 255, 50 / 255, 69 / 255 },
     },
@@ -255,25 +174,21 @@ Config.BACKGROUNDS = {
     {
         key   = "original",
         label = "Original",
-        desc  = "The raw stitch in all its ugly glory — the sea exactly as "
-             .. "the game's own tiles render it, blocky seams and all.",
+        desc  = "The raw stitch, blocky seams and all.",
         tiles = "original",
     },
     {
         key        = "transparent",
         label      = "Transparent",
-        desc       = "No backdrop at all — the sea is a hole straight through "
-                  .. "the map frame onto the world behind it.",
+        desc       = "No backdrop at all: the sea is a hole through the "
+                  .. "map frame.",
         seeThrough = true,
     },
 }
 
 --- Is this background's art actually installed?
----
---- Only ever false for an entry with its own tile set: WorldMap/ is a build
---- artifact, so a user who built without --original has the transparent art
---- and nothing else. Offering the entry anyway would draw the client's own
---- FDIDs and quietly look like Hybrid.
+--- Only ever false for an entry with its own tile set: a build without
+--- --original never wrote WorldMap/Original/.
 ---@param bg table entry from Config.BACKGROUNDS
 ---@return boolean
 function Config:BackgroundAvailable(bg)
@@ -283,9 +198,8 @@ function Config:BackgroundAvailable(bg)
     return true
 end
 
---- The FileDataID -> relative path table a background draws its tiles from.
---- Always returns a table; an entry with no `tiles` field gets the bundled
---- transparent art.
+--- The FileDataID -> relative path table a background draws its tiles
+--- from. Always returns a table.
 ---@param bg table entry from Config.BACKGROUNDS
 ---@return table
 function Config:GetTileMap(bg)
@@ -296,8 +210,7 @@ function Config:GetTileMap(bg)
 end
 
 --- The backgrounds this install can actually draw, in Config.BACKGROUNDS
---- order. Options.lua and Commands.lua both build from this rather than the
---- full list.
+--- order. Options.lua and Commands.lua both build from this.
 ---@return table[]
 function Config:AvailableBackgrounds()
     local out = {}
@@ -309,8 +222,8 @@ function Config:AvailableBackgrounds()
     return out
 end
 
---- Look up the active background, falling back to the default on garbage or
---- on a saved choice whose art is not installed.
+--- Active background, falling back to the default on garbage or a saved
+--- choice whose art isn't installed.
 ---@return table entry from Config.BACKGROUNDS
 function Config:GetBackground()
     local want = self.db and self.db.mapBackground
@@ -325,7 +238,7 @@ function Config:GetBackground()
 end
 
 --- Set the active background and redraw. Returns the entry, or nil if the
---- key is not one this install offers.
+--- key isn't one this install offers.
 ---@param key string
 function Config:SetBackground(key)
     for _, bg in ipairs(self:AvailableBackgrounds()) do
@@ -349,24 +262,16 @@ Config.FDID_BASE    = "Interface\\AddOns\\HighFidelityWorldMapForever\\WorldMap\
 -- Higher-resolution maps (see hfwm/db2.py's _hires_geometry and
 -- hfwm/fdid_map.py): every Type=Zone map, uncapped, plus Kalimdor/Eastern
 -- Kingdoms/the top-level Azeroth map, capped -- see HIRES_CONTINENT_MAPS.
--- Keyed by UiMapID rather than FileDataID: these draw a bigger tile grid,
--- at the pipeline's own resolution, than Blizzard's fixed art layer
--- describes -- so Renderer.lua uses this geometry and path prefix
--- directly instead of C_Map.GetMapArtLayers / GetMapArtLayerTextures.
--- Empty tables (rather than a missing global) on any build from before
--- this table existed.
+-- Keyed by UiMapID: Renderer.lua uses this geometry and path prefix
+-- directly instead of C_Map.GetMapArtLayers/GetMapArtLayerTextures.
 Config.NATIVE_ZONES          = HFWMF_NATIVE_ZONES          or {}
 Config.NATIVE_ZONES_ORIGINAL = HFWMF_NATIVE_ZONES_ORIGINAL or {}
 
 --- Higher-resolution geometry for *mapID* under the given background, or
---- nil. nil means one of: this map has no such art at all (most
---- continent/world maps, or a Type=Zone map whose Blizzard-native layer
---- was already at or above minimap density); the specific dump the
---- background wants (main vs. the raw --original one) was not built; or
---- the entry is one of the three capped continent maps and "Increase
---- world map clarity" is off. Every case is handled the same way --
---- Renderer.lua's fallback to the ordinary FDID path is the right thing
---- to do, and it does that safely on its own once this returns nil.
+--- nil if this map has no such art, the specific dump the background
+--- wants wasn't built, or (for the three capped continent maps) "Increase
+--- world map clarity" is off. Renderer.lua falls back to the ordinary
+--- FDID path whenever this returns nil.
 ---@param mapID number
 ---@param bg table entry from Config.BACKGROUNDS
 ---@return table|nil
@@ -381,32 +286,29 @@ function Config:GetNativeZone(mapID, bg)
 end
 
 --- Whether the capped continent maps (Kalimdor/Eastern Kingdoms/Azeroth)
---- should draw from this addon's hi-res tile grid. Off by default (see
---- DEFAULTS.worldMapClarity); zone maps are unaffected by this and always
---- draw at native resolution regardless.
+--- draw from this addon's hi-res tile grid. Zone maps always draw at
+--- native resolution regardless.
 ---@return boolean
 function Config:WorldMapClarityEnabled()
     return self.db and self.db.worldMapClarity or false
 end
 
---- Whether this addon's own tiles should draw only over ground the player
---- has actually explored (per C_MapExplorationInfo), with Blizzard's
---- original grayscale-until-explored detail-layer art left visible
---- everywhere else, instead of this addon's tiles covering the whole map
---- unconditionally. Off by default — see DEFAULTS.fogOfWarEnabled for what
---- turning it on actually changes.
+--- Whether this addon's tiles draw only over ground the player has
+--- actually explored, with Blizzard's original grayscale art left visible
+--- elsewhere.
 ---@return boolean
 function Config:FogOfWarEnabled()
     return self.db and self.db.fogOfWarEnabled or false
 end
 
--- Vashj'ir UiMapIDs — retail-only (Cataclysm). WoW Forever has no Vashj'ir,
--- so this is intentionally empty. Kept so that Renderer.lua stays
+-- Vashj'ir UiMapIDs -- retail-only (Cataclysm). WoW Forever has no
+-- Vashj'ir, so this is intentionally empty. Kept so Renderer.lua stays
 -- structurally identical to the retail addon.
 Config.VASHJIR_MAPS = {}
 
 -- Runtime state (shared mutable, referenced by all modules)
-Config.db              = nil   -- ref to HighFidelityWorldMapForeverDB after ADDON_LOADED
+Config.db              = nil   -- ref to the active AceDB profile
+Config.dbObj           = nil   -- the AceDB-3.0 database object
 Config.overlayFrame    = nil   -- Frame parented to the map canvas
 Config.backdropTexture = nil   -- flat colour drawn under the tiles (Renderer)
 Config.overlayActive   = false
@@ -426,22 +328,15 @@ Config.caveOverlayActive     = false
 Config.caveCurrentFloorMapID = nil   -- floor on screen right now
 Config.caveAllFloors         = nil   -- [{mapID, name, relativeHeightIndex}, ...]
 Config.caveFloorPinned       = false -- user drove the depth slider; stop following them
--- The floor dropdown's own state (see CaveRenderer's floor-picker section):
--- true (the default) layers every floor together exactly as before this
--- control existed; false scopes both the rendered art and the depth
--- slider's range to Config.caveCurrentFloorMapID alone. Reset to true
--- whenever the window closes, same as caveFloorPinned, so re-entering a
--- cave is always a clean "All" slate.
+-- The floor dropdown's own state (see CaveRenderer's floor-picker
+-- section): true (the default) layers every floor together; false scopes
+-- both the rendered art and the depth slider to Config.caveCurrentFloorMapID
+-- alone. Reset to true whenever the window closes, same as caveFloorPinned.
 Config.caveFloorFilterAll    = true
 Config.caveSuppressedKey     = nil   -- map group the user closed; don't reopen it
--- Map group Cave:UpdateState has already run the Open Automatically /
--- Remember State decision for, this visit. Deliberately its own flag
--- rather than reusing "does caveAllFloors already cover this floor" —
--- that stays populated (and so looks like "already handled") even after
--- leaving a cave the settings kept closed, since HideCave (which clears
--- it) is only ever called on a cave that was actually shown. Cleared
--- unconditionally on every "player is not in a cave" tick, same moment as
--- caveSuppressedKey, so a stale value can never survive to the next visit.
+-- Map group Cave:UpdateState has already decided Open Automatically /
+-- Remember State for, this visit. Cleared unconditionally on every
+-- "player is not in a cave" tick, same moment as caveSuppressedKey.
 Config.caveDecidedKey        = nil
 Config.caveDisplayedMapID    = nil   -- world-map UiMapID displayed (change detection)
 Config.lastPlayerMapID       = nil   -- GetBestMapForUnit cache (change detection)
@@ -459,29 +354,69 @@ do
     Config._nativeZonesOriginalSize = count(Config.NATIVE_ZONES_ORIGINAL)
 end
 
--- Saved background keys that have been renamed. "default" was the original
--- name for what turned out to be simply a transparent map: it was meant to
--- redraw the raw stitch by disabling blending, which this client does not
--- honour. The raw stitch now lives in its own tile set under the "original"
--- key, so anyone carrying the old value wants "transparent" rather than a
--- silent fall back to Ocean Blue.
+-- Saved background keys that have been renamed. "default" was the
+-- original name for what turned out to be simply a transparent map. The
+-- raw stitch now lives under its own "original" key, so anyone carrying
+-- the old value wants "transparent", not a silent fall back to Ocean Blue.
 local BACKGROUND_RENAMES = {
     default = "transparent",
 }
 
---- Initialise SavedVariables after ADDON_LOADED.
-function Config:InitDB()
-    if type(HighFidelityWorldMapForeverDB) ~= "table" then
-        HighFidelityWorldMapForeverDB = {}
-    end
-    local renamed = BACKGROUND_RENAMES[HighFidelityWorldMapForeverDB.mapBackground]
-    if renamed then
-        HighFidelityWorldMapForeverDB.mapBackground = renamed
-    end
-    for k, v in pairs(self.DEFAULTS) do
-        if HighFidelityWorldMapForeverDB[k] == nil then
-            HighFidelityWorldMapForeverDB[k] = v
+--- Move an old, pre-AceDB flat SavedVariables table (one profile, no
+--- concept of `.profiles`) onto the AceDB profile shape, so upgrading
+--- doesn't lose anyone's settings. No-op on a database that's already in
+--- the new shape, or has none at all yet.
+---@param dbObj table AceDB-3.0 database object
+local function MigrateFlatSavedVariables(dbObj)
+    local raw = HighFidelityWorldMapForeverDB
+    if type(raw) ~= "table" or raw.profiles then return end
+
+    local renamed = BACKGROUND_RENAMES[raw.mapBackground]
+    if renamed then raw.mapBackground = renamed end
+
+    for k in pairs(Config.DEFAULTS) do
+        if raw[k] ~= nil then
+            dbObj.profile[k] = raw[k]
+            raw[k] = nil
         end
     end
-    self.db = HighFidelityWorldMapForeverDB
+    if raw.caveWindowPoint then
+        dbObj.profile.caveWindowPoint = raw.caveWindowPoint
+        raw.caveWindowPoint = nil
+    end
+end
+
+--- Re-point Config.db at the active profile and push the change out to
+--- everything that caches state derived from it. Bound to AceDB's profile
+--- callbacks below, so switching, copying or resetting a profile takes
+--- effect immediately.
+function Config:RefreshProfile()
+    self.db = self.dbObj.profile
+    ns.Renderer:ForceRefresh()
+    ns.ZoomLevels:Refresh()
+    ns.Cave:UpdateState()
+    ns.Options:Refresh()
+end
+
+--- Create the AceDB-3.0 database after ADDON_LOADED (see Core.lua's
+--- OnInitialize). `true` as the default profile shares one profile across
+--- every character by default, matching this addon's behavior before
+--- profiles existed; AceDBOptions still lets anyone split off a
+--- character-specific profile from Options.
+function Config:InitDB()
+    local isUpgrade = type(HighFidelityWorldMapForeverDB) == "table"
+        and not HighFidelityWorldMapForeverDB.profiles
+
+    self.dbObj = LibStub("AceDB-3.0"):New(
+        "HighFidelityWorldMapForeverDB", { profile = self.DEFAULTS }, true)
+
+    if isUpgrade then
+        MigrateFlatSavedVariables(self.dbObj)
+    end
+
+    self.dbObj.RegisterCallback(self, "OnProfileChanged", "RefreshProfile")
+    self.dbObj.RegisterCallback(self, "OnProfileCopied", "RefreshProfile")
+    self.dbObj.RegisterCallback(self, "OnProfileReset", "RefreshProfile")
+
+    self.db = self.dbObj.profile
 end
