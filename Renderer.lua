@@ -811,6 +811,13 @@ local function DoRefresh(force)
         return
     end
 
+    -- Captured before Config.lastMapID is overwritten just below, and used
+    -- much later, in the Fog of War block, to decide whether this is the
+    -- very first draw for this particular map/canvas -- see the mask
+    -- streaming retry there for why that specific moment needs its own
+    -- extra care.
+    local isFreshMapOpen = (mapID ~= Config.lastMapID) or canvasChanged
+
     Pool:ReleaseAll()
     MaskPool:ReleaseAll()
     Config.lastCanvas    = canvas
@@ -1089,6 +1096,37 @@ local function DoRefresh(force)
             Config._fogRetryPending = true
             C_Timer.After(0, function()
                 Config._fogRetryPending = false
+                if Config.overlayActive and Config:FogOfWarEnabled() then
+                    Renderer:ForceRefresh()
+                end
+            end)
+        end
+
+        -- Separately: reported symptom was the *shape*, not a blank map --
+        -- the very first Fog of War draw right after a map opens (or its
+        -- canvas is swapped) came out hard-edged and blocky, as if drawn
+        -- with no mask at all, even though real pieces were drawn
+        -- (fogPiecesDrawn > 0, so the retry above never fires) and blizTex
+        -- itself reported valid geometry. What's still catching up in that
+        -- case is not blizTex's layout but this addon's own MaskTexture:
+        -- SetTexture(maskFile, ...) on a freshly (re)acquired mask points
+        -- at the same file blizTex is already displaying, but as its own,
+        -- separate texture resource -- and a texture resource reads back
+        -- fully opaque (i.e. no crop at all -- exactly "blocky") for
+        -- however long it takes that resource to actually finish loading,
+        -- independent of whether blizTex's own, already-loaded copy is
+        -- long since ready. Panning or zooming "fixed" this by accident,
+        -- because both happen to trigger their own later Refresh, well
+        -- past that load latency; this makes that not depend on the player
+        -- doing that first, by forcing exactly one more refresh, a beat
+        -- (not just a frame) after the first, whenever this is the first
+        -- time Fog of War draws on a map that just (re)opened or swapped
+        -- canvases -- whether or not that first draw looked like it drew
+        -- anything.
+        if isFreshMapOpen and not Config._fogStreamRetryPending then
+            Config._fogStreamRetryPending = true
+            C_Timer.After(0.2, function()
+                Config._fogStreamRetryPending = false
                 if Config.overlayActive and Config:FogOfWarEnabled() then
                     Renderer:ForceRefresh()
                 end
