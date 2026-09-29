@@ -79,7 +79,11 @@ class WmoGroup:
     flags: int
     bbox: tuple[float, float, float, float, float, float]  # x1,y1,z1,x2,y2,z2
     name: str
-    tile_fdid: int | None
+    # A plain FDID for a group whose minimap art is one tile; a
+    # {(row, col): fdid} map for one big enough to need several (see
+    # fetch_stitched_tile); None for an untiled group (no minimap art at
+    # all, e.g. an antiportal/entrance shaft).
+    tile_fdid: "int | dict[tuple[int, int], int] | None"
 
 
 # Fargodeep Mine's actual root WMO. Discovered by checking WMOAreaTable for
@@ -139,7 +143,10 @@ class MineSpec:
     """
     key: str                     # WorldMap/<key>/ output folder, e.g. "FargodeepMine"
     wmo_fdid: int | None         # root WMO file (world/wmo/dungeon/.../x.wmo)
-    tile_fdids: dict[int, int]   # WMO group index -> its minimap tile FDID
+    # WMO group index -> its minimap tile FDID, or -> a {(row, col): fdid}
+    # map for a group whose room needs more than one sub-tile stitched
+    # together (see fetch_stitched_tile).
+    tile_fdids: "dict[int, int | dict[tuple[int, int], int]]"
     adt_obj0_fdid: int | None    # the _obj0.adt that places wmo_fdid in the world
     modf_unique_id: int | None   # MODF uniqueId, in case more than one MODF
                                   # record in that ADT places this same wmo_fdid
@@ -438,6 +445,200 @@ THEMASTERSCELLAR = MineSpec(
 )
 
 
+# --- Batch 4: 9 more micro-dungeons, this time exercising
+# fetch_stitched_tile() -- several groups here need more than one raw
+# 256x256 sub-tile (see WMO_SUBTILE_PX). The Noxious Lair uses only its
+# 'mini-hive_d' structure; a second, separate 'mini-hive_e' WMO instance
+# also sits inside this place's bounds but sharing one place-level
+# `projection` between two independently-placed WMO instances isn't
+# something CaveData.lua's schema supports yet, so it's left out rather
+# than forced in -- see the 2026-09-28 session notes.
+FELROCK = MineSpec(
+    key='FelRock',
+    wmo_fdid=111098,
+    tile_fdids={0: {(0, 0): 214942, (0, 1): 214943, (1, 0): 214944, (1, 1): 214945}, 1: {(0, 0): 214946, (0, 1): 214947, (1, 0): 214948, (1, 1): 214949}, 2: {(0, 0): 214950, (0, 1): 214951, (1, 0): 214952, (1, 1): 214953}, 3: {(0, 0): 214954, (0, 1): 214955, (1, 0): 214956, (1, 1): 214957}, 4: {(0, 0): 214958, (0, 1): 214959, (1, 0): 214960, (1, 1): 214961}, 5: {(0, 0): 214962, (0, 1): 214963, (1, 0): 214964, (1, 1): 214965}, 6: {(0, 0): 214966, (0, 1): 214967, (1, 0): 214968, (1, 1): 214969}, 7: {(0, 0): 214970, (0, 1): 214971, (1, 0): 214972, (1, 1): 214973}, 8: 214974, 9: 214975, 10: {(0, 0): 214976, (0, 1): 214977, (1, 0): 214978, (1, 1): 214979}, 11: {(0, 0): 214980, (0, 1): 214981, (1, 0): 214982, (1, 1): 214983}},
+    adt_obj0_fdid=784056,
+    modf_unique_id=138950,
+    modf_name_set=1,
+    floor_fdid_base=900002900,
+    piece_fdid_base=900003000,
+    single_floor=True,
+)
+
+FROSTMANEHOLD = MineSpec(
+    key='FrostmaneHold',
+    wmo_fdid=111044,
+    tile_fdids={0: 214872, 1: 214873, 2: {(0, 0): 214874, (0, 1): 214875}, 3: 214876, 4: 214877, 6: 214878},
+    adt_obj0_fdid=777598,
+    modf_unique_id=349103,
+    modf_name_set=1,
+    floor_fdid_base=900003100,
+    piece_fdid_base=900003200,
+    single_floor=True,
+)
+
+GOLBOLARQUARRY = MineSpec(
+    key='GolBolarQuarry',
+    wmo_fdid=111061,
+    tile_fdids={0: 214889, 1: 214890, 3: {(0, 0): 214891, (0, 1): 214892, (1, 0): 214893, (1, 1): 214894}},
+    adt_obj0_fdid=778398,
+    modf_unique_id=350748,
+    modf_name_set=1,
+    floor_fdid_base=900003300,
+    piece_fdid_base=900003400,
+    single_floor=True,
+)
+
+PALEMANEROCK = MineSpec(
+    key='PalemaneRock',
+    wmo_fdid=111221,
+    tile_fdids={0: 215084, 1: 215085, 3: {(0, 0): 215086, (0, 1): 215087, (1, 0): 215088, (1, 1): 215089}},
+    adt_obj0_fdid=784426,
+    modf_unique_id=398076,
+    modf_name_set=1,
+    floor_fdid_base=900003500,
+    piece_fdid_base=900003600,
+    single_floor=True,
+)
+
+SHADOWTHREADCAVE = MineSpec(
+    key='ShadowthreadCave',
+    wmo_fdid=111099,
+    tile_fdids={1: 214934, 2: 214935, 3: 214936, 4: 214937, 5: {(0, 0): 214938, (0, 1): 214939, (1, 0): 214940, (1, 1): 214941}},
+    adt_obj0_fdid=784301,
+    modf_unique_id=361332,
+    modf_name_set=1,
+    floor_fdid_base=900003700,
+    piece_fdid_base=900003800,
+    single_floor=True,
+)
+
+THESLITHERINGSCAR = MineSpec(
+    key='TheSlitheringScar',
+    wmo_fdid=110886,
+    tile_fdids={0: 214723, 1: 214724, 2: 214725, 3: 214726, 4: {(0, 0): 214727, (0, 1): 214728, (1, 0): 214729, (1, 1): 214730}, 5: 214731, 6: 214732},
+    adt_obj0_fdid=785181,
+    modf_unique_id=310138,
+    modf_name_set=1,
+    floor_fdid_base=900003900,
+    piece_fdid_base=900004000,
+    single_floor=True,
+)
+
+THEVENTURECOMINE = MineSpec(
+    key='TheVentureCoMine',
+    wmo_fdid=110808,
+    tile_fdids={1: {(0, 0): 214642, (0, 1): 214643}, 2: 214644, 3: 214645, 5: 214646, 7: {(0, 0): 214647, (0, 1): 214648}, 8: {(0, 0): 214649, (0, 1): 214650, (1, 0): 214651, (1, 1): 214652}, 9: {(0, 0): 214653, (0, 1): 214654, (1, 0): 214655, (1, 1): 214656}},
+    adt_obj0_fdid=785121,
+    modf_unique_id=170819,
+    modf_name_set=1,
+    floor_fdid_base=900004100,
+    piece_fdid_base=900004200,
+    single_floor=True,
+)
+
+TWILIGHTSRUN = MineSpec(
+    key='TwilightsRun',
+    wmo_fdid=111181,
+    tile_fdids={0: 215049, 2: {(0, 0): 215050, (1, 0): 215051}},
+    adt_obj0_fdid=784696,
+    modf_unique_id=604994,
+    modf_name_set=2,
+    floor_fdid_base=900004300,
+    piece_fdid_base=900004400,
+    single_floor=True,
+)
+
+THENOXIOUSLAIR = MineSpec(
+    key='TheNoxiousLair',
+    wmo_fdid=110917,
+    tile_fdids={1: 214757, 2: 214758, 3: 214759, 4: 214760, 5: 214761, 6: 214762},
+    adt_obj0_fdid=785846,
+    modf_unique_id=24646413,
+    modf_name_set=2,
+    floor_fdid_base=900004500,
+    piece_fdid_base=900004600,
+    single_floor=True,
+)
+
+
+# --- Batch 5: Burning Blade Coven, Skull Rock (both share md_warmcave.wmo,
+# FDID 111290 -- two separate MODF placements of the same WMO), and
+# Dalaran (md_crypt_d.wmo, FDID 110630). All three were held back after
+# batch 4 pending the multi-subtile stitcher, on the theory that groups
+# 0-7/10-11 (warmcave) and 6/8/9/13/14 (crypt_d) needed a stitched 2x2
+# mosaic like Fel Rock's. A community-listfile.csv scrape *does* list
+# "_00_01"/"_01_00"/"_01_01" sub-tile FDIDs for most of those groups --
+# but every one of those FDIDs comes back a genuine, build-pinned-and-
+# confirmed empty 200 on this build (verified directly: retried through
+# wago.tools' ?build=1.60.1.69913-pinned endpoint with strict HTTP-status
+# checking, not just the unpinned one that silently serves whichever
+# build happens to be freshest). That listfile is a union across this
+# WMO's entire patch history; the higher-numbered sub-tile FDIDs were
+# added in some later retail patch that baked a higher-resolution mosaic
+# for these rooms, and simply don't exist yet in this classic-beta
+# build's own CASC archive. So every one of these groups is single-tile
+# here, the same as groups 8/9 (warmcave) and 9/14 (crypt_d) already
+# were assumed to be -- no stitching needed after all, and nothing left
+# to fetch: every FDID below was already sitting in the local cache from
+# the original round-3 fetch (only its *extra*, nonexistent siblings were
+# ever missing).
+#
+# Dalaran's WMO group 7 ("wonkyhall03") is the outlier: it carries a
+# different MOGP flag (0x80000008, vs every other group's plain 0x2000)
+# and has *no* tile FDID anywhere in the listfile, not even a "_00_00" --
+# consistent with it being a non-rendered antiportal/culling group on
+# every build, not just this one. It's correctly left out of tile_fdids
+# below, the same way md_warmcave's untiled group 12 ("mountaincave05",
+# flags 0x200008) is left out of that mine's.
+BURNINGBLADECOVEN = MineSpec(
+    key='BurningBladeCoven',
+    wmo_fdid=111290,
+    tile_fdids={0: 215181, 1: 215185, 2: 215189, 3: 215193, 4: 215197, 5: 215201,
+                6: 215205, 7: 215209, 8: 215213, 9: 215214, 10: 215215, 11: 215219},
+    adt_obj0_fdid=786431,
+    modf_unique_id=176000,
+    modf_name_set=3,
+    floor_fdid_base=900004700,
+    piece_fdid_base=900004800,
+    single_floor=True,
+)
+
+SKULLROCK = MineSpec(
+    key='SkullRock',
+    wmo_fdid=111290,
+    tile_fdids={0: 215181, 1: 215185, 2: 215189, 3: 215193, 4: 215197, 5: 215201,
+                6: 215205, 7: 215209, 8: 215213, 9: 215214, 10: 215215, 11: 215219},
+    adt_obj0_fdid=786641,
+    modf_unique_id=250582,
+    modf_name_set=2,
+    floor_fdid_base=900004900,
+    piece_fdid_base=900005000,
+    single_floor=True,
+)
+
+DALARAN = MineSpec(
+    key='Dalaran',
+    wmo_fdid=110630,
+    tile_fdids={
+        0: 214498, 1: 214499, 2: 214500, 3: 214501, 4: 214502, 5: 214503,
+        6: {(0, 0): 214504, (0, 1): 214505, (1, 0): 214506, (1, 1): 214507},
+        8: {(0, 0): 214508, (1, 0): 214509},
+        9: 214510,
+        10: 214511, 11: 214512, 12: 214513,
+        13: {(0, 0): 214514, (0, 1): 214515},
+        14: 214516,
+        15: 214517, 16: 214518, 17: 214519, 18: 214520,
+    },
+    adt_obj0_fdid=778658,
+    modf_unique_id=571057,
+    modf_name_set=0,
+    floor_fdid_base=900005100,
+    piece_fdid_base=900005200,
+    single_floor=True,
+)
+
+
 # Registry __main__ dispatches on — see the bottom of this file.
 MINES: dict[str, MineSpec] = {
     "fargodeep": FARGODEEP,
@@ -455,6 +656,18 @@ MINES: dict[str, MineSpec] = {
     "uldamanapproach": ULDAMANAPPROACH,
     "tiragardekeep": TIRAGARDEKEEP,
     "masterscellar": THEMASTERSCELLAR,
+    "felrock": FELROCK,
+    "frostmanehold": FROSTMANEHOLD,
+    "golbolarquarry": GOLBOLARQUARRY,
+    "palemanerock": PALEMANEROCK,
+    "shadowthreadcave": SHADOWTHREADCAVE,
+    "slitheringscar": THESLITHERINGSCAR,
+    "venturecomine": THEVENTURECOMINE,
+    "twilightsrun": TWILIGHTSRUN,
+    "noxiouslair": THENOXIOUSLAIR,
+    "burningbladecoven": BURNINGBLADECOVEN,
+    "skullrock": SKULLROCK,
+    "dalaran": DALARAN,
 }
 
 
@@ -664,6 +877,66 @@ def fetch_tile(fdid: int) -> Image.Image:
     if opaque_bbox:
         img = img.crop(opaque_bbox)
     return img
+
+
+# Fixed pixel pitch every WMO-group minimap sub-tile is baked at, confirmed
+# across every multi-subtile group seen so far (md_crypt_d, md_warmcave,
+# md_junglecave/md_junglecave07, md_mountaincave_medium_h, mini-hive_e, the
+# md_hive family): every "_<group>_<row>_<col>.blp" file is exactly 256x256,
+# regardless of WMO or group -- the same convention hfwm/constants.py's
+# NATIVE_ZONE_TILE_PX documents for outdoor Type=Zone tiles. A room whose
+# baked art needs more than one tile is simply several of these pasted
+# edge-to-edge, uncropped, before the whole assembled room gets the same
+# single alpha-bbox crop fetch_tile() gives a lone tile.
+WMO_SUBTILE_PX = 256
+
+
+def fetch_stitched_tile(subtile_fdids: dict[tuple[int, int], int]) -> Image.Image:
+    """Fetch and assemble a group's minimap art from more than one raw
+    sub-tile, for a room too large for the single-tile case ``fetch_tile``
+    handles.
+
+    Each sub-tile is keyed by its own ``(row, col)`` position in the
+    group's local tile grid (from the ``..._<group:03d>_<row:02d>_<col:02d>
+    .blp`` filename -- see this module's docstring). Unlike ``fetch_tile``,
+    individual sub-tiles are pasted *uncropped* at their grid position
+    (``col * WMO_SUBTILE_PX, row * WMO_SUBTILE_PX``) — cropping each one
+    first would throw away its position within the room, which is exactly
+    the information the grid encodes. The alpha-bbox crop ``fetch_tile``
+    does is instead applied once, to the fully assembled room, for the
+    same reason it's applied there: real room content is opaque, the
+    padding around it (now spread across however many sub-tiles border
+    the room's edge) is fully transparent.
+    """
+    max_row = max(r for r, _ in subtile_fdids)
+    max_col = max(c for _, c in subtile_fdids)
+    canvas = Image.new(
+        "RGBA",
+        ((max_col + 1) * WMO_SUBTILE_PX, (max_row + 1) * WMO_SUBTILE_PX),
+        (0, 0, 0, 0),
+    )
+    for (row, col), fdid in subtile_fdids.items():
+        data = _download_cached(fdid, WMO_TILE_CACHE_DIR)
+        tmp = WMO_TILE_CACHE_DIR / f"{fdid}.blp"
+        sub = Image.open(tmp).convert("RGBA")
+        canvas.paste(sub, (col * WMO_SUBTILE_PX, row * WMO_SUBTILE_PX))
+    opaque_bbox = canvas.split()[-1].getbbox()
+    if opaque_bbox:
+        canvas = canvas.crop(opaque_bbox)
+    return canvas
+
+
+def fetch_group_tile(tile_fdid: "int | dict[tuple[int, int], int]") -> Image.Image:
+    """Dispatch to ``fetch_tile`` or ``fetch_stitched_tile`` depending on
+    whether *tile_fdid* (a ``MineSpec.tile_fdids`` value, or the
+    ``WmoGroup.tile_fdid`` it ends up on) is a plain FDID or a multi-subtile
+    ``{(row, col): fdid}`` map. Every call site that used to call
+    ``fetch_tile`` directly goes through this instead, so a group can move
+    from single- to multi-subtile without touching the compositing code.
+    """
+    if isinstance(tile_fdid, dict):
+        return fetch_stitched_tile(tile_fdid)
+    return fetch_tile(tile_fdid)
 
 
 def split_floors_by_height(groups: list[WmoGroup]) -> tuple[list[int], list[int]]:
@@ -987,7 +1260,7 @@ def generate_mine_floors(spec: MineSpec, scale: float = MINIMAP_PX_PER_UNIT) -> 
         lower_idx, upper_idx = split_floors_by_height(groups)
         floors = {"upper": upper_idx, "lower": lower_idx}
 
-    tiles = {i: fetch_tile(by_index[i].tile_fdid) for i in tiled_idx}
+    tiles = {i: fetch_group_tile(by_index[i].tile_fdid) for i in tiled_idx}
 
     xs = [by_index[i].bbox[0] for i in tiled_idx] + \
          [by_index[i].bbox[3] for i in tiled_idx]
@@ -1151,7 +1424,7 @@ def generate_mine_pieces(spec: MineSpec, scale: float = MINIMAP_PX_PER_UNIT) -> 
     by_index = {g.index: g for g in groups}
 
     tiled_idx = sorted(i for i in by_index if by_index[i].tile_fdid is not None)
-    tiles = {i: fetch_tile(by_index[i].tile_fdid) for i in tiled_idx}
+    tiles = {i: fetch_group_tile(by_index[i].tile_fdid) for i in tiled_idx}
 
     xs = [by_index[i].bbox[0] for i in tiled_idx] + \
          [by_index[i].bbox[3] for i in tiled_idx]
