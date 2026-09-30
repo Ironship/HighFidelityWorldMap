@@ -468,7 +468,23 @@ local function DrawFillPiece(
     -- cell on both sides of a seam between two adjacent rects, and fade
     -- cells that only looked like a rect's edge but were actually
     -- interior once the full shape was assembled.
-    local piecesDrawn = 0
+    --
+    -- A cell with NO already-filled neighbour (see hasFilledNeighbour
+    -- below) is different from the case this pass exists for: it isn't a
+    -- hole inside a solid patch of this addon's own hi-res tiles, it's a
+    -- standalone explored patch with nothing beside it to seam against.
+    -- Renderer:Activate() leaves Blizzard's own BaseArt detail layer
+    -- visible underneath on purpose, already correctly grayscale/colored
+    -- per real exploration state, for exactly this reason: skip drawing
+    -- here and that layer shows through unchanged, identical to what the
+    -- default map already shows at that spot. Drawing our own tile there
+    -- instead would only add a visible resolution/style seam that isn't
+    -- there on the default map. A cell that DOES have a filled neighbour
+    -- keeps the old hard-fill behaviour, since leaving that one bare would
+    -- instead punch a hole of mismatched BaseArt into the middle of solid
+    -- hi-res ground -- the "checkerboard of one-tile holes" CloseFogGaps'
+    -- own doc comment describes, which is worse than a hard edge.
+    local piecesDrawn, isolatedSkipped = 0, 0
     for row = rowStart, rowEnd do
         for col = colStart, colEnd do
             local idx = row * cols + col
@@ -486,28 +502,45 @@ local function DrawFillPiece(
                     local iy1 = math.min(tileY1, chunkY1)
 
                     if ix1 > ix0 and iy1 > iy0 then
-                        local screenW = (ix1 - ix0) * scaleX
-                        local screenH = (iy1 - iy0) * scaleY
-                        local screenX = ix0 * scaleX
-                        local screenY = iy0 * scaleY
+                        local hasFilledNeighbour =
+                            (row > 0        and filled[idx - cols]) or
+                            (row < rows - 1 and filled[idx + cols]) or
+                            (col > 0        and filled[idx - 1]) or
+                            (col < cols - 1 and filled[idx + 1])
 
-                        local tex = Pool:Acquire()
-                        tex:SetSize(screenW, screenH)
-                        tex:SetPoint("TOPLEFT", Config.overlayFrame, "TOPLEFT",
-                            screenX, -screenY)
-                        tex:SetTexCoord(
-                            (ix0 - tileX0) / tilePxW, (ix1 - tileX0) / tilePxW,
-                            (iy0 - tileY0) / tilePxH, (iy1 - tileY0) / tilePxH)
-                        tex:SetTexture(src)
+                        if hasFilledNeighbour then
+                            local screenW = (ix1 - ix0) * scaleX
+                            local screenH = (iy1 - iy0) * scaleY
+                            local screenX = ix0 * scaleX
+                            local screenY = iy0 * scaleY
 
-                        -- No mask: nothing softer covers this exact cell,
-                        -- so it draws as a plain filled tile instead of
-                        -- leaving the gap DrawExploredPiece couldn't reach.
-                        -- Left at full alpha regardless of where it sits
-                        -- in *this* rect -- see SoftenFogEdges for why.
-                        filled[idx] = true
-                        if pieceTex then pieceTex[idx] = tex end
-                        piecesDrawn = piecesDrawn + 1
+                            local tex = Pool:Acquire()
+                            tex:SetSize(screenW, screenH)
+                            tex:SetPoint("TOPLEFT", Config.overlayFrame, "TOPLEFT",
+                                screenX, -screenY)
+                            tex:SetTexCoord(
+                                (ix0 - tileX0) / tilePxW, (ix1 - tileX0) / tilePxW,
+                                (iy0 - tileY0) / tilePxH, (iy1 - tileY0) / tilePxH)
+                            tex:SetTexture(src)
+
+                            -- No mask: nothing softer covers this exact
+                            -- cell, so it draws as a plain filled tile
+                            -- instead of leaving the gap DrawExploredPiece
+                            -- couldn't reach. Left at full alpha regardless
+                            -- of where it sits in *this* rect -- see
+                            -- SoftenFogEdges for why.
+                            filled[idx] = true
+                            if pieceTex then pieceTex[idx] = tex end
+                            piecesDrawn = piecesDrawn + 1
+                        else
+                            -- Deliberately NOT marked filled: leaving it
+                            -- false is what lets BaseArt keep showing
+                            -- through, and lets a later rect in this same
+                            -- pass (or CloseFogGaps after it) still pick
+                            -- this cell up if something adjacent to it
+                            -- does end up filled first.
+                            isolatedSkipped = isolatedSkipped + 1
+                        end
                     end
                 end
             end
@@ -516,9 +549,10 @@ local function DrawFillPiece(
 
     if trace then
         P(("  fill rect: offset=%d,%d size=%dx%d -> chunk(layerpx)="
-           .. "[%.1f,%.1f]-[%.1f,%.1f]  %d piece(s) drawn (gap-filled)"):format(
+           .. "[%.1f,%.1f]-[%.1f,%.1f]  %d piece(s) drawn (gap-filled)  "
+           .. "%d isolated cell(s) skipped (BaseArt shows through)"):format(
             offsetX, offsetY, rectW, rectH, chunkX0, chunkY0, chunkX1, chunkY1,
-            piecesDrawn))
+            piecesDrawn, isolatedSkipped))
     end
 
     return piecesDrawn
@@ -537,12 +571,29 @@ end
 --- just at its edges, as a checkerboard of one-tile holes rather than a
 --- ragged coastline.
 ---
---- Filling a hole only when most of its own neighbours are already
---- filled keeps this safe: a real unexplored region borders filled
---- ground on at most one or two sides, never three or four, so this can
---- only close pinholes already boxed in by real ground, never propagate
---- outward. A single pass suffices since every hole this catches is
---- already fully surrounded by the time it runs.
+--- Filling a hole only when EVERY one of its neighbours is already
+--- filled keeps this safe. An `n >= 3` threshold (three sides filled)
+--- was tried first, on the assumption that a real unexplored region
+--- borders filled ground on at most one or two sides, never three or
+--- four -- which held for the scattered chunk-boundary pinholes this
+--- pass was built for, but not in general: a winding outdoor path (e.g.
+--- a mountain trail that loops close to itself, or wraps around a spur
+--- of unwalkable rock) can leave a real, never-visited pocket bordered
+--- on three sides by ground the player actually explored walking the
+--- loop, with the fourth side opening onto more unexplored territory.
+--- `n >= 3` force-fills that pocket as if it were explored, hard-edged,
+--- even though neither a live Blizzard reveal texture nor
+--- C_MapExplorationInfo ever said so -- confirmed live in Mulgore, where
+--- this drew a small square with no exploration data behind it at all,
+--- beside the Fargodeep Mine outdoor path. Requiring all four sides
+--- (`n == 4`, a cell fully boxed in on every edge) keeps closing genuine
+--- one-tile chunk-boundary holes -- those really are surrounded on every
+--- side, that's what made them look like pinholes -- while leaving a
+--- three-sided real gap alone; Renderer:Activate() already leaves
+--- Blizzard's own BaseArt layer showing through anything left unfilled,
+--- so an unclosed three-sided gap looks like the default map there
+--- rather than a visible hole. A single pass suffices since every hole
+--- this catches is already fully surrounded by the time it runs.
 ---@param cols number
 ---@param rows number
 ---@param tileSource table
@@ -575,7 +626,7 @@ local function CloseFogGaps(cols, rows, tileSource, filled, pieceTex,
                 if row < rows - 1   and filled[idx + cols] then n = n + 1 end
                 if col > 0          and filled[idx - 1]    then n = n + 1 end
                 if col < cols - 1   and filled[idx + 1]    then n = n + 1 end
-                if n >= 3 then
+                if n >= 4 then
                     toFill[#toFill + 1] = idx
                 end
             end
