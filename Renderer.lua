@@ -730,6 +730,347 @@ local function SoftenFogEdges(cols, rows, filled, pieceTex, trace)
     end
 end
 
+-------------------------------------------------------------------------------
+-- Continent/world Fog of War: reveal by whole zone, clipped to its own
+-- territory
+--
+-- Blizzard's per-pixel exploration reveal above (DrawExploredPiece/
+-- DrawFillPiece, fed from Exploration:EnumerateOverlayTextures and
+-- C_MapExplorationInfo.GetExploredMapTextures) is scoped to individual
+-- zones: asking it for a continent or the top-level world mapID returns
+-- nothing to draw from. That used to mean Fog of War drew zero pieces on
+-- those maps and, with no fallback, looked exactly like Vanilla even
+-- under Hybrid, with this addon's own tiles never appearing at all.
+--
+-- Continent/world Fog of War instead reveals one whole zone at a time,
+-- once that zone reads as fully explored (see IsZoneFullyExplored) --
+-- anything not yet fully explored is left showing Blizzard's own Hybrid
+-- backdrop. A per-pixel version would fragment a half-explored zone into a
+-- scatter of tiny pieces along whatever ragged edge the player happened to
+-- walk -- illegible at this zoom, and specifically not wanted in favour of
+-- whole-zone reveal, which is the only granularity that reads cleanly this
+-- far out.
+--
+-- "Whole zone" does NOT mean the zone's own rectangular map footprint,
+-- though. A zone's own map texture is a simple rectangle, but almost every
+-- zone's rectangle overlaps ground that really belongs to a neighbour --
+-- Elwynn Forest's own map extends into what is really Westfall's and
+-- Duskwood's territory, for context. Revealing that whole rectangle once
+-- Elwynn reads as fully explored draws real Westfall/Duskwood terrain too
+-- -- a solid square with sharp edges, unrelated to Elwynn's actual
+-- (irregular) shape, and wrong.
+--
+-- The first fix attempted here revealed only the zone's own ALREADY-
+-- EXPLORED grid cells (from GetExploredMapTextures) instead of its whole
+-- rectangle, on the theory that ground belonging to a neighbour would
+-- never register as "explored" from within this zone. That turned out
+-- not to hold: exploration reads as explored for a rectangle's ENTIRE
+-- grid once the player has also explored the real neighbouring zones
+-- underneath it, since the client tracks exploration in world space, not
+-- clipped per zone -- so it still came out as the same solid rectangle.
+--
+-- The fix that actually holds up approximates each zone's territory
+-- geometrically instead of leaning on exploration data at all: every
+-- zone's own CENTER point is projected onto the continent/world map once
+-- (cheap -- one point per zone, not a whole grid), and a cell within a
+-- zone's rectangle is only drawn if THIS zone's center is the closest of
+-- every zone's center to that cell -- a Voronoi partition of the
+-- continent by nearest zone. This never traces a zone's true border
+-- pixel-for-pixel, but it does stop a zone's reveal from bleeding deep
+-- into a neighbour's core territory, which a flat rectangle cannot do at
+-- all, and it needs nothing from exploration data beyond the simple
+-- fraction check that gates whether to reveal a zone in the first place.
+-------------------------------------------------------------------------------
+
+-- Enum.UiMapType.Zone, with the same numeric fallback Cave.lua and
+-- Config.lua use elsewhere in this addon for a build that predates the
+-- enum existing as a global.
+local ZONE_MAP_TYPE = (Enum and Enum.UiMapType and Enum.UiMapType.Zone) or 3
+
+--- Sticky per-zone "fully explored" memo. Exploration only ever progresses
+--- forward within a session, so once a zone reads back as fully explored
+--- it can only stay that way -- caching just the `true` result means a
+--- continent/world refresh never re-walks a zone's exploration rects once
+--- it no longer needs to. A fresh, empty table on every /reload or login,
+--- same as everything else in this file: it's a cache of a client-side
+--- read, not saved state.
+local wholeZoneExploredCache = {}
+
+--- Fraction (0..1) of *zoneMapID*'s own tile grid Blizzard's exploration
+--- data marks explored. Same rect -> grid-cell accounting DrawFillPiece
+--- above uses, just counted here instead of drawn. Only used to GATE
+--- whether a zone is ready to reveal at all -- see this section's own doc
+--- comment for why this data can't also be trusted to know the zone's true
+--- shape, which is what NearestZoneMapID below is for instead.
+---@param zoneMapID number
+---@return number
+local function ZoneExploredFraction(zoneMapID)
+    local allLayers = C_Map.GetMapArtLayers(zoneMapID)
+    local layer = allLayers and allLayers[1]
+    if not layer then return 0 end
+
+    local layerW, layerH = layer.layerWidth, layer.layerHeight
+    local tilePxW = layer.tileWidth  or 256
+    local tilePxH = layer.tileHeight or 256
+    if not (layerW and layerH) or layerW <= 0 or layerH <= 0 then return 0 end
+    local cols = math.ceil(layerW / tilePxW)
+    local rows = math.ceil(layerH / tilePxH)
+    local total = cols * rows
+    if total == 0 then return 0 end
+
+    local explored = C_MapExplorationInfo
+        and C_MapExplorationInfo.GetExploredMapTextures(zoneMapID)
+    if not explored or #explored == 0 then return 0 end
+
+    local filled, filledCount = {}, 0
+    for _, rect in ipairs(explored) do
+        local colStart = math.max(0, math.floor(rect.offsetX / tilePxW))
+        local colEnd   = math.min(cols - 1,
+            math.ceil((rect.offsetX + rect.textureWidth) / tilePxW) - 1)
+        local rowStart = math.max(0, math.floor(rect.offsetY / tilePxH))
+        local rowEnd   = math.min(rows - 1,
+            math.ceil((rect.offsetY + rect.textureHeight) / tilePxH) - 1)
+        for row = rowStart, rowEnd do
+            for col = colStart, colEnd do
+                local idx = row * cols + col
+                if not filled[idx] then
+                    filled[idx] = true
+                    filledCount = filledCount + 1
+                end
+            end
+        end
+    end
+    return filledCount / total
+end
+
+--- How much of a zone's grid has to read as explored before continent/
+--- world Fog of War treats the whole zone as ready to reveal. Not 1.0:
+--- almost every zone's rectangular grid includes some cells with no
+--- walkable ground at all (open ocean, unmapped voids) that Blizzard's
+--- own exploration data can never mark, so requiring every last cell
+--- would make most coastal zones impossible to ever reveal.
+local FULLY_EXPLORED_THRESHOLD = 0.97
+
+--- Is *zoneMapID* explored enough that continent/world Fog of War should
+--- reveal its territory (see NearestZoneMapID)? Sticky-cached; see
+--- wholeZoneExploredCache above.
+---@param zoneMapID number
+---@return boolean
+local function IsZoneFullyExplored(zoneMapID)
+    if wholeZoneExploredCache[zoneMapID] then return true end
+    local full = ZoneExploredFraction(zoneMapID) >= FULLY_EXPLORED_THRESHOLD
+    if full then wholeZoneExploredCache[zoneMapID] = true end
+    return full
+end
+
+--- *zoneMapID*'s own rectangle, in *ontoMapID*'s normalized (0..1) map
+--- space -- left, right, top, bottom. World position is the only
+--- coordinate system a zone and its continent/world both share exactly,
+--- so this converts the zone's own corners to world position first
+--- (GetWorldPosFromMapPos) and then reprojects that onto *ontoMapID*
+--- (GetMapPosFromWorldPos) -- the same two-step conversion navigation
+--- addons use for zone<->continent coordinates. Wrapped in pcall: this is
+--- the one place in this pass that leans on an API this addon has not
+--- otherwise exercised, and a failure here should just mean "skip this
+--- zone", never a Lua error breaking the whole refresh.
+---@param zoneMapID number
+---@param ontoMapID number
+---@return number|nil left, number|nil right, number|nil top, number|nil bottom
+local function ZoneRectOnMap(zoneMapID, ontoMapID)
+    local ok, left, right, top, bottom = pcall(function()
+        local continentID, topLeftWorld =
+            C_Map.GetWorldPosFromMapPos(zoneMapID, CreateVector2D(0, 0))
+        local _, botRightWorld =
+            C_Map.GetWorldPosFromMapPos(zoneMapID, CreateVector2D(1, 1))
+        if not (continentID and topLeftWorld and botRightWorld) then
+            return nil
+        end
+
+        local _, topLeftOnto =
+            C_Map.GetMapPosFromWorldPos(continentID, topLeftWorld, ontoMapID)
+        local _, botRightOnto =
+            C_Map.GetMapPosFromWorldPos(continentID, botRightWorld, ontoMapID)
+        if not (topLeftOnto and botRightOnto) then return nil end
+
+        local l, r = topLeftOnto.x, botRightOnto.x
+        local t, b = topLeftOnto.y, botRightOnto.y
+        if r < l then l, r = r, l end
+        if b < t then t, b = b, t end
+        return l, r, t, b
+    end)
+    if not ok or not left then return nil end
+    return left, right, top, bottom
+end
+
+--- Per-map cache of every zone's center under that map -- see
+--- ZoneCentersOnMap. Keyed by mapID (the continent or world map the
+--- centers were projected onto), since the same zone's center reprojects
+--- differently onto its own continent than onto the top-level world map.
+local zoneCentersCache = {}
+
+--- Every zone under *mapID*'s own center, projected onto *mapID*'s
+--- normalized map space and scaled into PIXEL units (normalized coord *
+--- the corresponding layer dimension) so the straight-line distance
+--- comparisons NearestZoneMapID does below aren't skewed by a non-square
+--- map. Cached per mapID: a zone's center doesn't move, and *zones* (from
+--- GetMapChildrenInfo) is the same list every refresh of the same map, so
+--- this only ever pays for the one-point-per-zone reprojection once.
+---@param mapID number
+---@param zones table[]
+---@param layerW number
+---@param layerH number
+---@return table[] centers
+local function ZoneCentersOnMap(mapID, zones, layerW, layerH)
+    local cached = zoneCentersCache[mapID]
+    if cached then return cached end
+
+    local centers = {}
+    for _, zone in ipairs(zones) do
+        local left, right, top, bottom = ZoneRectOnMap(zone.mapID, mapID)
+        if left then
+            centers[#centers + 1] = {
+                mapID = zone.mapID,
+                x = (left + right) / 2 * layerW,
+                y = (top + bottom) / 2 * layerH,
+            }
+        end
+    end
+
+    zoneCentersCache[mapID] = centers
+    return centers
+end
+
+--- Which zone's center (from ZoneCentersOnMap, same pixel units as *x*/
+--- *y* here) is closest, in a straight line, to pixel position (x, y)?
+--- The Voronoi partition this whole section relies on in place of true
+--- polygon boundary data (see this section's own doc comment for why):
+--- whichever zone "wins" a given cell by this test is the only one
+--- allowed to draw over it, even if the cell also falls inside another
+--- zone's own (deliberately oversized) map rectangle.
+---@param x number
+---@param y number
+---@param centers table[]
+---@return number|nil mapID
+local function NearestZoneMapID(x, y, centers)
+    local bestID, bestDistSq
+    for _, c in ipairs(centers) do
+        local dx, dy = x - c.x, y - c.y
+        local distSq = dx * dx + dy * dy
+        if not bestDistSq or distSq < bestDistSq then
+            bestDistSq = distSq
+            bestID = c.mapID
+        end
+    end
+    return bestID
+end
+
+--- Draw every tile within one zone's rectangle (already converted to grid
+--- cells) that (a) has real art and (b) belongs to *zoneMapID* under the
+--- Voronoi partition (NearestZoneMapID) -- i.e. skip any cell whose
+--- nearest zone center is a neighbour's, even though the cell falls
+--- inside this zone's own rectangle. *filled* is shared across every zone
+--- this pass draws, so two zones' territories that touch or overlap at
+--- the edges never double-draw a cell; a cell this zone loses to a
+--- neighbour under the Voronoi test is left unmarked, so that neighbour
+--- can still claim it once it, too, is fully explored.
+---@return number piecesDrawn
+local function DrawZoneTerritory(
+    zoneMapID, colStart, colEnd, rowStart, rowEnd, cols, layerW, layerH,
+    tilePxW, tilePxH, tileSource, scaleX, scaleY, filled, centers)
+    local drawn = 0
+    for row = rowStart, rowEnd do
+        for col = colStart, colEnd do
+            local idx = row * cols + col
+            if not filled[idx] then
+                local src = tileSource[idx + 1]
+                if src then
+                    -- Cell center, in the same pixel units ZoneCentersOnMap
+                    -- computed zone centers in.
+                    local cellX = (col + 0.5) * tilePxW
+                    local cellY = (row + 0.5) * tilePxH
+                    if NearestZoneMapID(cellX, cellY, centers) == zoneMapID then
+                        filled[idx] = true
+                        local artTileW = math.min(tilePxW, layerW - col * tilePxW)
+                        local artTileH = math.min(tilePxH, layerH - row * tilePxH)
+
+                        local tex = Pool:Acquire()
+                        tex:SetSize(artTileW * scaleX, artTileH * scaleY)
+                        tex:SetPoint("TOPLEFT", Config.overlayFrame, "TOPLEFT",
+                            col * tilePxW * scaleX, -(row * tilePxH * scaleY))
+                        tex:SetTexCoord(0, artTileW / tilePxW, 0, artTileH / tilePxH)
+                        tex:SetTexture(src)
+                        drawn = drawn + 1
+                    end
+                end
+            end
+        end
+    end
+    return drawn
+end
+
+--- Continent/world Fog of War's own pass: for every zone anywhere under
+--- *mapID* (Enum.UiMapType.Zone, every descendant -- a continent's own
+--- cities and battlegrounds included, and every zone on both continents
+--- when *mapID* is the top-level world map), reveal its territory (its
+--- own rectangle, clipped to the cells nearest its own center -- see this
+--- section's own doc comment) on *mapID*'s own grid once
+--- IsZoneFullyExplored says it's ready.
+---@param mapID number the continent or world mapID actually on screen
+---@param cols number
+---@param rows number
+---@param layerW number
+---@param layerH number
+---@param tilePxW number
+---@param tilePxH number
+---@param tileSource table
+---@param scaleX number
+---@param scaleY number
+---@param trace boolean|nil
+---@return number piecesDrawn
+local function DrawWholeZoneFog(
+    mapID, cols, rows, layerW, layerH, tilePxW, tilePxH, tileSource,
+    scaleX, scaleY, trace)
+    local zones = C_Map.GetMapChildrenInfo(mapID, ZONE_MAP_TYPE, true)
+    if not zones then return 0 end
+
+    local centers = ZoneCentersOnMap(mapID, zones, layerW, layerH)
+
+    local filled = {}
+    local piecesDrawn, zonesRevealed = 0, 0
+    for _, zone in ipairs(zones) do
+        if IsZoneFullyExplored(zone.mapID) then
+            local left, right, top, bottom = ZoneRectOnMap(zone.mapID, mapID)
+            if left then
+                local colStart = math.max(0,
+                    math.floor(left * layerW / tilePxW))
+                local colEnd   = math.min(cols - 1,
+                    math.ceil(right * layerW / tilePxW) - 1)
+                local rowStart = math.max(0,
+                    math.floor(top * layerH / tilePxH))
+                local rowEnd   = math.min(rows - 1,
+                    math.ceil(bottom * layerH / tilePxH) - 1)
+                if colEnd >= colStart and rowEnd >= rowStart then
+                    local zoneDrawn = DrawZoneTerritory(
+                        zone.mapID, colStart, colEnd, rowStart, rowEnd, cols,
+                        layerW, layerH, tilePxW, tilePxH, tileSource,
+                        scaleX, scaleY, filled, centers)
+                    if zoneDrawn > 0 then zonesRevealed = zonesRevealed + 1 end
+                    piecesDrawn = piecesDrawn + zoneDrawn
+                end
+            elseif trace then
+                P(("  fog(whole-zone): zone %d fully explored but rect "
+                    .. "lookup failed"):format(zone.mapID))
+            end
+        end
+    end
+
+    if trace then
+        P(("  fog(whole-zone): %d zone(s) checked, %d revealed, %d "
+            .. "piece(s) drawn"):format(#zones, zonesRevealed, piecesDrawn))
+    end
+    return piecesDrawn
+end
+
 --- The actual work of a refresh, wrapped and guarded by Renderer:Refresh
 --- below against being re-entered while already running.
 ---@param force boolean|nil
@@ -869,6 +1210,22 @@ local function DoRefresh(force)
     -- has to take effect -- everything below this line already just reads
     -- `background`, same as when there was only ever one setting.
     local background   = Config:GetBackgroundForMap(mapID)
+
+    -- Vanilla: this addon draws nothing of its own over this particular
+    -- map at all, rather than drawing tiles over *some* backdrop like
+    -- every other entry does -- the game's own map, untouched. Bails out
+    -- before any of the FDID/native-zone/tile-source work below, all of
+    -- which only matters to a background that does draw our tiles.
+    -- RestoreDefaults() is the same "nothing of ours here" path already
+    -- used when this map has no bundled art, no FDIDs, or the addon is
+    -- disabled outright -- Blizzard's own art, frame backing and
+    -- exploration pins all come back exactly as the client wants them.
+    if background.vanilla then
+        if trace then P("  BAIL: background=vanilla") end
+        RestoreDefaults()
+        return
+    end
+
     local FDID_MAP     = Config:GetTileMap(background)
     local FDID_MAP_SUB = Config.FDID_MAP_SUB
     local FDID_BASE    = Config.FDID_BASE
@@ -1057,12 +1414,19 @@ local function DoRefresh(force)
 
     -- Fog of War: swap the ordinary unconditional grid for just the tiles
     -- (or slices of tiles) that fall under one of Blizzard's own, live
-    -- exploration reveal textures. `fogActive` is deliberately the gate
-    -- for which loop below runs, not a separate flag next to it, so every
-    -- way this can end up unusable (feature off, or this map having no
-    -- bundled art of ours to selectively show) falls back to the
-    -- ordinary full grid rather than needing its own case.
-    local fogActive = fogOfWar and useBundled
+    -- exploration reveal textures -- or, on a continent/world map, for
+    -- whichever whole zones are already fully explored (see
+    -- DrawWholeZoneFog's own doc comment above for why that map scope
+    -- needs its own, coarser pass instead). `fogActive`/`fogWholeZone` are
+    -- deliberately the gates for which loop below runs, not separate flags
+    -- next to them, so every way this can end up unusable (feature off,
+    -- this map having no bundled art of ours to selectively show, or the
+    -- per-pixel pass having nothing to read on this map type) falls back
+    -- to the ordinary full grid rather than needing its own case.
+    local mapType = Config:ClassifyMapID(mapID)
+    local fogActive = fogOfWar and useBundled and mapType == "zone"
+    local fogWholeZone = fogOfWar and useBundled
+        and (mapType == "continent" or mapType == "world")
     local blizExploredTextures = fogActive
         and Exploration:EnumerateOverlayTextures()
     local fogPiecesDrawn = 0
@@ -1179,6 +1543,10 @@ local function DoRefresh(force)
         -- rectangle into an organic outline. Left in place, unused, in
         -- case a future data source calls for it.
         -- SoftenFogEdges(cols, rows, filled, pieceTex, trace)
+    elseif fogWholeZone then
+        fogPiecesDrawn = DrawWholeZoneFog(
+            mapID, cols, rows, layerW, layerH, tilePxW, tilePxH, tileSource,
+            scaleX, scaleY, trace)
     else
         local tileIdx = 1
         for row = 0, rows - 1 do
@@ -1209,12 +1577,12 @@ local function DoRefresh(force)
     end
 
     -- Fog of War genuinely can mean zero tiles here: a map the player has
-    -- not explored yet, or one with no live reveal textures to read this
-    -- particular refresh. That's not the failure this check is meant to
-    -- catch, since fogActive being true already means this is Fog of
-    -- War's own intentionally-partial grid, not a lookup that came back
-    -- empty by mistake, so there is nothing to fall back from.
-    if Pool:ActiveCount() == 0 and not fogActive then
+    -- not explored yet (fogActive), or a continent/world map with no zone
+    -- fully explored yet (fogWholeZone). That's not the failure this check
+    -- is meant to catch, since either flag being true already means this
+    -- is Fog of War's own intentionally-partial grid, not a lookup that
+    -- came back empty by mistake, so there is nothing to fall back from.
+    if Pool:ActiveCount() == 0 and not fogActive and not fogWholeZone then
         P("No textures for mapID " .. mapID .. ", restoring default map art")
         RestoreDefaults()
     end

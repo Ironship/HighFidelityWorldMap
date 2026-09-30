@@ -154,6 +154,20 @@ end
 --   blizzardArt  -> leave the client's own detail-layer art showing through.
 --   seeThrough   -> hide the map frame's own backing too, so the holes go
 --                   all the way through the UI. See MapFrameBg.lua.
+--   vanilla      -> draw none of this addon's own tiles at all: the game's
+--                   completely untouched map, as if the addon weren't
+--                   running on this particular map. Labelled "Vanilla" in
+--                   Options/chat -- distinct from "Raw" (bg.tiles ==
+--                   "original" below), which still draws this addon's own
+--                   tiles, just from the un-alpha'd dump instead of the
+--                   ordinary one. Renderer.lua checks this before doing
+--                   any of the tile-resolution work the other entries
+--                   need, rather than folding it into ApplyBackground: the
+--                   other entries all still draw our tiles over *something*,
+--                   this one draws nothing of ours at all. Key is
+--                   "vanilla", not "original", so a saved choice of this
+--                   is never caught by BACKGROUND_RENAMES' "original" ->
+--                   "raw" migration below.
 --   (none of the above) -> nothing behind the tiles.
 --
 -- Which tiles to draw:
@@ -168,6 +182,8 @@ end
 --                     folder and generated lookup tables
 --                     (HFWMF_FDID_MAP_ORIGINAL / HFWMF_NATIVE_ZONES_ORIGINAL,
 --                     see FDIDMap.lua), not something this file controls.
+--                     Irrelevant for `vanilla` above, which never reaches
+--                     GetTileMap at all.
 --
 -- Ordered: Options.lua builds its dropdown straight from this list.
 --
@@ -206,6 +222,13 @@ Config.BACKGROUNDS = {
         desc       = "No backdrop at all: the sea is a hole through the "
                   .. "map frame.",
         seeThrough = true,
+    },
+    {
+        key     = "vanilla",
+        label   = "Vanilla",
+        desc    = "The game's own original map for this section, exactly "
+               .. "as if this addon weren't running.",
+        vanilla = true,
     },
 }
 
