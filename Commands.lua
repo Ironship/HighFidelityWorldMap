@@ -202,7 +202,7 @@ function Commands:Handle(msg)
         return
     elseif cmd == "bg" or cmd == "background" then
         local want = args[2] or ""
-        -- Only what this install can actually draw: "original" needs the
+        -- Only what this install can actually draw: "raw" needs the
         -- second, raw tile dump, which a build without --original never wrote.
         local list = Config:AvailableBackgrounds()
         if want == "" then
@@ -230,7 +230,7 @@ function Commands:Handle(msg)
             P(("Unknown background '%s'. Options: %s"):format(
                 want, table.concat(keys, ", ")))
             if not Config:BackgroundAvailable({ tiles = "original" }) then
-                P("  (|cff999999original|r needs the raw tile dump, rebuild "
+                P("  (|cff999999raw|r needs the raw tile dump, rebuild "
                     .. "the art with --original)")
             end
         end

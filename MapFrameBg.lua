@@ -10,7 +10,7 @@
 -- straight through the UI onto the world.
 --
 -- Only Transparent asks for this (Config's `seeThrough` field); Ocean Blue,
--- Hybrid and Original all leave the backing as the client set it.
+-- Hybrid and Raw all leave the backing as the client set it.
 --
 -- Targets are found two ways, not by frame name (names differ between
 -- windowed/maximised and between client builds, and a missing name would

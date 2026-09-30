@@ -28,7 +28,7 @@ local P           = ns.P
 --                UI and onto the world rather than onto a panel. Without
 --                that last layer it differs from Hybrid only in whether
 --                Blizzard's art shows, which is not much of a choice.
---   Original     a separate, opaque tile set; nothing could show through
+--   Raw          a separate, opaque tile set; nothing could show through
 --                it, so again no backdrop
 --
 -- One texture on the overlay frame, at the BACKGROUND draw layer so it sits
@@ -66,7 +66,7 @@ local function ApplyBackground(bg)
         if tex then tex:Hide() end
         BaseArt:SetVisible(true)
     else
-        -- Transparent and Original: nothing of ours behind the tiles, and
+        -- Transparent and Raw: nothing of ours behind the tiles, and
         -- nothing of Blizzard's either.
         if tex then tex:Hide() end
         BaseArt:SetVisible(false)
@@ -857,20 +857,41 @@ local function DoRefresh(force)
     local cols    = math.ceil(layerW / tilePxW)
     local rows    = math.ceil(layerH / tilePxH)
 
-    -- Hoisted above Activate() (which used to compute this itself) because
-    -- the tile-layout section below needs it too, to decide whether to draw
-    -- the ordinary unconditional grid or Fog of War's explored-only subset.
-    local fogOfWar = Config:FogOfWarEnabled()
-
     -- The background decides which tile set to draw, not just what goes
-    -- behind it: Original has its own raw dump under WorldMap/Original/ and
+    -- behind it: Raw has its own dump under WorldMap/Original/ and
     -- therefore its own lookup table. Everything else draws the bundled
     -- transparent art. Resolved before ApplyBackground so both see the same
-    -- entry.
-    local background   = Config:GetBackground()
+    -- entry, and before fogOfWar below, which needs to know it.
+    --
+    -- GetBackgroundForMap, not GetBackground: Zone Map, Continent Map and
+    -- World Map (Config.MAP_TYPES) can each override the Global Background
+    -- for their own kind of map, and this is the one place that override
+    -- has to take effect -- everything below this line already just reads
+    -- `background`, same as when there was only ever one setting.
+    local background   = Config:GetBackgroundForMap(mapID)
     local FDID_MAP     = Config:GetTileMap(background)
     local FDID_MAP_SUB = Config.FDID_MAP_SUB
     local FDID_BASE    = Config.FDID_BASE
+
+    -- Hoisted above Activate() (which used to compute this itself) because
+    -- the tile-layout section below needs it too, to decide whether to draw
+    -- the ordinary unconditional grid or Fog of War's explored-only subset.
+    --
+    -- Config:FogOfWarEnabled() only answers whether the FEATURE is armed at
+    -- all (the toggle is on and the Zone Map background resolves to
+    -- Hybrid) -- it has no idea what map is actually on screen right now.
+    -- Without the `background.key == "hybrid"` check below, turning Fog of
+    -- War on with Zone Map set to Hybrid used to force Blizzard's detail
+    -- layer visible (see Activate()'s BaseArt:SetVisible(true) override)
+    -- on EVERY map for the rest of the session, Continent/World included,
+    -- even when their own background was explicitly set to something else
+    -- like Transparent -- exactly backwards, and the bug reported as
+    -- "still see the original map on continent/world even though those
+    -- are set to Transparent". This map's own resolved `background` is
+    -- what Activate() is about to draw with, so that -- not the Zone Map
+    -- setting elsewhere -- has to be what gates overriding it back to
+    -- Blizzard's art.
+    local fogOfWar = Config:FogOfWarEnabled() and background.key == "hybrid"
 
     local tileSource = {}
     local useBundled = false
@@ -976,13 +997,15 @@ local function DoRefresh(force)
             bg = ApplyBackground(background)
             if fogOfWar then
                 -- Fog of War wants Blizzard's own detail-layer art
-                -- underneath this addon's tiles regardless of which
-                -- background is chosen: that grayscale-until-explored art
-                -- is what shows through wherever the tile-layout section
-                -- below does not draw one of this addon's own tiles over
-                -- it, which on purpose is now wherever the player has not
-                -- actually explored. Overrides ApplyBackground's own
-                -- BaseArt choice above on purpose.
+                -- underneath this addon's tiles on THIS map (fogOfWar is
+                -- already gated on this map's own `background` being
+                -- Hybrid -- see where it's computed above): that
+                -- grayscale-until-explored art is what shows through
+                -- wherever the tile-layout section below does not draw one
+                -- of this addon's own tiles over it, which on purpose is
+                -- now wherever the player has not actually explored.
+                -- Overrides ApplyBackground's own BaseArt choice above on
+                -- purpose.
                 BaseArt:SetVisible(true)
             end
         else

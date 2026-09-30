@@ -437,7 +437,7 @@ HFWMF_FDID_MAP_SUB = {}
 -- the client honours the alpha channel whatever blend
 -- mode a texture is given. Empty unless the build ran
 -- with --original, and Config.lua hides the in-game
--- "Original" background when it is.
+-- "Raw" background when it is.
 -- 74 textures across 8 zones
 HFWMF_FDID_MAP_ORIGINAL = {
     [8025428] = "Original\\Azeroth\\azeroth1",

@@ -81,7 +81,7 @@ local function OnUpdate(self, elapsed)
     -- Re-run BaseArt/MapFrameBg's own concealment (see REASSERT_INTERVAL's
     -- comment above). Both just re-apply the state they already believe is
     -- correct (`.visible`), so this is a cheap no-op once nothing has
-    -- slipped past their hooks: a Hybrid/Ocean Blue/Original session spends
+    -- slipped past their hooks: a Hybrid/Ocean Blue/Raw session spends
     -- this call on SetVisible(true), which only re-Shows what it once hid.
     reassertAccum = reassertAccum + elapsed
     if reassertAccum >= REASSERT_INTERVAL then

@@ -11,6 +11,15 @@ Config.DEFAULTS = {
     alpha         = 1.0,
     mapBackground = "ocean",  -- see Config.BACKGROUNDS below
 
+    -- Per-map-type overrides of mapBackground above (now labelled "Global
+    -- Background" in Options, since these three exist). "global" (the
+    -- default for all three) means "inherit whatever mapBackground says";
+    -- anything else must be one of Config.BACKGROUNDS' own keys. See the
+    -- "Map background" section below for how these resolve at draw time.
+    zoneMapBackground       = "global",
+    continentMapBackground  = "global",
+    worldMapBackground      = "global",
+
     -- Cave map: a window that opens over the world map when the player is
     -- somewhere the map above it has nothing to show (caves, mines, micro
     -- dungeons). On by default; turn it off from Options or /hfwm cave off.
@@ -153,8 +162,22 @@ end
 --                     raw, un-alpha'd dump written under WorldMap/Original/
 --                     when the pipeline runs with --original. Hidden by
 --                     Config:BackgroundAvailable when that art isn't built.
+--                     Labelled "Raw" everywhere a person sees it (Options,
+--                     chat commands); `tiles = "original"` itself is left
+--                     alone since it names the pipeline's own on-disk
+--                     folder and generated lookup tables
+--                     (HFWMF_FDID_MAP_ORIGINAL / HFWMF_NATIVE_ZONES_ORIGINAL,
+--                     see FDIDMap.lua), not something this file controls.
 --
 -- Ordered: Options.lua builds its dropdown straight from this list.
+--
+-- One global choice ("mapBackground", labelled "Global Background" in
+-- Options once the per-map-type overrides below exist) plus three optional
+-- overrides -- zoneMapBackground/continentMapBackground/worldMapBackground
+-- -- that each either name one of these same keys or "global", meaning
+-- "follow mapBackground". See GetEffectiveMapTypeBackground/
+-- GetBackgroundForMap below for how a map's actual background is resolved,
+-- and Options.lua's "Map Background" section for the UI.
 -------------------------------------------------------------------------------
 Config.BACKGROUNDS = {
     {
@@ -172,8 +195,8 @@ Config.BACKGROUNDS = {
         blizzardArt = true,
     },
     {
-        key   = "original",
-        label = "Original",
+        key   = "raw",
+        label = "Raw",
         desc  = "The raw stitch, blocky seams and all.",
         tiles = "original",
     },
@@ -251,6 +274,116 @@ function Config:SetBackground(key)
     return nil
 end
 
+-------------------------------------------------------------------------------
+-- Per-map-type background overrides
+--
+-- Zone Map, Continent Map and World Map (Config.MAP_TYPES) can each draw a
+-- different background from the Global Background above -- e.g. Hybrid on
+-- zones for its Fog of War support, Ocean Blue on the continent/world maps
+-- where nothing needs to show through. Each is stored as either "global"
+-- (the default: follow mapBackground) or one of Config.BACKGROUNDS' keys.
+-------------------------------------------------------------------------------
+
+--- {key, label} for the three map kinds that can each override the Global
+--- Background. Options.lua builds its three indented dropdowns straight
+--- from this list.
+Config.MAP_TYPES = {
+    { key = "zone",      label = "Zone Map" },
+    { key = "continent", label = "Continent Map" },
+    { key = "world",     label = "World Map" },
+}
+
+--- The AceDB field one map type's override lives in.
+---@param mapType string one of Config.MAP_TYPES' keys
+---@return string
+local function MapTypeField(mapType)
+    return mapType .. "MapBackground"
+end
+
+--- Saved override for one map type: "global" (inherit the Global
+--- Background), or one of Config.BACKGROUNDS' keys. Falls back to "global"
+--- on garbage, nil, or a background this install can no longer draw, same
+--- spirit as GetBackground's own fallback.
+---@param mapType string
+---@return string
+function Config:GetMapTypeBackgroundKey(mapType)
+    local want = self.db and self.db[MapTypeField(mapType)]
+    if want == nil or want == "global" then return "global" end
+    for _, bg in ipairs(self:AvailableBackgrounds()) do
+        if bg.key == want then return want end
+    end
+    return "global"
+end
+
+--- Set one map type's override ("global" to inherit, or one of
+--- Config.BACKGROUNDS' keys) and redraw.
+---@param mapType string
+---@param key string
+---@return string|nil the key actually applied, or nil if unrecognised
+function Config:SetMapTypeBackground(mapType, key)
+    if key == "global" then
+        if self.db then self.db[MapTypeField(mapType)] = "global" end
+        ns.Renderer:ForceRefresh()
+        return "global"
+    end
+    for _, bg in ipairs(self:AvailableBackgrounds()) do
+        if bg.key == key then
+            if self.db then self.db[MapTypeField(mapType)] = key end
+            ns.Renderer:ForceRefresh()
+            return key
+        end
+    end
+    return nil
+end
+
+--- The background actually in force for one map type: its own override, or
+--- the Global Background while that override is "global" (the default) or
+--- names a background this install can no longer draw.
+---@param mapType string
+---@return table entry from Config.BACKGROUNDS
+function Config:GetEffectiveMapTypeBackground(mapType)
+    local key = self:GetMapTypeBackgroundKey(mapType)
+    if key ~= "global" then
+        for _, bg in ipairs(self:AvailableBackgrounds()) do
+            if bg.key == key then return bg end
+        end
+    end
+    return self:GetBackground()
+end
+
+-- Enum.UiMapType is Cosmic=0, World=1, Continent=2, Zone=3, Dungeon=4,
+-- Micro=5, Orphan=6 (same convention Cave.lua reads it under). Only these
+-- three get their own override; every other kind (caves, dungeons,
+-- transport/scenario orphans) draws the Global Background, same as before
+-- this setting existed.
+local UI_MAP_TYPE = (Enum and Enum.UiMapType) or {}
+local MAP_TYPE_BY_UI_TYPE = {
+    [UI_MAP_TYPE.World     or 1] = "world",
+    [UI_MAP_TYPE.Continent or 2] = "continent",
+    [UI_MAP_TYPE.Zone      or 3] = "zone",
+}
+
+--- Which of Config.MAP_TYPES *mapID* is, or nil if it's some other kind
+--- that doesn't get its own override.
+---@param mapID number|nil
+---@return string|nil
+function Config:ClassifyMapID(mapID)
+    local info = mapID and C_Map.GetMapInfo(mapID)
+    return info and MAP_TYPE_BY_UI_TYPE[info.mapType] or nil
+end
+
+--- The background Renderer should actually draw *mapID* with: that map's
+--- own type override if it has one and it's set, otherwise the Global
+--- Background. This is the one entry point Renderer.lua calls; everything
+--- above exists to support it and the Options UI.
+---@param mapID number|nil
+---@return table entry from Config.BACKGROUNDS
+function Config:GetBackgroundForMap(mapID)
+    local mapType = self:ClassifyMapID(mapID)
+    if not mapType then return self:GetBackground() end
+    return self:GetEffectiveMapTypeBackground(mapType)
+end
+
 -- FileDataID lookup tables (populated from FDIDMap.lua)
 Config.FDID_MAP          = HFWMF_FDID_MAP          or {}
 Config.FDID_MAP_SUB      = HFWMF_FDID_MAP_SUB      or {}
@@ -296,9 +429,19 @@ end
 --- Whether this addon's tiles draw only over ground the player has
 --- actually explored, with Blizzard's original grayscale art left visible
 --- elsewhere.
+---
+--- Only ever true while the Zone Map background is actually Hybrid --
+--- directly, or by inheriting a Hybrid Global Background -- since the
+--- grayscale-until-explored look this reproduces IS Blizzard's own detail
+--- layer, which only Hybrid leaves showing through underneath. Options.lua
+--- greys the toggle out under the same condition; the saved value itself is
+--- left alone so it picks back up automatically once Zone Map is Hybrid
+--- again, rather than being silently cleared.
 ---@return boolean
 function Config:FogOfWarEnabled()
-    return self.db and self.db.fogOfWarEnabled or false
+    if not (self.db and self.db.fogOfWarEnabled) then return false end
+    local zoneBg = self:GetEffectiveMapTypeBackground("zone")
+    return zoneBg ~= nil and zoneBg.key == "hybrid"
 end
 
 -- Vashj'ir UiMapIDs -- retail-only (Cataclysm). WoW Forever has no
@@ -355,12 +498,39 @@ do
 end
 
 -- Saved background keys that have been renamed. "default" was the
--- original name for what turned out to be simply a transparent map. The
--- raw stitch now lives under its own "original" key, so anyone carrying
--- the old value wants "transparent", not a silent fall back to Ocean Blue.
+-- original name for what turned out to be simply a transparent map.
+-- "original" was Options.lua's old name for the raw stitch, replaced by
+-- "raw" once the per-map-type overrides made "Original" easy to misread as
+-- "the default choice". Applied to every background field on every
+-- profile load (see MigrateBackgroundKeys below), not just the legacy
+-- flat-file upgrade this table used to serve alone, so nobody's saved
+-- choice silently reverts to Ocean Blue just because its key changed under
+-- it.
 local BACKGROUND_RENAMES = {
-    default = "transparent",
+    default   = "transparent",
+    original  = "raw",
 }
+
+-- Every AceDB field a background choice (global or per-map-type) can be
+-- stored under. Kept as one list so a future addition only has to happen
+-- here and in Config.DEFAULTS/Config.MAP_TYPES.
+local BACKGROUND_FIELDS = {
+    "mapBackground", "zoneMapBackground", "continentMapBackground",
+    "worldMapBackground",
+}
+
+--- Apply BACKGROUND_RENAMES to every background field on *profile* (a
+--- db.profile-shaped table, or the old flat SavedVariables table, which
+--- has the same field names at its top level). Idempotent: safe to call on
+--- every profile load, not just once at upgrade time.
+---@param profile table
+local function MigrateBackgroundKeys(profile)
+    if type(profile) ~= "table" then return end
+    for _, field in ipairs(BACKGROUND_FIELDS) do
+        local renamed = BACKGROUND_RENAMES[profile[field]]
+        if renamed then profile[field] = renamed end
+    end
+end
 
 --- Move an old, pre-AceDB flat SavedVariables table (one profile, no
 --- concept of `.profiles`) onto the AceDB profile shape, so upgrading
@@ -371,8 +541,7 @@ local function MigrateFlatSavedVariables(dbObj)
     local raw = HighFidelityWorldMapForeverDB
     if type(raw) ~= "table" or raw.profiles then return end
 
-    local renamed = BACKGROUND_RENAMES[raw.mapBackground]
-    if renamed then raw.mapBackground = renamed end
+    MigrateBackgroundKeys(raw)
 
     for k in pairs(Config.DEFAULTS) do
         if raw[k] ~= nil then
@@ -392,6 +561,7 @@ end
 --- effect immediately.
 function Config:RefreshProfile()
     self.db = self.dbObj.profile
+    MigrateBackgroundKeys(self.db)
     ns.Renderer:ForceRefresh()
     ns.ZoomLevels:Refresh()
     ns.Cave:UpdateState()
@@ -419,4 +589,5 @@ function Config:InitDB()
     self.dbObj.RegisterCallback(self, "OnProfileReset", "RefreshProfile")
 
     self.db = self.dbObj.profile
+    MigrateBackgroundKeys(self.db)
 end
