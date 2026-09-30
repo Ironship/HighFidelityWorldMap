@@ -12,13 +12,19 @@
 --     so it doesn't pan or zoom with the map underneath it (a cave map that
 --     slid off screen when you dragged the zone would be useless), and it
 --     hides and shows with the map for free.
---   * Its own title bar carries the area name, plus a close button, so
---     anything drawn on top of the map can be dismissed without a slash
---     command.
+--   * Built on AceGUI-3.0's own "Frame" dialog widget: the standard Ace3
+--     ornate-border popup every other Ace3 addon's options/dialog windows
+--     use, rather than a bespoke clone of the world map's own chrome. Its
+--     title bar carries the area name, its status bar the floor readout,
+--     and its own close button is hidden in favour of this window's X (see
+--     EnsureWindow), so a close stays a statement about *this* cave the
+--     same way it always has.
 --   * Sized from the cave art's own aspect ratio, clamped to leave the
 --     world map visible around it. A cave stretched to the shape of the
 --     canvas is unreadable.
---   * Draggable, with the position remembered across sessions.
+--   * Pinned, not draggable: its own bottom-left corner is anchored to the
+--     world map's bottom-right (see PositionWindow), so it reads as a panel
+--     attached to the map rather than a free-floating dialog to relocate.
 --   * The art inside the window can also be zoomed and panned in its own
 --     right: mouse wheel over the content area zooms toward the cursor,
 --     left-drag over it pans, independently of the window's own position
@@ -35,54 +41,28 @@ local addonName, ns = ...
 local CaveRenderer = ns.CaveRenderer
 local Config       = ns.Config
 local P            = ns.P
+local AceGUI       = LibStub("AceGUI-3.0")
 
 -------------------------------------------------------------------------------
 -- Geometry
 -------------------------------------------------------------------------------
---- The border's two dimensions, kept separate on purpose.
----
---- ApplyNineSliceBorder builds this window out of copies of WorldMapFrame's
---- own NineSlice pieces. It used to draw each corner at its native size
---- (`src:GetWidth(), src:GetHeight()`), but WorldMapFrame is a ~1000px frame
---- with corner art sized to match, so a native-size copy put a 100px+ slab
---- of trim on a 600px panel. That is how TITLE_H ended up at 112 (unrelated
---- to the title font, just how far the oversized corners reached), and how
---- the background fill ended up inset far enough to read as a second,
---- offset panel behind the header.
----
---- Now the art is drawn at a size this window chooses, not whatever size
---- the map frame wants:
----   BORDER_ART   - the square the corner pieces are drawn in, and the
----                  thickness of the four edges that span between them.
----   BORDER_INSET - window edge -> interior (title bar, content, footer).
---- Both match DIALOG_BACKDROP's own numbers below (edgeSize 32, insets
---- 11/12), so the NineSlice-copy and DIALOG_BACKDROP fallback paths agree
---- on where the interior starts.
-local BORDER_ART   = 32   -- corner square / edge thickness
-local BORDER_INSET = 12   -- window edge -> interior
--- Frame levels above the window the border art is painted at. Has to clear
--- every other child of the window: the title bar (+1), the close button
--- (+2), and the height-window handles (+4 at the deepest).
-local BORDER_LEVEL = 10
-local PAD          = 8    -- text inset inside the interior
---- Fallback height of the title bar, used only when the real map's title
---- strip cannot be measured (see CloneTitleStrip). Four numbers were
---- hand-picked here across as many rounds (112, 26, BORDER_ART, then
---- math.max(BORDER_ART, font + 2*PAD)), each a guess at a quantity the
---- client already knows. The header now takes its height from the strip it
---- cloned, so this is a floor to fall back on, not a layout decision. It
---- still has to clear BORDER_ART, or the content would start underneath the
---- border's own top edge.
-local TITLE_FONT_H = 22   -- GameFontNormal line height + padding above/below
-local TITLE_H      = math.max(BORDER_ART, TITLE_FONT_H + PAD * 2)
---- The measured header height, once known: the bottom of the cloned title
---- strip, floored at TITLE_H. Everything that has to sit below the header
---- (the content frame, the window's own height) reads this rather than the
---- constant, so a client whose title bar is taller or shorter than the
---- fallback still gets a window that fits it.
-local titleH       = TITLE_H
-local CLOSE_BTN    = TITLE_H - 8  -- close button, sized to sit in the bar
-local FOOT_H       = 16   -- floor readout under the content
+--- The square a small standalone frame's corner ornaments are drawn in
+--- (see StyleBox, still used by the reopen icon): below roughly twice this
+--- in either dimension, opposite corners would cross over each other, so
+--- StyleBox skips the ornate border below that floor instead.
+local BORDER_ART   = 32
+--- AceGUI-3.0's "Frame" container widget (see EnsureWindow) reserves a
+--- fixed amount of its own chrome -- title bar, status bar, border --
+--- around the content region it hands back via `.content`. Mirrored here,
+--- from AceGUIContainer-Frame.lua's own OnWidthSet/OnHeightSet, so
+--- LayoutWindow can go the other way: given how big the cave art itself
+--- needs to be, how big to make the whole dialog frame to get exactly that
+--- much content area back.
+local ACE_FRAME_WIDTH_OVERHEAD  = 34
+local ACE_FRAME_HEIGHT_OVERHEAD = 57
+--- How far clear of the world map's own right edge the cave window's
+--- pinned corner sits; see PositionWindow.
+local PIN_GAP = 6
 local SLIDER_COL_W = 30   -- depth slider gutter, only when there are floors
 local SLIDER_W     = 14   -- the track itself
 local NOTCH_W      = 18   -- tick mark width
@@ -163,11 +143,10 @@ local BLIZZARD_CYAN_HEX = FRIENDS_BNET_NAME_COLOR_CODE or "|cff82c5ff"
 -------------------------------------------------------------------------------
 -- Widget handles, all created lazily on first show
 -------------------------------------------------------------------------------
-local window        -- the frame the user sees and drags
-local titleBar      -- header band; its .hfwmStrip is the cloned map title art
-local closeBtn      -- the x, in the top-right corner
-local titleText     -- area name
-local floorText     -- "Level 2 of 4: The Deadmines"
+local aceWindow     -- the AceGUI-3.0 Frame widget itself
+local window        -- aceWindow.frame: the actual frame, pinned in place
+local closeBtn      -- the x, in the top-right corner (Ace's own "Close"
+                    -- button is hidden; see EnsureWindow)
 local content       -- clipping frame the tiles and the pin live in
 local canvasScale   -- child of content: zoomed/panned, holds tiles + pin
 local backdropTex   -- flat dark fill behind the tiles
@@ -385,544 +364,23 @@ local function StyleBoxFallback(frame, r, g, b, a)
     return bg
 end
 
---- Copy one live region's art (atlas or texture, plus its tint) onto
---- another. Used by ApplyNineSliceBorder to rebuild this window's frame out
---- of WorldMapFrame's own border pieces.
+--- Give `frame` the game's own ornate dialog border (DIALOG_BACKDROP), or,
+--- lacking BackdropTemplate entirely, the hand-drawn StyleBoxFallback.
 ---
---- The other consumer is CloneTitleStrip, which copies the map's title bar
---- the same way. A previous note here, based on one /fstack dump, claimed
---- "TitleContainer holds nothing but WorldMapFrameTitleText, no art at all"
---- and concluded the map has no header graphic. That was wrong (the map
---- plainly draws a title band behind "Map & Quest Log") and cost three
---- rounds of invented title bars. Whether the art hangs off TitleContainer
---- or off BorderFrame differs between clients, so CollectTitleStrip now
---- walks both and cares about neither.
+--- Used only by the reopen icon now: the cave window itself gets its
+--- border from AceGUI-3.0's own "Frame" widget instead (see EnsureWindow),
+--- which draws the identical DialogFrame border/background art directly.
 ---
---- useAtlasSize is deliberately *false*. Every caller here sizes the copy
---- itself (the border to BORDER_ART, each title piece to its measured
---- size), so taking the atlas's authored size would be redundant at best.
---- At worst it wins anyway: a copy whose anchoring step fails part-way is
---- left holding an atlas-native size and no points at all, rendering it
---- centred on its parent at whatever size the artist drew it, a stray
---- plaque floating in the middle of the frame rather than a band, and
---- indistinguishable on screen from "the title bar is the wrong size".
-local function CopyRegionArt(src, dst)
-    local atlas = src.GetAtlas and src:GetAtlas()
-    if atlas then
-        dst:SetAtlas(atlas, false)
-    elseif src.GetTexture and src:GetTexture() then
-        dst:SetTexture(src:GetTexture())
-        if src.GetTexCoord then dst:SetTexCoord(src:GetTexCoord()) end
-    else
-        return false
-    end
-    if src.GetVertexColor then dst:SetVertexColor(src:GetVertexColor()) end
-    return true
-end
-
-local function IsTexture(region)
-    return region and region.GetObjectType and region:GetObjectType() == "Texture"
-end
-
---- The eight border pieces this window rebuilds its own frame out of. Named
---- once, up here, because two places need the list: ApplyNineSliceBorder,
---- which clones them, and CollectTitleStrip, which has to *skip* them.
-local NINE_SLICE_PIECES = {
-    "TopLeftCorner", "TopRightCorner", "BottomLeftCorner", "BottomRightCorner",
-    "TopEdge", "BottomEdge", "LeftEdge", "RightEdge",
-}
-
---- Neutralise a texture we decided not to keep. Textures cannot be
---- destroyed, and an abandoned half-built one is not harmless (see
---- CopyRegionArt): art set, anchors never applied, so it renders centred on
---- its parent at native size. Every step is its own pcall, so one refusing
---- doesn't skip the rest.
-local function DiscardTexture(tex)
-    if not tex then return end
-    pcall(tex.ClearAllPoints, tex)
-    pcall(tex.SetTexture, tex, nil)
-    pcall(tex.SetAlpha, tex, 0)
-    pcall(tex.Hide, tex)
-end
-
--------------------------------------------------------------------------------
--- Title bar: cloned off the live map, not composed here
--------------------------------------------------------------------------------
-
---- Three rounds of this file tried to *compose* a title bar out of art
---- chosen here (first the border's own NineSlice.TopEdge, then a hardcoded
---- UI-DialogBox-Gold-Header path, then a hand-drawn fill with a gold
---- hairline), and each was wrong in its own way. All wrong for the same
---- reason: "what art is the map's title bar made of, and where exactly does
---- it sit" is a fact about the running client, not something an addon file
---- can answer by picking assets. Every attempt to answer it from here was a
---- guess dressed up as a fallback chain.
+--- DIALOG_BACKDROP's edgeSize (32px) is art sized for a whole window. On a
+--- frame smaller than roughly twice that in either dimension, opposite
+--- corners cross over each other and there is nothing left for a straight
+--- edge to span -- exactly what the reopen icon's border hit before this
+--- guard existed -- so below that floor this skips straight to
+--- StyleBoxFallback's hairline instead, which has no minimum size and is
+--- still the same BORDER_GOLD used everywhere else here.
 ---
---- So nothing below chooses any art. It measures the real map frame's title
---- strip at runtime and replays it: the same textures, at the same heights,
---- at the same offset below the frame's top, with the same horizontal
---- insets. A centred plaque stays a plaque at the same width; a full-width
---- band gets inset the same amount at each end. The title text is placed by
---- measuring the map's own title FontString the same way, so it sits on the
---- band exactly as far down as it does on the real thing.
-
---- How far below a frame's top edge a texture can start and still belong to
---- that frame's title strip rather than to its body. Generous enough for a
---- title bar with trim above and below it, tight enough to exclude the map's
---- backdrop and canvas.
-local TITLE_STRIP_DEPTH = 64
-
---- Shortest a texture is allowed to be and still count as title *art*
---- rather than an incidental hairline/rule. The map draws a 1-2px divider
---- under its own title text as ordinary chrome, the same category of thing
---- as the NineSlice border pieces this window already rebuilds itself and
---- deliberately excludes (see NINE_SLICE_PIECES/skip below) rather than
---- clones. A divider like that is also what a mis-measured band reads as on
---- screen: a long, thin, otherwise-unexplained bar. A texture this thin has
---- no visible shape of its own to look "wrong" by, only its position and
---- length, which are exactly what CloneTitleStrip is most at risk of
---- getting wrong for a piece with no readable content to sanity-check the
---- math against. Filtering it out here, rather than fixing its placement,
---- means there's nothing left to mis-place.
-local TITLE_STRIP_MIN_HEIGHT = 4
-
---- A region's screen rect, or nil if it has none yet. A frame that has never
---- been laid out answers nil for all four, which is the normal state early in
---- login and is why every caller here treats nil as "ask again later" rather
---- than as "no title bar".
-local function RectOf(o)
-    if not (o and o.GetLeft and o.GetRight and o.GetTop and o.GetBottom) then
-        return nil
-    end
-    local l, r, t, b = o:GetLeft(), o:GetRight(), o:GetTop(), o:GetBottom()
-    if not (l and r and t and b) then return nil end
-    if r <= l or t <= b then return nil end
-    return l, r, t, b
-end
-
---- The map's own title FontString, wherever this client keeps it.
-local function MapTitleFontString()
-    local borderFrame = WorldMapFrame and WorldMapFrame.BorderFrame
-    local container   = borderFrame and borderFrame.TitleContainer
-    for _, host in ipairs({ container, borderFrame }) do
-        if host and host.GetRegions then
-            for _, r in ipairs({ host:GetRegions() }) do
-                if r and r.GetObjectType and r:GetObjectType() == "FontString" then
-                    return r
-                end
-            end
-        end
-    end
-    return (container and container.TitleText) or WorldMapFrameTitleText
-end
-
---- Every texture in the map frame's title strip, measured relative to the
---- frame itself so the numbers can be replayed onto a window of a different
---- size. Returns the pieces plus the reference frame's top edge and horizontal
---- centre.
----
---- nil means one specific thing: the map frame has no rect yet, so the
---- answer is unknown and worth asking for again. An *empty* list is a
---- different, final answer: the frame was measured and has no title art.
---- The two must not be conflated, or a client whose map genuinely has no
---- title band would be re-measured on every single layout forever, waiting
---- for an answer that already arrived.
----
---- The eight NineSlice pieces are excluded by *identity*, not by name or by
---- position: this window already rebuilds those as its own border, so
---- cloning them here too would paint the top trim twice, the "two stacked
---- bars at the top" this dialog shipped with two rounds ago.
-local function CollectTitleStrip()
-    local borderFrame = WorldMapFrame and WorldMapFrame.BorderFrame
-    if not borderFrame then return nil end
-
-    local fl, fr, ft = RectOf(borderFrame)
-    if not fl then return nil end
-
-    local skip      = {}
-    local nineSlice = borderFrame.NineSlice
-    if nineSlice then
-        for _, key in ipairs(NINE_SLICE_PIECES) do
-            if nineSlice[key] then skip[nineSlice[key]] = true end
-        end
-    end
-
-    local frameCX, frameW = (fl + fr) / 2, fr - fl
-    local pieces = {}
-
-    local function consider(region)
-        if not IsTexture(region) or skip[region] then return end
-        if region.IsShown and not region:IsShown() then return end
-        local l, r, t, b = RectOf(region)
-        if not l then return end
-        local topInset, height = ft - t, t - b
-        -- Inside the strip: starts at or below the frame's top, no deeper than
-        -- the strip, and not tall enough to be the map's body art.
-        if topInset < -0.5 or topInset > TITLE_STRIP_DEPTH then return end
-        if height > TITLE_STRIP_DEPTH then return end
-        -- Nor thin enough to be a hairline/rule rather than art; see
-        -- TITLE_STRIP_MIN_HEIGHT.
-        if height < TITLE_STRIP_MIN_HEIGHT then return end
-        local layer, sublevel = "ARTWORK", 0
-        if region.GetDrawLayer then layer, sublevel = region:GetDrawLayer() end
-        pieces[#pieces + 1] = {
-            region     = region,
-            topInset   = topInset,
-            height     = height,
-            leftInset  = l - fl,
-            rightInset = fr - r,
-            width      = r - l,
-            centerDX   = (l + r) / 2 - frameCX,
-            layer      = layer,
-            sublevel   = sublevel or 0,
-        }
-    end
-
-    -- TitleContainer first so its pieces keep their relative order, then the
-    -- border frame itself, since which of the two holds the band differs
-    -- between clients and there is no reason to care which one it was.
-    for _, host in ipairs({ borderFrame.TitleContainer, borderFrame }) do
-        if host and host.GetRegions then
-            for _, region in ipairs({ host:GetRegions() }) do consider(region) end
-        end
-    end
-
-    return pieces, ft, frameCX, frameW
-end
-
---- Reproduce the collected strip on `bar`, which must be anchored flush to the
---- cave window's own top-left and top-right.
----
---- Each piece is replayed as either stretched or fixed-width, decided by what
---- it *is* on the real frame rather than by preference: a piece that reaches
---- both of the frame's edges is a band, and is re-anchored to both of the
---- bar's ends so it spans this window too; anything that stops short of them
---- is a plaque, and keeps its authored width, centred at the same offset from
---- centre it has on the map. Stretching a plaque to full width, or centring a
---- band at its native width, are the two ways this can look wrong.
----
---- Getting that test scale-free took three tries; the two rejected ones are
---- worth recording because both look obviously right:
----   width >= frameW - k   - reads correctly only while the frame is wide. A
----                           400px plaque is clearly not a band on a 1000px
----                           frame; the same test calls it one at 500px.
----   insets <= k           - same failure from the other side. A plaque on a
----                           narrow frame has small absolute margins.
---- Both compare the piece against the *frame*, the wrong reference: whether
---- something is trim or a plaque is a fact about the piece. Trim hugs the
---- edge it belongs to, so its inset is of the same order as its own
---- thickness; a plaque's margins are large multiples of its height.
---- Comparing the inset to the piece's own height is scale-free in the way
---- the other two only appear to be. BORDER_INSET is a floor for the
---- degenerate case of art only a pixel or two tall.
-local function IsBand(p)
-    local slack = math.max(p.height, BORDER_INSET)
-    return p.leftInset <= slack and p.rightInset <= slack
-end
-
---- Replay the strip onto `bar`.
----
---- Returns the bottom of the strip (as a distance below the window's top edge)
---- and the number of pieces cloned. On failure returns nil plus which kind of
---- failure it was: "unmeasurable" is worth retrying, "noart" is final.
-local function CloneTitleStrip(bar)
-    local pieces, frameTop, frameCX = CollectTitleStrip()
-    if not pieces then return nil, "unmeasurable" end
-
-    -- The frame of reference every cloned offset below is measured against:
-    -- the map frame's top edge and horizontal centre. PlaceTitleText needs it
-    -- too, to put the title where the map puts its own -- but only when art
-    -- was actually cloned, for the reason recorded there.
-    bar.hfwmFrameTop, bar.hfwmFrameCX = frameTop, frameCX
-
-    local kept, bottom = {}, 0
-    for _, p in ipairs(pieces) do
-        local copy = bar:CreateTexture(nil, p.layer, nil, p.sublevel)
-        local ok = pcall(function()
-            if not CopyRegionArt(p.region, copy) then error("no art") end
-            copy:ClearAllPoints()
-            if IsBand(p) then
-                copy:SetPoint("TOPLEFT", bar, "TOPLEFT",
-                    p.leftInset, -p.topInset)
-                copy:SetPoint("TOPRIGHT", bar, "TOPRIGHT",
-                    -p.rightInset, -p.topInset)
-                copy:SetHeight(p.height)
-            else
-                copy:SetSize(p.width, p.height)
-                copy:SetPoint("TOP", bar, "TOP", p.centerDX, -p.topInset)
-                -- Remembered so ClampTitleStripPlaques (below) can shrink
-                -- this back down once the cave window's own, much smaller,
-                -- width is known; see that function for why a plaque needs
-                -- this and a band does not.
-                copy.hfwmPlaqueNativeWidth = p.width
-            end
-        end)
-        if ok then
-            kept[#kept + 1] = copy
-            bottom = math.max(bottom, p.topInset + p.height)
-        else
-            DiscardTexture(copy)
-        end
-    end
-
-    if #kept == 0 then return nil, "noart" end
-    bar.hfwmStrip = kept
-    return bottom, #kept
-end
-
---- Place the cave window's title text where the map puts its own: the same
---- distance below the frame's top edge, and the same offset from the frame's
---- horizontal centre.
----
---- `cloned` says whether the art the map aligns that text to actually made it
---- onto the bar, and it decides which of those two placements is faithful.
---- Replaying the map's absolute vertical offset only means anything when the
---- band is there to be aligned to; with no art the header is the fallback
---- height instead, and copying an offset measured against the map's much
---- taller title area drops the text straight through the bottom of it. That is
---- the "title is underneath the header" this window has already shipped once,
---- so this path centres the text in the header it actually has. The font is
---- copied either way; that part is faithful regardless.
----@return number|nil  the text's bottom, as a distance below the window top
-local function PlaceTitleText(text, bar, barHeight, cloned)
-    text:ClearAllPoints()
-    local src = MapTitleFontString()
-    if src and src.GetFontObject and src:GetFontObject() then
-        pcall(text.SetFontObject, text, src:GetFontObject())
-    end
-
-    local l, r, t, b = RectOf(src)
-    if cloned and l and bar.hfwmFrameTop and bar.hfwmFrameCX then
-        local cy = (t + b) / 2
-        text:SetPoint("CENTER", bar, "TOP",
-            (l + r) / 2 - bar.hfwmFrameCX, -(bar.hfwmFrameTop - cy))
-        return (bar.hfwmFrameTop - b)
-    end
-    text:SetPoint("CENTER", bar, "TOP", 0, -(barHeight / 2))
-    return barHeight
-end
-
---- Give the cave window its header: clone the map's title strip onto `bar`,
---- take the header's height from what was cloned, and put the title text where
---- the map puts its own.
----
---- Deliberately safe to call more than once. The map frame has no rect to
---- measure until it has been laid out at least once, and this runs while
---- the cave window is first built, which can be earlier than that, so a
---- failure here is not final and LayoutWindow calls it again until it
---- takes. Retrying is also why the previous clone is cleared first: a
---- second strip layered over the first would double every piece, the same
---- "two bars at the top" this window has already shipped once.
----
---- On failure the header is left unpainted rather than filled in with
---- something invented. An unpainted header is a visible, reversible state that
---- the retry fixes; a hand-drawn stand-in is neither, and drawing one is how
---- three rounds of guessed art got into this file in the first place.
-local function ApplyTitleStrip(bar)
-    if not bar then return false end
-
-    if bar.hfwmStrip then
-        for _, tex in ipairs(bar.hfwmStrip) do DiscardTexture(tex) end
-        bar.hfwmStrip = nil
-    end
-
-    local bottom, countOrWhy = CloneTitleStrip(bar)
-    if bottom then
-        local textBottom = PlaceTitleText(titleText, bar, bottom, true)
-            or bottom
-        -- The header clears whichever reaches further down, art or text, and
-        -- can never be thinner than the border's own top edge, otherwise the
-        -- content below would begin underneath the trim.
-        titleH = math.max(BORDER_ART,
-            math.ceil(math.max(bottom, textBottom)) + 1)
-        bar.hfwmCloned  = true
-        bar.hfwmSettled = true
-        Config.caveTitleBannerSource = ("cloned %d piece%s off the map's "
-            .. "title strip; header %dpx"):format(
-                countOrWhy, countOrWhy == 1 and "" or "s", titleH)
-    else
-        titleH = TITLE_H
-        bar.hfwmCloned = false
-        PlaceTitleText(titleText, bar, titleH, false)
-        -- "noart" is an answer, not a delay: this client's map has no title
-        -- band, so there will never be one to clone and retrying every layout
-        -- would be a permanent no-op. "unmeasurable" means the map frame has
-        -- not been laid out yet, which the next layout may well fix.
-        bar.hfwmSettled = (countOrWhy == "noart")
-        Config.caveTitleBannerSource = bar.hfwmSettled
-            and "the map has no title art to clone; plain header"
-            or  "pending: map frame not measurable yet"
-    end
-
-    bar:SetHeight(titleH)
-    return bar.hfwmSettled
-end
-
---- Re-apply a header height that ApplyTitleStrip has just changed to the two
---- things sized against it. Separate from ApplyTitleStrip because that runs
---- once during EnsureWindow, before either of these exists, and again later
---- from LayoutWindow, when both do.
-local function ApplyTitleHeight()
-    if content and window then
-        content:ClearAllPoints()
-        content:SetPoint("TOPLEFT", window, "TOPLEFT", BORDER_INSET, -titleH)
-    end
-    if closeBtn then
-        -- Never taller than the band it sits in, so it cannot straddle the
-        -- header the way the template's native 32px did.
-        local size = math.max(12, math.min(CLOSE_BTN, titleH - 6))
-        closeBtn:SetSize(size, size)
-    end
-end
-
---- Shrink any cloned "plaque" piece (see IsBand) back down to fit this
---- window, once this window's own width is actually known.
----
---- A band scales for free: it is anchored to `bar`'s own TOPLEFT/TOPRIGHT,
---- so whatever width `bar` ends up at, the band matches it. A plaque is not
---- anchored that way: CloneTitleStrip gives it a literal SetSize(p.width,
---- p.height), copied from WorldMapFrame, a frame this window is deliberately
---- a fraction the size of (MAP_FRACTION_W/H, clamped by MIN_CONTENT/
---- MAX_CONTENT), and that size is never revisited. A plaque modest enough
---- to sit quietly on the full map can easily be wider than this window's
---- entire header, and CloneTitleStrip runs once, during EnsureWindow,
---- *before* LayoutWindow has set this window's real size at all (see the
---- comment on StyleBox about the window having no size yet at that point),
---- so there was never a moment where the plaque's width could have been
---- checked against anything meaningful. Left alone, that piece renders at
---- full native width and sticks out past both edges of the header: the
---- unexplained long bar an /fstack click on the title bar landed on.
----
---- This does not re-decide what counts as a band vs. a plaque (see the
---- three-tries comment above IsBand; that heuristic is proven, fragile
---- ground). It only ever shrinks a plaque that no longer fits, and leaves
---- one that already fits untouched.
-local function ClampTitleStripPlaques(bar, maxWidth)
-    if not (bar and bar.hfwmStrip and maxWidth and maxWidth > 0) then return end
-    for _, tex in ipairs(bar.hfwmStrip) do
-        local native = tex.hfwmPlaqueNativeWidth
-        if native and native > maxWidth then
-            tex:SetWidth(maxWidth)
-        end
-    end
-end
-
---- Builds `frame`'s entire box border out of the same eight live
---- WorldMapFrame.BorderFrame.NineSlice pieces the real map frames itself
---- with (the four corners placed at their real corners, the four edges
---- stretched to span between them) instead of the tinted DIALOG_BACKDROP
---- guess. CopyRegionArt keeps each piece's own native
---- vertex colour (no BORDER_GOLD tint applied here at all), so this is
---- built from the identical asset family as the title bar and the two
---- meet at exactly the same trim, seamlessly, rather than two different
---- border styles butted up against each other. All-or-nothing: if any of
---- the eight pieces isn't live/real, this bails out so StyleBox can fall
---- back to the legacy backdrop instead of drawing half a border.
-local function ApplyNineSliceBorder(frame, r, g, b, a)
-    local wmf = WorldMapFrame
-    local nineSlice = wmf and wmf.BorderFrame and wmf.BorderFrame.NineSlice
-    if not nineSlice then return false end
-
-    for _, key in ipairs(NINE_SLICE_PIECES) do
-        if not IsTexture(nineSlice[key]) then return false end
-    end
-
-    local ok = pcall(function()
-        -- The eight pieces go on their own child frame, held well above
-        -- every other child (title bar, content, slider), rather than on
-        -- `frame` itself. A border is the one thing in a panel that should
-        -- always win at the edges: with the art on `frame`, the content
-        -- frame (a sibling at the same frame level, created later) drew
-        -- over it, which is what made the cave art read as overlapping its
-        -- own frame instead of sitting inside it. Now the trim is painted
-        -- last, so the interior can butt right up against it and the worst
-        -- case is the border clipping a pixel of art rather than the art
-        -- swallowing the border.
-        local art = CreateFrame("Frame", nil, frame)
-        art:SetAllPoints(frame)
-        art:SetFrameLevel(frame:GetFrameLevel() + BORDER_LEVEL)
-        -- Purely decorative: must never eat a click meant for the window
-        -- underneath it (dragging the window, the close button, the slider).
-        art:EnableMouse(false)
-        frame.hfwmBorderArt = art
-
-        -- BORDER_ART, not src:GetWidth()/GetHeight(). The source pieces are
-        -- authored for WorldMapFrame's own size; copying them at native size
-        -- is what made this window's trim absurdly thick and pushed the
-        -- interior around (see the BORDER_ART comment up top).
-        local function corner(key, point)
-            local src = nineSlice[key]
-            local copy = art:CreateTexture(nil, "OVERLAY")
-            if not CopyRegionArt(src, copy) then error("no " .. key .. " art") end
-            local topSkew = (point == "TOPLEFT" or point == "TOPRIGHT") and TITLE_H or BORDER_ART
-            copy:SetSize(BORDER_ART, topSkew)
-            copy:SetPoint(point, art, point, 0, 0)
-            return copy
-        end
-
-        local tl = corner("TopLeftCorner", "TOPLEFT")
-        local tr = corner("TopRightCorner", "TOPRIGHT")
-        local bl = corner("BottomLeftCorner", "BOTTOMLEFT")
-        local br = corner("BottomRightCorner", "BOTTOMRIGHT")
-
-        local function edge(key, fromA, aPoint, fromB, bPoint)
-            local src = nineSlice[key]
-            local mid = art:CreateTexture(nil, "OVERLAY")
-            if not CopyRegionArt(src, mid) then error("no " .. key .. " art") end
-            mid:SetPoint("TOPLEFT", fromA, aPoint, 0, 0)
-            mid:SetPoint("BOTTOMRIGHT", fromB, bPoint, 0, 0)
-            return mid
-        end
-
-        edge("TopEdge", tl, "TOPRIGHT", tr, "BOTTOMLEFT")
-        edge("BottomEdge", bl, "TOPRIGHT", br, "BOTTOMLEFT")
-        edge("LeftEdge", tl, "BOTTOMLEFT", bl, "TOPRIGHT")
-        edge("RightEdge", tr, "BOTTOMLEFT", br, "TOPRIGHT")
-
-        -- Plain fill behind all of it, in this call's colour (StyleBox's
-        -- r/g/b/a) rather than any fixed shade, since the border art itself
-        -- now carries no tint.
-        --
-        -- SetAllPoints, *not* inset to the corners' inner edges the way this
-        -- used to be. Anchoring it tl:BOTTOMRIGHT -> br:TOPLEFT made the fill
-        -- a rectangle held one whole corner's width in from every side, and
-        -- with the corners at their native (map-frame-sized) dimensions that
-        -- rectangle was inset far enough to be plainly visible as its own
-        -- shape: a dark panel, narrower than the window and offset from the
-        -- content below it, showing through the gap between the header and
-        -- the top of the cave art. That is the "second overlapping top
-        -- section". It was never a second frame; it was this one texture
-        -- mis-anchored. A background has no business being inset at all: it
-        -- covers the frame, and the border art draws on top of its margin.
-        local fill = frame:CreateTexture(nil, "BACKGROUND")
-        fill:SetColorTexture(r or 0.05, g or 0.05, b or 0.05, a or 0.9)
-        fill:SetAllPoints(frame)
-    end)
-    return ok
-end
-
---- Give `frame` the game's own border, preferring the live NineSlice-copy
---- technique above (real border, real colour, guaranteed to match the
---- title bar) and only falling back to the legacy tinted DIALOG_BACKDROP
---- table, or, lacking BackdropTemplate entirely, the hand-drawn
---- StyleBoxFallback, when this client build doesn't actually expose
---- WorldMapFrame.BorderFrame.NineSlice.
----
---- Both the ornate paths (NineSlice corners and DIALOG_BACKDROP's edgeSize)
---- are art sized for a whole window: BORDER_ART (32px) per corner at
---- minimum. On a frame smaller than roughly twice that in either
---- dimension, opposite corners cross over each other and there is nothing
---- left for a straight edge to span (this is exactly what the reopen
---- icon's border hit before this guard existed). Below that floor, this
---- skips straight to StyleBoxFallback's hairline, which has no minimum
---- size and is still the same BORDER_GOLD used everywhere else here, so a
---- small widget gets a thinner but genuinely matching border instead of a
---- clipped, overlapping one.
----
---- The window itself is sized after StyleBox runs (see EnsureWindow), so it
---- has no width/height yet here; treat "no size yet" as "plenty of room",
---- which preserves this function's original behaviour for that caller
---- exactly.
+--- A frame with no width/height yet (not yet laid out) is treated as
+--- "plenty of room" rather than failing the size check.
 local function StyleBox(frame, r, g, b, a)
     local w, h = frame:GetWidth(), frame:GetHeight()
     local sizeKnown = w and w > 0 and h and h > 0
@@ -930,10 +388,6 @@ local function StyleBox(frame, r, g, b, a)
         or (w >= BORDER_ART * 2 and h >= BORDER_ART * 2)
 
     if roomForOrnateBorder then
-        if ApplyNineSliceBorder(frame, r, g, b, a) then
-            return frame
-        end
-
         if not frame.SetBackdrop and BackdropTemplateMixin then
             Mixin(frame, BackdropTemplateMixin)
         end
@@ -1705,48 +1159,6 @@ local function SyncFloorPicker(floors, currentMapID)
 end
 
 -------------------------------------------------------------------------------
--- Window construction
--------------------------------------------------------------------------------
-
---- Remember where the user put the window.
----
---- StartMoving re-anchors the frame to the screen rather than to its parent,
---- so the anchor this reads back is usually UIParent-relative even though the
---- default one is map-relative. Which of the two it was has to be recorded
---- or the offsets get reapplied against the wrong frame and the window
---- teleports on the next login.
-local function SavePosition()
-    if not (Config.db and window) then return end
-    local point, relTo, relPoint, x, y = window:GetPoint()
-    if not point then return end
-    Config.db.caveWindowPoint = {
-        point    = point,
-        relPoint = relPoint,
-        x        = x,
-        y        = y,
-        toMap    = (relTo == nil or relTo == WorldMapFrame),
-    }
-end
-
-local function RestorePosition()
-    window:ClearAllPoints()
-    local saved = Config.db and Config.db.caveWindowPoint
-    if saved and saved.point then
-        local anchor = saved.toMap and WorldMapFrame or UIParent
-        local ok = pcall(window.SetPoint, window, saved.point, anchor,
-            saved.relPoint or saved.point, saved.x or 0, saved.y or 0)
-        if ok then return end
-        -- A saved anchor can be invalid if the client changed the map frame
-        -- out from under it; fall through to the default rather than leave
-        -- an unanchored frame.
-        window:ClearAllPoints()
-    end
-    -- Top right of the map, clear of the zone dropdown and the map's own
-    -- title bar.
-    window:SetPoint("TOPRIGHT", WorldMapFrame, "TOPRIGHT", -24, -72)
-end
-
--------------------------------------------------------------------------------
 -- Reopen icon
 --
 -- The window's own close button (see EnsureWindow) hides the cave map for
@@ -1992,87 +1404,59 @@ local function ContentPanUpdate()
     ApplyCanvasTransform()
 end
 
+--- Pin the cave window's own bottom-left corner to the world map's own
+--- bottom-right, so it reads as a panel attached to the map rather than a
+--- free-floating dialog the user has to relocate before it's out of the
+--- way. `window` is parented to WorldMapFrame (see ShowCave), so this
+--- anchor tracks the map for free the instant the map itself moves or
+--- resizes; it only has to be (re)applied here because SetWidth/SetHeight
+--- above don't disturb an existing anchor, but a fresh AceGUI Frame starts
+--- centred on UIParent (see ApplyStatus in AceGUIContainer-Frame.lua) and
+--- every LayoutWindow call is cheap insurance against that ever showing.
+local function PositionWindow()
+    if not window then return end
+    window:ClearAllPoints()
+    window:SetPoint("BOTTOMLEFT", WorldMapFrame, "BOTTOMRIGHT", PIN_GAP, 0)
+end
+
 local function EnsureWindow()
     if window then return end
 
-    window = CreateFrame("Frame", "HFWMForeverCaveWindow", WorldMapFrame)
+    -- The standard Ace3 dialog: the same "Frame" container widget every
+    -- other Ace3 addon's options/popup windows are built from, carrying its
+    -- own DialogFrame border/background art, title bar and status bar
+    -- (repurposed below for the area name and the floor readout) for free,
+    -- rather than a bespoke clone of the world map's own chrome.
+    aceWindow = AceGUI:Create("Frame")
+    window    = aceWindow.frame
     window:SetClampedToScreen(true)
-    window:EnableMouse(true)
     window:EnableMouseWheel(true)
-    window:SetMovable(true)
-    window:RegisterForDrag("LeftButton")
-    window:SetScript("OnDragStart", window.StartMoving)
-    window:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        SavePosition()
-    end)
+
+    -- Pinned, not draggable or resizable (see PositionWindow): the built-in
+    -- resize handles and the built-in title-bar drag are both switched off.
+    aceWindow:EnableResize(false)
+    window:SetMovable(false)
+    window:SetResizable(false)
     window:Hide()
-    StyleBox(window, 0.06, 0.05, 0.03, 0.95)
 
-    -- Above the border art rather than above the window. ApplyNineSliceBorder
-    -- paints the trim on its own child frame at +BORDER_LEVEL so the border
-    -- always wins at the edges (that is what stopped the cave art overlapping
-    -- its frame), but the window's *text* has to beat the trim in turn, or
-    -- it gets painted over by the very band it is meant to label. Both the
-    -- title and the floor readout live on this one chrome frame above it: the
-    -- readout sits inside the bottom border band exactly as the title sits
-    -- inside the top one, so both need the same treatment.
-    local chrome = CreateFrame("Frame", nil, window)
-    chrome:SetAllPoints(window)
-    chrome:SetFrameLevel(window:GetFrameLevel() + BORDER_LEVEL + 1)
-    -- Text only; must not swallow a drag of the window or a slider click.
-    chrome:EnableMouse(false)
-
-    -- Flush to the window's own top-left and top-right corners, with no inset
-    -- at all. That is what makes the cloned strip's measurements mean the same
-    -- thing here as they do on the map: CollectTitleStrip records each piece's
-    -- offset from the *frame's* top and edges, so the bar it is replayed onto
-    -- has to start at this frame's top and edges too. Insetting the bar by
-    -- BORDER_ART (to dodge the corner ornaments) or by BORDER_INSET would
-    -- silently shift every cloned piece by that much.
-    local bar = CreateFrame("Frame", nil, chrome)
-    bar:SetFrameLevel(chrome:GetFrameLevel())
-    bar:SetPoint("TOPLEFT", window, "TOPLEFT", 0, 0)
-    bar:SetPoint("TOPRIGHT", window, "TOPRIGHT", 0, 0)
-    -- Hard backstop for CloneTitleStrip below: whatever a cloned piece's own
-    -- insets/width work out to, nothing it draws is allowed to render
-    -- outside this bar's own rect. IsBand's leftInset/rightInset math (and
-    -- ClampTitleStripPlaques' width clamp) are both best-efforts at getting
-    -- a cloned piece's *placement* right; this is the unconditional fallback
-    -- for when one of them is wrong anyway, e.g. a piece whose measured
-    -- inset comes out sharply negative still passes IsBand's `<= slack`
-    -- check (a negative number is always <= a positive one), so it gets
-    -- anchored hundreds of pixels to the left of bar's own edge instead of
-    -- inside it. That is the long horizontal bar that showed up bleeding out
-    -- across the world map to the left of the cave window in practice.
-    -- Clipping here does not fix the mis-measurement, but it does guarantee
-    -- the symptom (art escaping this window's own header) can't happen,
-    -- the same way `content` below already clips the cave art itself.
-    if bar.SetClipsChildren then bar:SetClipsChildren(true) end
-    titleBar = bar
-
-    -- The header's art and its height both come from the live map here. What
-    -- the clone found is recorded because it is the one thing about this window
-    -- that cannot be worked out by reading the code, and it is what /hfwm cave
-    -- titledump prints in full when the header still looks wrong.
-    titleText = bar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    titleText:SetJustifyH("CENTER")
-    titleText:SetWordWrap(false)
-    ApplyTitleStrip(bar)
+    -- The library's own bottom-right "Close" text button duplicates the X
+    -- this window has always had in its own top-right corner, and unlike
+    -- that X it has no way to tell this addon a close is a statement about
+    -- *this* cave rather than about the window in general (see the OnClick
+    -- handler below, and CaveRenderer:HideCave's own callers). Rather than
+    -- give that meaning to a second control, the library's own is hidden.
+    for _, child in ipairs({ window:GetChildren() }) do
+        if child.GetObjectType and child:GetObjectType() == "Button"
+                and child.GetText and child:GetText() == CLOSE then
+            child:Hide()
+            child:EnableMouse(false)
+        end
+    end
 
     local close = CreateFrameTry("Button", nil, window, "UIPanelCloseButton")
-    close:SetFrameLevel(bar:GetFrameLevel() + 1)
-    -- UIPanelCloseButton's template size is 32px square, which can be taller
-    -- than the header band; left at its native size it would stick out above
-    -- and below it. ApplyTitleHeight sizes it against the measured band; this
-    -- is only the value it starts at.
-    close:SetSize(CLOSE_BTN, CLOSE_BTN)
-    -- In the corner, which is where a close button belongs and where this one
-    -- was before being inset past BORDER_ART to keep it clear of the corner
-    -- ornament. The inset is half BORDER_INSET: enough to tuck it inside the
-    -- frame's outer trim while still reading as cornered.
-    local closeInset = BORDER_INSET / 2
-    close:SetPoint("TOPRIGHT", window, "TOPRIGHT", -closeInset, -closeInset)
+    close:SetFrameLevel(window:GetFrameLevel() + 10)
+    close:SetSize(20, 20)
+    close:SetPoint("TOPRIGHT", window, "TOPRIGHT", -5, -6)
     closeBtn = close
     if not close:GetNormalTexture() then
         -- No close-button template on this client: draw an x of our own
@@ -2093,24 +1477,12 @@ local function EnsureWindow()
         ns.Cave:UpdateState()
     end)
 
-    -- Content: clips its children, so a tile grid that does not divide evenly
-    -- into the computed size cannot bleed over the window's border.
-    --
-    -- BORDER_INSET, not PAD. PAD (8) was smaller than the border art's own
-    -- thickness, so the cave art's left/bottom perimeter ran *underneath* the
-    -- trim and the map read as slightly overlapping its own frame. Inset to
-    -- the same interior rect as the title bar, the art's edge lands flush
-    -- against the border's inner edge instead. Directly under the bar with no
-    -- PAD/2 gap, so there is no strip of bare fill between header and art for
-    -- anything to show through.
-    -- titleH alone, with no BORDER_INSET added: the title bar starts at the
-    -- window's own top edge, not BORDER_INSET below it, so the bottom of the
-    -- header band is titleH from the top and the art begins right there. It is
-    -- the *measured* header height, not the TITLE_H fallback, so the art still
-    -- meets the header exactly on a client whose title bar is a different
-    -- height from the one this addon guessed at.
-    content = CreateFrame("Frame", nil, window)
-    content:SetPoint("TOPLEFT", window, "TOPLEFT", BORDER_INSET, -titleH)
+    -- Content: the clipping/zoom-pan area, parented to the Ace3 frame's own
+    -- content region (aceWindow.content), which already excludes the
+    -- title bar, status bar and border around it. Same role `content` has
+    -- always had here; only its parent chain changed.
+    content = CreateFrame("Frame", nil, aceWindow.content)
+    content:SetPoint("TOPLEFT", aceWindow.content, "TOPLEFT", 0, 0)
     if content.SetClipsChildren then content:SetClipsChildren(true) end
 
     backdropTex = content:CreateTexture(nil, "BACKGROUND")
@@ -2124,11 +1496,10 @@ local function EnsureWindow()
     canvasScale:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
 
     -- Mouse wheel over the art zooms toward the cursor; left-drag over it
-    -- pans. Both are handled here, on `content`, rather than on `window`
-    -- (which still owns its own drag-to-move via the title bar and border):
-    -- content sits on top of the art and under the title bar, so a press
-    -- inside it never reaches window's own drag handler, and a press
-    -- outside it (the header, the border) is untouched by either of these.
+    -- pans. Both are handled here, on `content`, rather than on `window`:
+    -- content sits on top of the art, so a press inside it never reaches
+    -- anything else, and a press outside it (the header, the border) is
+    -- untouched by either of these.
     content:EnableMouse(true)
     content:EnableMouseWheel(true)
     content:SetScript("OnMouseWheel", function(_, dir)
@@ -2147,24 +1518,16 @@ local function EnsureWindow()
     playerPin:SetSize(PIN_SIZE, PIN_SIZE)
     playerPin:Hide()
 
-    -- On `chrome`, not `window`: see the chrome comment above. On window it
-    -- sat below the border art frame and the bottom trim drew over it.
-    floorText = chrome:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    -- Inside the bottom border, not on it: at PAD/4 the readout was hanging
-    -- off the window's bottom edge, below the frame entirely.
-    floorText:SetPoint("BOTTOMLEFT", window, "BOTTOMLEFT",
-        BORDER_INSET + PAD, BORDER_INSET)
-    floorText:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT",
-        -(BORDER_INSET + PAD), BORDER_INSET)
-    floorText:SetJustifyH("LEFT")
-    floorText:SetWordWrap(false)
+    PositionWindow()
 
     -- Kept for /hfwm debug and for the test harness, which asserts on what is
-    -- actually on the window rather than on what it recomputes.
+    -- actually on the window rather than on what it recomputes. titletext/
+    -- statustext are AceGUI's own FontStrings (see aceWindow:SetTitle/
+    -- SetStatusText in ShowCave below), not ones this file builds itself.
     Config.caveOverlayFrame  = window
     Config.caveContentFrame  = content
-    Config.caveTitleText     = titleText
-    Config.caveFloorText     = floorText
+    Config.caveTitleText     = aceWindow.titletext
+    Config.caveFloorText     = aceWindow.statustext
     Config.cavePlayerPin     = playerPin
 end
 
@@ -2252,20 +1615,6 @@ local function LayoutWindow(floorMapID)
     -- right border by that gap.
     local gutter    = hasSlider and (SLIDER_COL_W + 2) or 0
 
-    -- Before anything is sized against titleH. EnsureWindow may have run
-    -- while WorldMapFrame still had no rect to measure (during login, or
-    -- before the map has ever been opened), in which case the header is
-    -- unpainted and titleH is still the fallback. This is the retry, and it
-    -- has to come first: it is what settles titleH, which the window's own
-    -- height is computed from two statements below.
-    if titleBar and not titleBar.hfwmSettled then
-        if ApplyTitleStrip(titleBar) then ApplyTitleHeight() end
-    end
-
-    -- Derived from the same BORDER_INSET the title bar, content and footer
-    -- are anchored with, so the window is exactly as big as its contents
-    -- need. This used to mix PAD and PAD/2 terms that matched none of the
-    -- anchors, which is what let the interior drift out past the border.
     contentW, contentH = w, h
     content:SetSize(w, h)
     -- canvasScale tracks content's own size exactly, so RenderTiles and
@@ -2284,17 +1633,16 @@ local function LayoutWindow(floorMapID)
         -- meant something under the old layout.
         zoomAnchorX, zoomAnchorY = nil, nil
     end
-    -- Height: the header band (titleH, measured off the map's own title strip),
-    -- the art, the footer readout, then the bottom border inset. Only *one*
-    -- BORDER_INSET: the top one is subsumed by the header band, since the bar
-    -- is flush to the frame's top edge rather than inset below it.
-    window:SetSize(w + BORDER_INSET * 2 + gutter,
-        h + titleH + FOOT_H + BORDER_INSET)
-    -- Now that the window (and therefore titleBar, flush to its top edges)
-    -- has a real width, shrink any cloned title-strip plaque that no longer
-    -- fits it; see ClampTitleStripPlaques for why one can be wider than
-    -- this window even after a "successful" clone.
-    ClampTitleStripPlaques(titleBar, w + BORDER_INSET * 2 + gutter)
+
+    -- The Ace3 dialog frame reserves a fixed amount of its own chrome
+    -- (title bar, status bar, border; see ACE_FRAME_WIDTH_OVERHEAD/
+    -- HEIGHT_OVERHEAD) around the content region it hands back, so the
+    -- frame is sized from the content this window actually needs -- the
+    -- art itself plus the depth-slider gutter beside it -- rather than the
+    -- other way around.
+    aceWindow:SetWidth(w + gutter + ACE_FRAME_WIDTH_OVERHEAD)
+    aceWindow:SetHeight(h + ACE_FRAME_HEIGHT_OVERHEAD)
+    PositionWindow()
 
     if hasSlider then
         EnsureSlider()
@@ -2712,7 +2060,7 @@ function CaveRenderer:ShowCave(floorMapID)
     end
     window:SetFrameStrata(WorldMapFrame:GetFrameStrata())
     window:SetFrameLevel(WorldMapFrame:GetFrameLevel() + 800)
-    if not window:GetPoint() then RestorePosition() end
+    PositionWindow()
 
     -- Normally Cave:UpdateState has already built this, but ShowCave is also
     -- reachable from Relayout and from the slash commands, so it does not
@@ -2762,17 +2110,17 @@ function CaveRenderer:ShowCave(floorMapID)
     else
         drew = self:RenderTiles(floorMapID)
     end
-    titleText:SetText(ns.Cave:GetAreaTitle(floorMapID))
+    aceWindow:SetTitle(ns.Cave:GetAreaTitle(floorMapID))
 
     if n > 1 then
         local idx = FloorIndex(floorMapID) or 1
         local name = floors[idx] and floors[idx].name
-        floorText:SetText(("Level %d of %d%s"):format(
+        aceWindow:SetStatusText(("Level %d of %d%s"):format(
             idx, n, name and ("  |cff777777" .. name .. "|r") or ""))
     elseif drew then
-        floorText:SetText("|cff777777Single level|r")
+        aceWindow:SetStatusText("|cff777777Single level|r")
     else
-        floorText:SetText("|cffff7777No map art for this area|r")
+        aceWindow:SetStatusText("|cffff7777No map art for this area|r")
     end
 
     SyncSlider(floors, floorMapID, continuousActive or piecesActive)
@@ -2896,103 +2244,6 @@ function CaveRenderer:DebugHeightWindow()
     local top, bottom = Config:CaveHeightWindow()
     local windowBottomZ, windowTopZ = HeightWindowElevationBounds()
     return { top = top, bottom = bottom, zMin = windowBottomZ, zMax = windowTopZ }
-end
-
---- The header's *measured* geometry, for /hfwm debug.
----
---- This exists because three rounds of header fixes were diagnosed by reading
---- pixels off a screenshot, and the readings kept pointing at the wrong cause:
---- a band that is the wrong height, a band that draws nothing and lets the
---- border show through, and one stray unanchored texture centred on the frame
---- all look about the same at screenshot resolution. The rects below settle
---- which it is in one line each. Anything derived (does the banner actually
---- cover the bar, is the title inside the band) is reported as the comparison,
---- not left to the reader to do by eye.
----
---- Returns nil when the window has never been built, since every number here
---- would otherwise be a guess about a frame that does not exist.
-function CaveRenderer:HeaderReport()
-    if not window or not titleBar then return nil end
-
-    local function rect(f)
-        if not f or not f.GetLeft or not f:GetLeft() then return nil end
-        return {
-            left = f:GetLeft(), right = f:GetRight(),
-            top = f:GetTop(), bottom = f:GetBottom(),
-            w = f:GetWidth(), h = f:GetHeight(),
-        }
-    end
-
-    local strip = {}
-    for _, tex in ipairs(titleBar.hfwmStrip or {}) do
-        strip[#strip + 1] = {
-            art  = (tex.GetAtlas and tex:GetAtlas())
-                or (tex.GetTexture and tex:GetTexture()) or "?",
-            rect = rect(tex),
-        }
-    end
-
-    return {
-        source    = Config.caveTitleBannerSource,
-        cloned    = titleBar.hfwmCloned and true or false,
-        -- False after a layout means the map frame still could not be
-        -- measured, so the header is unpainted and a retry is still pending.
-        settled   = titleBar.hfwmSettled and true or false,
-        titleH    = titleH,
-        fallbackH = TITLE_H,
-        borderArt = BORDER_ART,
-        window    = rect(window),
-        bar       = rect(titleBar),
-        strip     = strip,
-        title     = rect(titleText),
-        close     = rect(closeBtn),
-        content   = rect(content),
-    }
-end
-
---- What the live map's title strip actually is: every texture CollectTitleStrip
---- would clone, with its asset name and its measured offsets, plus the map's
---- own title FontString.
----
---- This is the tool that should have existed three rounds ago. Every wrong
---- header in this file's history came from *deciding* what the map's title bar
---- is made of instead of asking, and a screenshot cannot answer that question:
---- an atlas name and a set of offsets can.
-function CaveRenderer:TitleStripReport()
-    local pieces, frameTop, frameCX, frameW = CollectTitleStrip()
-    local out = {
-        frameTop = frameTop, frameCX = frameCX, frameW = frameW,
-        pieces   = {},
-    }
-    for _, p in ipairs(pieces or {}) do
-        out.pieces[#out.pieces + 1] = {
-            art      = (p.region.GetAtlas and p.region:GetAtlas())
-                or (p.region.GetTexture and p.region:GetTexture())
-                or "colour fill",
-            topInset = p.topInset, height = p.height,
-            leftInset = p.leftInset, rightInset = p.rightInset,
-            width = p.width, centerDX = p.centerDX,
-            layer = p.layer, sublevel = p.sublevel,
-            -- How CloneTitleStrip will treat it, reported rather than
-            -- re-derived by the reader: this single decision is the difference
-            -- between a stretched band and a centred plaque.
-            asBand = IsBand(p),
-        }
-    end
-
-    local src = MapTitleFontString()
-    local l, r, t, b = RectOf(src)
-    if l then
-        out.title = {
-            font      = src.GetFontObject and src:GetFontObject()
-                and src:GetFontObject():GetName() or nil,
-            text      = src.GetText and src:GetText() or nil,
-            topInset  = frameTop and (frameTop - t) or nil,
-            height    = t - b,
-            centerDX  = frameCX and ((l + r) / 2 - frameCX) or nil,
-        }
-    end
-    return out
 end
 
 function CaveRenderer:IsShown()

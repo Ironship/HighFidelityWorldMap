@@ -39,48 +39,10 @@ function Commands:Handle(msg)
                 .. "(|cff999999/hfwm cave show|r brings it back).")
             return
         elseif sub == "reset" then
-            -- The window remembers where it was dragged to, which is exactly
-            -- the setting that can put it somewhere unreachable.
-            db.caveWindowPoint = nil
             ns.CaveRenderer:HideCave()
             ns.Cave:Unsuppress()
             ns.Cave:UpdateState()
-            P("Cave map position reset.")
-            return
-        elseif sub == "titledump" then
-            -- The cave window's title bar is a clone of the world map's own
-            -- (CaveRenderer's CollectTitleStrip). When it looks wrong, this
-            -- prints exactly what it's made of and where it sits.
-            local r = ns.CaveRenderer:TitleStripReport()
-            if not r or not r.frameTop then
-                P("Cannot measure the map frame. Open the world map first.")
-                return
-            end
-            P(("Map title strip: frame %dpx wide, %d piece%s"):format(
-                r.frameW, #r.pieces, #r.pieces == 1 and "" or "s"))
-            for i, p in ipairs(r.pieces) do
-                P(("  %d. |cffffd100%s|r %s %.0fx%.0f  top+%.0f  "
-                    .. "insets %.0f/%.0f  dx %.0f  %s:%d"):format(
-                    i, tostring(p.art), p.asBand and "[band]" or "[plaque]",
-                    p.width, p.height, p.topInset,
-                    p.leftInset, p.rightInset, p.centerDX,
-                    p.layer, p.sublevel))
-            end
-            if #r.pieces == 0 then
-                P("  |cffff4444none|r: nothing to clone, so the cave "
-                    .. "header will be left unpainted.")
-            end
-            if r.title then
-                P(("Map title text: %s  font %s  top+%.0f  h %.0f  dx %.0f")
-                    :format(tostring(r.title.text), tostring(r.title.font),
-                        r.title.topInset or 0, r.title.height,
-                        r.title.centerDX or 0))
-            end
-            local h = ns.CaveRenderer:HeaderReport()
-            if h then
-                P(("Cave header: %s (%dpx, fallback %dpx)"):format(
-                    tostring(h.source), h.titleH, h.fallbackH))
-            end
+            P("Cave map reset.")
             return
         elseif sub == "alpha" then
             local val = tonumber(args[3])
@@ -437,7 +399,7 @@ function Commands:Handle(msg)
         print("  /hfwm fog [on|off]  - fog of war over unexplored ground "
             .. "(off by default)")
         print("  /hfwm cave [on|off] - toggle the cave map (opt-in)")
-        print("                        show/hide, reset (position), alpha N,")
+        print("                        show/hide, reset, alpha N,")
         print("                        autoopen [on|off], remember [on|off]")
         print("  /hfwm baseart       - Blizzard's detail layer, and whether "
             .. "the search finds it")
@@ -589,50 +551,18 @@ function Commands:Debug()
         end
     end
 
-    -- Cave window header geometry. A screenshot can't distinguish a band of
-    -- the wrong height from one drawing nothing, or from a stray unanchored
-    -- texture, so the numbers below answer the two questions that matter
-    -- directly: does the banner cover the bar, and is the title inside it.
-    local hdr = ns.CaveRenderer:HeaderReport()
-    if hdr then
-        print(("  cave header: source=%s  art=%s%s"):format(
-            tostring(hdr.source), tostring(hdr.bannerArt),
-            hdr.unverified and "  <-- UNVERIFIED" or ""))
-        local function say(label, r)
-            if not r then
-                print(("    %-8s (no rect, never anchored or not shown)")
-                    :format(label))
-                return
-            end
-            print(("    %-8s %.1f x %.1f   top=%.1f left=%.1f right=%.1f")
-                :format(label, r.w, r.h, r.top, r.left, r.right))
-        end
-        say("window", hdr.window)
-        say("bar", hdr.bar)
-        say("banner", hdr.banner)
-        say("title", hdr.title)
-        say("close", hdr.close)
-        say("content", hdr.content)
-        if hdr.bar and hdr.banner then
-            local dw = math.abs(hdr.banner.w - hdr.bar.w)
-            local dh = math.abs(hdr.banner.h - hdr.bar.h)
-            print(("    banner covers bar: %s (dw=%.1f dh=%.1f)"):format(
-                (dw <= 0.5 and dh <= 0.5) and "YES" or "NO", dw, dh))
-        end
-        if hdr.bar and hdr.title then
-            -- Inside means the text's own box sits within the band vertically.
-            -- Horizontal overflow is handled by JustifyH/WordWrap, so only the
-            -- vertical containment is a layout fault.
-            local inside = hdr.title.top <= hdr.bar.top + 0.5
-                and hdr.title.bottom >= hdr.bar.bottom - 0.5
-            print(("    title inside band: %s (title %.1f..%.1f, band %.1f..%.1f)")
-                :format(inside and "YES" or "NO",
-                    hdr.title.bottom, hdr.title.top,
-                    hdr.bar.bottom, hdr.bar.top))
-        end
-        print(("    TITLE_H=%d  BORDER_ART=%d"):format(hdr.titleH, hdr.borderArt))
+    -- Cave window: built on AceGUI-3.0's own "Frame" dialog widget now (see
+    -- CaveRenderer's EnsureWindow), so there is no hand-cloned header
+    -- geometry left to diagnose here; just report whether it exists and
+    -- where it sits.
+    if Config.caveOverlayFrame then
+        local w = Config.caveOverlayFrame
+        local point, _, relPoint, px, py = w:GetPoint()
+        print(("  cave window: %.0f x %.0f  shown=%s  anchor=%s/%s (%.0f, %.0f)")
+            :format(w:GetWidth(), w:GetHeight(), tostring(w:IsShown()),
+                tostring(point), tostring(relPoint), px or 0, py or 0))
     else
-        print("  cave header: window not built yet (open a cave first)")
+        print("  cave window: not built yet (open a cave first)")
     end
 
     if bestMapID and bestMapID ~= minimapMapID then

@@ -25,6 +25,7 @@ local Cave          = ns.Cave
 local CaveRenderer  = ns.CaveRenderer
 local MapMemory     = ns.MapMemory
 local ZoomLevels    = ns.ZoomLevels
+local ResetView     = ns.ResetView
 local P             = ns.P
 
 --- Fires once, right after SavedVariables load. Same timing ADDON_LOADED
@@ -82,6 +83,7 @@ function addon:OnEnable()
     Cave:Start()
     MapMemory:Start()
     ZoomLevels:Start()
+    ResetView:Start()
 
     Commands:Register()
     -- After Commands, so a Lua error while probing the client's options
