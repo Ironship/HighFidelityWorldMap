@@ -25,6 +25,17 @@
 -- the remembered mapID (undoing the client's own reset-to-current-zone),
 -- then instantly pans/zooms to the remembered position.
 --
+-- Also restored around: the map's own quest-list side-panel toggle
+-- (WorldMapFrame.SidePanelToggle's Open/CloseButton), which resizes the
+-- canvas -- and therefore re-centers/re-zooms it -- without ever closing
+-- the map, so the ToggleWorldMap/ToggleQuestLog hooks never see it.
+-- PersistentWorldMap's restoreAndReset.lua hits this exact same case and
+-- fixes it by wrapping those two buttons' OnClick directly (save, call
+-- through, restore, all synchronously); this module does the same thing
+-- rather than reinventing it, since the client's own follow-up layout code
+-- runs later in that same click handler and would otherwise clobber a
+-- restore attempted any earlier (e.g. from an OnSizeChanged hook).
+--
 -- Not reproduced: PersistentWorldMap's auto-centering, double-click,
 -- recenter button and its taint-prevention module (taintPrevent.lua), which
 -- exists because PersistentWorldMap permanently taints WorldMapFrame.mapID
@@ -144,6 +155,32 @@ local function OnToggle()
     RestoreState()
 end
 
+--- Wrap target for the map's own side-panel toggle buttons (the quest-list
+--- arrow docked to the map's edge, WorldMapFrame.SidePanelToggle.OpenButton/
+--- CloseButton). Opening or closing that panel resizes the map's canvas the
+--- same way showing/hiding the whole frame does, and the client's own
+--- canvas layout code reacts to that resize by re-centering and re-zooming
+--- the map -- the same reset this module already guards against on open,
+--- just triggered by a resize instead of a hide/show, and one
+--- ToggleWorldMap/ToggleQuestLog never sees since the map never closes.
+---
+--- Save, call through to Blizzard's own click handler, then restore --
+--- all synchronously, matching PersistentWorldMap's own fix for this exact
+--- button. The restore has to happen *after* the call-through, not from a
+--- hook on whatever triggers the resize itself (e.g. OnSizeChanged): the
+--- client's own re-centering runs as later code in that same click
+--- handler, so anything that restores earlier just gets overwritten by it
+--- before the handler even returns.
+local function WrapSidePanelToggleButton(btn)
+    if not btn then return end
+    local original = btn:GetScript("OnClick")
+    btn:SetScript("OnClick", function(self, ...)
+        SaveState()
+        if original then original(self, ...) end
+        RestoreState()
+    end)
+end
+
 --- Discard the remembered position without touching the enabled setting.
 --- Used when the feature is switched off from Options or `/hfwm remember
 --- off`, so flipping it back on later doesn't reapply a stale spot.
@@ -169,6 +206,15 @@ function MapMemory:Start()
 
     hooksecurefunc("ToggleWorldMap", OnToggle)
     hooksecurefunc("ToggleQuestLog", OnToggle)
+
+    -- Guard against the quest-list side-panel toggle resetting the view;
+    -- some client builds don't have this side panel at all, hence the nil
+    -- checks all the way down.
+    local sidePanelToggle = WorldMapFrame.SidePanelToggle
+    if sidePanelToggle then
+        WrapSidePanelToggleButton(sidePanelToggle.OpenButton)
+        WrapSidePanelToggleButton(sidePanelToggle.CloseButton)
+    end
 
     -- Retry a restore that combat lockdown blocked.
     local combatFrame = CreateFrame("Frame")
