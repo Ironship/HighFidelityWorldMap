@@ -53,13 +53,32 @@ local AceGUI       = LibStub("AceGUI-3.0")
 local BORDER_ART   = 32
 --- AceGUI-3.0's "Frame" container widget (see EnsureWindow) reserves a
 --- fixed amount of its own chrome -- title bar, status bar, border --
---- around the content region it hands back via `.content`. Mirrored here,
---- from AceGUIContainer-Frame.lua's own OnWidthSet/OnHeightSet, so
---- LayoutWindow can go the other way: given how big the cave art itself
---- needs to be, how big to make the whole dialog frame to get exactly that
---- much content area back.
+--- around the content region it hands back via `.content`. Mirrored here
+--- from AceGUIContainer-Frame.lua's own Constructor, so LayoutWindow can go
+--- the other way: given how big the cave art itself needs to be, how big
+--- to make the whole dialog frame to get exactly that much content area
+--- back. These are the anchor offsets on `.content` itself (TOPLEFT 17,-27
+--- / BOTTOMRIGHT -17,40: 17+17 wide, 27+40 tall), not the OnWidthSet/
+--- OnHeightSet functions next to them in that file -- `.content` is
+--- anchored on *both* opposing edges on each axis, so those two functions'
+--- own SetWidth/SetHeight calls are no-ops (a frame with two points fully
+--- determining a dimension ignores explicit sizing on that axis) and their
+--- "34"/"57" are stale relative to the anchors that actually govern it.
+--- Getting the height wrong here previously undersized the whole dialog by
+--- 10px, so the cave art's own `content` (sized outright to the height
+--- this computes) overflowed 10px past the bottom of the real content
+--- area and covered the status bar's "Level X of Y" text.
+---
+--- The bottom inset is no longer a single fixed number, though: LayoutWindow
+--- re-anchors `.content`'s own BOTTOMRIGHT point every call (overriding the
+--- library's fixed 40 there) to whichever of the two below actually applies,
+--- so the window shrinks by the difference when the status pane has nothing
+--- to show (see ShowCave's "All floors" case) instead of leaving a dead gap
+--- where it would have been.
 local ACE_FRAME_WIDTH_OVERHEAD  = 34
-local ACE_FRAME_HEIGHT_OVERHEAD = 57
+local ACE_FRAME_TOP_INSET       = 27  -- library's own `.content` TOPLEFT y
+local ACE_FRAME_BOTTOM_INSET_STATUS    = 40  -- library's own inset: room for the status pane
+local ACE_FRAME_BOTTOM_INSET_NO_STATUS = 20  -- tighter: no pane to leave room for
 --- How far clear of the world map's own right edge the cave window's
 --- pinned corner sits; see PositionWindow.
 local PIN_GAP = 6
@@ -154,6 +173,10 @@ local playerPin
 local sliderCol     -- gutter frame, hidden on single-floor caves
 local sliderTrack   -- the notched track (a Slider, for real drag behaviour)
 local notches       -- { {tick=Texture, hit=Button}, ... }
+local statusbg      -- aceWindow.statustext's own parent frame (the pane
+                    -- behind it); hidden along with the text itself when
+                    -- "All" floors is selected (see ShowCave) since there's
+                    -- no single current level left to report.
 
 -- Zoom/pan runtime state (see the "Zoom & pan" section below, just above
 -- EnsureWindow). `zoomScale` and `panX`/`panY` describe canvasScale's
@@ -439,6 +462,16 @@ end
 
 local function FloorCount()
     return Config.caveAllFloors and #Config.caveAllFloors or 0
+end
+
+--- Whether the status bar has anything worth showing: "All" (see
+--- InitFloorPickerMenu) layers every floor together, so there's no single
+--- current level left to report once it's selected. Shared by LayoutWindow
+--- (which shrinks the window's own bottom inset to match) and ShowCave
+--- (which hides the status pane itself) so the two can never disagree
+--- about which state the window is in.
+local function StatusBarNeeded()
+    return not (FloorCount() > 1 and Config.caveFloorFilterAll)
 end
 
 --- Step the active floor by `delta` indices, clamped. Index 1 is the topmost
@@ -1529,6 +1562,10 @@ local function EnsureWindow()
     Config.caveTitleText     = aceWindow.titletext
     Config.caveFloorText     = aceWindow.statustext
     Config.cavePlayerPin     = playerPin
+
+    -- The status bar's own background pane, so it (and not just its text)
+    -- can be hidden outright when "All" floors is selected; see ShowCave.
+    statusbg = aceWindow.statustext:GetParent()
 end
 
 -------------------------------------------------------------------------------
@@ -1636,12 +1673,24 @@ local function LayoutWindow(floorMapID)
 
     -- The Ace3 dialog frame reserves a fixed amount of its own chrome
     -- (title bar, status bar, border; see ACE_FRAME_WIDTH_OVERHEAD/
-    -- HEIGHT_OVERHEAD) around the content region it hands back, so the
-    -- frame is sized from the content this window actually needs -- the
-    -- art itself plus the depth-slider gutter beside it -- rather than the
-    -- other way around.
+    -- ACE_FRAME_TOP_INSET/BOTTOM_INSET) around the content region it hands
+    -- back, so the frame is sized from the content this window actually
+    -- needs -- the art itself plus the depth-slider gutter beside it --
+    -- rather than the other way around.
+    --
+    -- The bottom inset shrinks when the status pane has nothing to show
+    -- (see StatusBarNeeded/ShowCave): `.content`'s own BOTTOMRIGHT point is
+    -- re-anchored here to match, overriding the library's fixed one, so the
+    -- window's own height (and the empty gap that pane would otherwise
+    -- leave behind) shrinks and grows right along with it.
+    local bottomInset = StatusBarNeeded() and ACE_FRAME_BOTTOM_INSET_STATUS
+        or ACE_FRAME_BOTTOM_INSET_NO_STATUS
+    aceWindow.content:ClearAllPoints()
+    aceWindow.content:SetPoint("TOPLEFT", window, "TOPLEFT", 17, -ACE_FRAME_TOP_INSET)
+    aceWindow.content:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -17, bottomInset)
+
     aceWindow:SetWidth(w + gutter + ACE_FRAME_WIDTH_OVERHEAD)
-    aceWindow:SetHeight(h + ACE_FRAME_HEIGHT_OVERHEAD)
+    aceWindow:SetHeight(h + ACE_FRAME_TOP_INSET + bottomInset)
     PositionWindow()
 
     if hasSlider then
@@ -2112,15 +2161,26 @@ function CaveRenderer:ShowCave(floorMapID)
     end
     aceWindow:SetTitle(ns.Cave:GetAreaTitle(floorMapID))
 
-    if n > 1 then
+    if n > 1 and not StatusBarNeeded() then
+        -- "All" layers every floor together (see InitFloorPickerMenu): with
+        -- no single current level to report, the status bar has nothing
+        -- useful to say, so it's hidden outright rather than left showing
+        -- stale or misleading text. LayoutWindow (above) has already
+        -- shrunk the window's own bottom inset to match.
+        aceWindow:SetStatusText("")
+        if statusbg then statusbg:Hide() end
+    elseif n > 1 then
         local idx = FloorIndex(floorMapID) or 1
         local name = floors[idx] and floors[idx].name
         aceWindow:SetStatusText(("Level %d of %d%s"):format(
             idx, n, name and ("  |cff777777" .. name .. "|r") or ""))
+        if statusbg then statusbg:Show() end
     elseif drew then
         aceWindow:SetStatusText("|cff777777Single level|r")
+        if statusbg then statusbg:Show() end
     else
         aceWindow:SetStatusText("|cffff7777No map art for this area|r")
+        if statusbg then statusbg:Show() end
     end
 
     SyncSlider(floors, floorMapID, continuousActive or piecesActive)
