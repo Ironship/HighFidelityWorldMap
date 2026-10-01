@@ -6,12 +6,12 @@
 -- OpenButton) when that exists, purely for a size that matches the rest of
 -- the map's chrome -- its own "?" artwork is deliberately left alone rather
 -- than copied, so this stays a plain Blizzard button template showing our
--- own "sd"/"hd" text, nothing more. (See Commands.lua's `/hfwm icon` for
+-- own "SD"/"HD" text, nothing more. (See Commands.lua's `/hfwm icon` for
 -- pulling the real texture/atlas info for that button's own artwork, if
 -- it's ever needed.)
 --
--- Label reads "sd" while the overlay is on -- click to drop back to
--- Blizzard's own stock map -- and "hd" once it's off, so clicking again
+-- Label reads "SD" while the overlay is on -- click to drop back to
+-- Blizzard's own stock map -- and "HD" once it's off, so clicking again
 -- brings the high-fidelity overlay back. This is purely visual
 -- (Config.visuallySuppressed, force-refreshed through directly) and
 -- deliberately does NOT touch Config.db.enabled, the real `/hfwm` on/off
@@ -48,7 +48,7 @@ end
 local function UpdateLabel()
     if not button then return end
     local overlayOn = Config.db and Config.db.enabled and not Config.visuallySuppressed
-    local text = overlayOn and "sd" or "hd"
+    local text = overlayOn and "SD" or "HD"
     if button.SetText then
         button:SetText(text)
     elseif button.Text then
