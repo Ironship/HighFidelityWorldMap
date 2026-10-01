@@ -97,14 +97,12 @@ local function CreateButton()
     button:SetFrameStrata(WorldMapFrame:GetFrameStrata())
     button:SetFrameLevel(WorldMapFrame:GetFrameLevel() + 10)
 
-    -- Docked to the map frame's own top-right corner (what was actually
-    -- asked for) rather than to any one button inside it -- Blizzard's own
-    -- close/maximize buttons already claim the very corner, and exactly
-    -- which other buttons (if any) share it varies by client build, so this
-    -- just offsets down and in far enough to clear that cluster. The extra
-    -- `-height` drops the button its own height further down again, so its
-    -- top edge picks up right where that first offset's bottom edge was.
-    button:SetPoint("TOPRIGHT", WorldMapFrame, "TOPRIGHT", -8, -32 - height)
+    -- Anchor to the actual map pane rather than the full WorldMapFrame, so
+    -- opening the quest side panel does not drag the button out over that
+    -- extra width. Fall back to WorldMapFrame on clients that lack the
+    -- ScrollContainer field for some reason.
+    local mapPane = WorldMapFrame.ScrollContainer or WorldMapFrame
+    button:SetPoint("TOPRIGHT", mapPane, "TOPRIGHT", -2, 0)
 
     if not button.SetText then
         -- No button template resolved (CreateFrameTry's own plain-frame
