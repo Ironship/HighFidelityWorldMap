@@ -22,9 +22,10 @@
 --   * Sized from the cave art's own aspect ratio, clamped to leave the
 --     world map visible around it. A cave stretched to the shape of the
 --     canvas is unreadable.
---   * Pinned, not draggable: its own bottom-left corner is anchored to the
---     world map's bottom-right (see PositionWindow), so it reads as a panel
---     attached to the map rather than a free-floating dialog to relocate.
+--   * Pinned by default, but draggable: its own bottom-left corner is
+--     anchored to the world map's bottom-right (see PositionWindow), but the
+--     window can still be moved anywhere on screen to suit the player's
+--     preference.
 --   * The art inside the window can also be zoomed and panned in its own
 --     right: mouse wheel over the content area zooms toward the cursor,
 --     left-drag over it pans, independently of the window's own position
@@ -41,6 +42,8 @@ local addonName, ns = ...
 local CaveRenderer = ns.CaveRenderer
 local Config       = ns.Config
 local P            = ns.P
+local ResetView    = ns.ResetView
+local IsShiftKeyDown = _G.IsShiftKeyDown
 local AceGUI       = LibStub("AceGUI-3.0")
 
 -------------------------------------------------------------------------------
@@ -1469,12 +1472,13 @@ local function EnsureWindow()
     window    = aceWindow.frame
     window:SetClampedToScreen(true)
     window:EnableMouseWheel(true)
-
-    -- Pinned, not draggable or resizable (see PositionWindow): the built-in
-    -- resize handles and the built-in title-bar drag are both switched off.
-    aceWindow:EnableResize(false)
-    window:SetMovable(false)
+    window:SetMovable(true)
     window:SetResizable(false)
+
+    -- The cave window is intentionally draggable so players can tuck it out
+    -- of the way, but the world map reset still works from any right-click
+    -- inside the dialog itself.
+    aceWindow:EnableResize(false)
     window:Hide()
 
     -- The library's own bottom-right "Close" text button duplicates the X
@@ -1557,6 +1561,13 @@ local function EnsureWindow()
     playerPin:Hide()
 
     PositionWindow()
+    ResetView:HookFrame(window, function(_, button)
+        if button ~= "RightButton" then return end
+        PositionWindow()
+        if IsShiftKeyDown() then
+            ResetView:ResetToCurrentZone()
+        end
+    end, true)
 
     -- Kept for /hfwm debug and for the test harness, which asserts on what is
     -- actually on the window rather than on what it recomputes. titletext/

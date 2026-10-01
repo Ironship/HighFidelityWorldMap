@@ -48,10 +48,28 @@ local function OnMouseUp(_, button)
     ResetToCurrentZone()
 end
 
+function ResetView:ResetToCurrentZone()
+    ResetToCurrentZone()
+end
+
+function ResetView:HookFrame(frame, handler, recursive)
+    if not frame or frame._hfwmResetHook then return end
+
+    local callback = handler or OnMouseUp
+    frame:HookScript("OnMouseUp", callback)
+    frame._hfwmResetHook = true
+
+    if recursive and frame.GetChildren then
+        for _, child in ipairs({ frame:GetChildren() }) do
+            self:HookFrame(child, handler, true)
+        end
+    end
+end
+
 --- Wire up the hook. Called once from Core.lua's PLAYER_LOGIN handler, same
 --- timing every other module here waits for.
 function ResetView:Start()
     local sc = WorldMapFrame.ScrollContainer
     if not sc then return end
-    sc:HookScript("OnMouseUp", OnMouseUp)
+    self:HookFrame(sc, OnMouseUp, false)
 end
