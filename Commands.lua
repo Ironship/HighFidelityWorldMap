@@ -373,6 +373,54 @@ function Commands:Handle(msg)
             .. "rectangle (ordinary terrain tile). "
             .. "|cff999999/hfwm testmask off|r removes them."):format(shown))
         return
+    elseif cmd == "icon" then
+        -- Diagnostic for ToggleButton.lua: prints exactly which texture
+        -- file (and, for an atlas, which sub-region of which shared sheet)
+        -- backs WorldMapFrame.SidePanelToggle.OpenButton's own artwork, so
+        -- it can be pulled out and edited rather than guessed at from a
+        -- file listing -- atlases pack dozens of icons into one shared
+        -- sheet, so a file name alone isn't enough to find just this one.
+        local wmf = WorldMapFrame
+        local sidePanelToggle = wmf and wmf.SidePanelToggle
+        local reference = sidePanelToggle and sidePanelToggle.OpenButton
+        if not reference then
+            P("icon: WorldMapFrame.SidePanelToggle.OpenButton not found "
+                .. "on this client (open the map first)")
+            return
+        end
+
+        local function describe(label, tex)
+            if not tex then
+                print(("  %s: (no texture)"):format(label))
+                return
+            end
+            local ok, atlas = pcall(tex.GetAtlas, tex)
+            if ok and atlas then
+                print(("  %s: atlas=%s"):format(label, atlas))
+                if C_Texture and C_Texture.GetAtlasInfo then
+                    local info = C_Texture.GetAtlasInfo(atlas)
+                    if info then
+                        print(("      file=%s  %dx%d  "
+                            .. "L%.4f R%.4f T%.4f B%.4f"):format(
+                            tostring(info.file or info.filename),
+                            info.width or 0, info.height or 0,
+                            info.leftTexCoord or 0, info.rightTexCoord or 0,
+                            info.topTexCoord or 0, info.bottomTexCoord or 0))
+                    end
+                end
+            else
+                local ok2, file = pcall(tex.GetTexture, tex)
+                print(("  %s: file=%s"):format(
+                    label, ok2 and tostring(file) or "?"))
+            end
+        end
+
+        P("icon: WorldMapFrame.SidePanelToggle.OpenButton textures")
+        describe("normal", reference.GetNormalTexture and reference:GetNormalTexture())
+        describe("pushed", reference.GetPushedTexture and reference:GetPushedTexture())
+        describe("highlight", reference.GetHighlightTexture and reference:GetHighlightTexture())
+        describe("disabled", reference.GetDisabledTexture and reference:GetDisabledTexture())
+        return
     elseif cmd == "debug" then
         self:Debug()
         return
@@ -409,6 +457,8 @@ function Commands:Handle(msg)
         print("  /hfwm debug         - diagnostic info + force refresh")
         print("  /hfwm testmask [off] - show live reveal texture file(s) "
             .. "raw, unmasked (diagnostic; off removes them)")
+        print("  /hfwm icon          - texture/atlas info for the quest-list "
+            .. "side-panel toggle button's own artwork")
         return
     end
 

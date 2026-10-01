@@ -26,6 +26,7 @@ local CaveRenderer  = ns.CaveRenderer
 local MapMemory     = ns.MapMemory
 local ZoomLevels    = ns.ZoomLevels
 local ResetView     = ns.ResetView
+local ToggleButton  = ns.ToggleButton
 local P             = ns.P
 
 --- Fires once, right after SavedVariables load. Same timing ADDON_LOADED
@@ -84,6 +85,7 @@ function addon:OnEnable()
     MapMemory:Start()
     ZoomLevels:Start()
     ResetView:Start()
+    ToggleButton:Start()
 
     Commands:Register()
     -- After Commands, so a Lua error while probing the client's options

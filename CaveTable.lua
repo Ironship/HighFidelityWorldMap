@@ -686,6 +686,23 @@ function CaveTable:GetArtTextures(floorID)
     return floor and floor.tiles or nil
 end
 
+--- Blizzard's own real per-floor world-map art for a floor, hand-added to
+--- CaveData.lua for the handful of places that have one (see Fargodeep
+--- Mine's own floors there for the full story on why this can't just be
+--- generated the normal way) -- real FileDataIDs, not this addon's own
+--- baked satellite composite. nil for every floor that has nothing hand-
+--- added. Used by Cave.lua's HasOriginalArt/GetArtLayer/GetArtTextures,
+--- CaveRenderer's own sd/hd toggle.
+---@param floorID number|nil
+---@return number|nil layerW, number|nil layerH, number|nil tileW,
+---        number|nil tileH, table|nil tiles
+function CaveTable:GetRealMapArt(floorID)
+    local floor = self:GetFloor(floorID)
+    if not floor or not floor.realTiles then return nil end
+    return floor.realLayerW, floor.realLayerH,
+        floor.realTileW, floor.realTileH, floor.realTiles
+end
+
 --- Place the player on rotated, WMO-local-coordinate art (see
 --- CaveData.lua's Fargodeep entry) via *projection*, the constants
 --- hfwm/cave_minimap.py's world_to_local_projection bakes offline.

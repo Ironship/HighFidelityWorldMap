@@ -171,6 +171,23 @@ local options = {
                 ns.Renderer:ForceRefresh()
             end,
         },
+        toggleButtonEnabled = {
+            order = 72,
+            type = "toggle",
+            name = "HD/SD map toggle button",
+            desc = "Adds a small button to the world map's top-right "
+                .. "corner for switching between the high-fidelity "
+                .. "overlay and Blizzard's own map, just for the current "
+                .. "map session -- it does not touch \"Enable the "
+                .. "overlay\" above, so the cave map and everything else "
+                .. "stay on. Turn off for a cleaner map with one less "
+                .. "button.",
+            get = function() return Config.db.toggleButtonEnabled end,
+            set = function(_, value)
+                Config.db.toggleButtonEnabled = value
+                ns.ToggleButton:Refresh()
+            end,
+        },
         mapBackground = {
             order = 75,
             type = "group",

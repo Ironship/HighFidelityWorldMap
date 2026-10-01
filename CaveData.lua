@@ -1596,6 +1596,31 @@ HFWMF_CAVE_DATA = {
                     tileW   = 432, tileH  = 401,
                     cols    = 1, rows   = 1,
                     tiles   = { 900000001 },
+                    -- Blizzard's own real per-floor world-map art (the
+                    -- standard microdungeon tile set, same 4x3x256 layout
+                    -- as every ordinary dungeon floor elsewhere in this
+                    -- file), from interface/worldmap/microdungeon/elwynn/
+                    -- fargodeepmine/fargodeepmine1_*.blp -- real
+                    -- FileDataIDs, found in the wowdev/wow-listfile
+                    -- community listfile, not this addon's own art. This
+                    -- build's C_Map has no row pointing at it (see
+                    -- Cave.lua's HasOriginalArt), so it can't be
+                    -- discovered the normal generated way; hand-added
+                    -- here instead, and preserved across regeneration the
+                    -- same way `pieces`/`projection` above are. Row-major,
+                    -- reordered from the listfile's own "_1".."_12" suffix
+                    -- order to the FileDataID order Blizzard's own tiling
+                    -- convention actually draws in (confirmed against
+                    -- every other real dungeon floor's own tile list in
+                    -- this file: FDID N, then N+4..N+11, then N+1..N+3).
+                    realLayerW = 1002, realLayerH = 668,
+                    realTileW  = 256,  realTileH  = 256,
+                    realCols   = 4,    realRows   = 3,
+                    realTiles  = {
+                        603267, 603271, 603272, 603273,
+                        603274, 603275, 603276, 603277,
+                        603278, 603268, 603269, 603270,
+                    },
                     -- Real worldZ range spanned by this floor's own WMO
                     -- groups (hfwm/cave_minimap.py's world_z_range_for_groups),
                     -- not the DB2 rows behind `bounds` above, which carry no
@@ -1621,6 +1646,17 @@ HFWMF_CAVE_DATA = {
                     tileW   = 432, tileH  = 401,
                     cols    = 1, rows   = 1,
                     tiles   = { 900000002 },
+                    -- Blizzard's own real per-floor world-map art; see the
+                    -- sibling floor's identical comment above --
+                    -- fargodeepmine2_*.blp this time.
+                    realLayerW = 1002, realLayerH = 668,
+                    realTileW  = 256,  realTileH  = 256,
+                    realCols   = 4,    realRows   = 3,
+                    realTiles  = {
+                        603279, 603283, 603284, 603285,
+                        603286, 603287, 603288, 603289,
+                        603290, 603280, 603281, 603282,
+                    },
                     -- See the sibling floor's zMin/zMax comment above.
                     zMin    = -0.30, zMax = 23.50,
                 },

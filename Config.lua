@@ -76,6 +76,13 @@ Config.DEFAULTS = {
     -- switches to this addon's tiles cropped to Blizzard's own reveal
     -- shape. See Renderer's Activate() and DrawExploredPiece.
     fogOfWarEnabled = false,
+
+    -- The "sd"/"hd" button ToggleButton.lua docks in the world map's
+    -- top-right corner, for flipping Config.visuallySuppressed (a
+    -- per-session, visual-only override -- see ToggleButton.lua's own
+    -- header) without touching `enabled` above. On by default; turn off
+    -- here for a cleaner map with one less button.
+    toggleButtonEnabled = true,
 }
 -- The db also carries `caveWindowPoint` -- { point, relPoint, x, y, toMap }
 -- -- written by CaveRenderer when the window is dragged. Deliberately not
@@ -463,6 +470,14 @@ Config.lastMapID       = nil
 Config.lastLayerIdx    = nil
 Config.lastSubmerged   = nil
 Config.tracing         = false
+
+-- Visual-only override for ToggleButton.lua's "sd"/"hd" button: reverts
+-- the map to Blizzard's stock art *without* touching Config.db.enabled
+-- (the real `/hfwm` on/off switch, which Cave.lua also reads -- toggling
+-- that off would take the cave map down with it). Session-only: never
+-- saved, and ToggleButton resets it back to false when the map closes, so
+-- every fresh open of the world map starts back on the high-fidelity view.
+Config.visuallySuppressed = false
 
 -- Cave map runtime state (the window itself is built by CaveRenderer)
 Config.caveOverlayFrame      = nil   -- the cave window frame

@@ -824,7 +824,7 @@ local function DoRefresh(force)
     Config.lastLayerIdx  = layerIdx
     Config.lastSubmerged = submerged
 
-    if not Config.db or not Config.db.enabled then
+    if not Config.db or not Config.db.enabled or Config.visuallySuppressed then
         if trace then P("  BAIL: disabled") end
         RestoreDefaults()
         return

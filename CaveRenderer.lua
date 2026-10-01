@@ -434,6 +434,11 @@ local function StyleBox(frame, r, g, b, a)
     return StyleBoxFallback(frame, r, g, b, a)
 end
 
+-- Exposed so other modules (currently ToggleButton) can give their own
+-- small buttons the exact same gold-trimmed look as the cave window and
+-- its reopen icon, instead of duplicating this border logic.
+CaveRenderer.StyleBox = StyleBox
+
 --- CreateFrame against the first template that actually exists. Same reason
 --- as in Options.lua: CreateFrame *errors* on an unknown template rather than
 --- returning nil, and which FrameXML templates this beta client ships is not
