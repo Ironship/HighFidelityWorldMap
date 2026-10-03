@@ -19,6 +19,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect generator changes
+    runs-on: ubuntu-latest
+    outputs:
+      generator: ${{ steps.filter.outputs.generator }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Check changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            generator:
+              - 'generateHFWM.py'
+              - 'hfwm/**'
+              - 'requirements.txt'
+              - '.github/workflows/ci.yml'
+
   lua:
     name: Lua
     runs-on: ubuntu-latest
@@ -60,6 +80,8 @@ jobs:
 
   python:
     name: Generator
+    needs: changes
+    if: needs.changes.outputs.generator == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
