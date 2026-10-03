@@ -240,6 +240,10 @@ local heightWindowDrag
 -- CaveRenderer:SetReopenAvailable below.
 local reopenBtn
 
+-- Cave-only skin overlays sourced from GameMenuFrame chrome.
+local caveHeaderTex
+local caveBorderPieces
+
 -- Content dimensions from the last layout pass. Kept rather than read back
 -- with GetHeight(): a frame sized purely by its anchors does not always have
 -- a resolved height in the same frame it was anchored, and the notch
@@ -435,6 +439,305 @@ local function StyleBox(frame, r, g, b, a)
         end
     end
     return StyleBoxFallback(frame, r, g, b, a)
+end
+
+--- Copy texture art settings from `src` to `dst` as faithfully as this
+--- client build allows (atlas first, then raw texture path/coords).
+local function CopyTextureStyle(dst, src)
+    if not (dst and src) then return false end
+
+    local copied = false
+    if src.GetAtlas and dst.SetAtlas then
+        local atlas = src:GetAtlas()
+        if atlas then
+            dst:SetAtlas(atlas, true)
+            copied = true
+        end
+    end
+
+    if not copied and src.GetTexture and dst.SetTexture then
+        local tex = src:GetTexture()
+        if tex then
+            dst:SetTexture(tex)
+            copied = true
+        end
+    end
+
+    if src.GetTexCoord and dst.SetTexCoord then
+        local tc = { src:GetTexCoord() }
+        if #tc == 8 then
+            dst:SetTexCoord(unpack(tc))
+        elseif #tc >= 4 then
+            dst:SetTexCoord(tc[1], tc[2], tc[3], tc[4])
+        end
+    end
+
+    if src.GetVertexColor and dst.SetVertexColor then
+        local vr, vg, vb, va = src:GetVertexColor()
+        if vr then dst:SetVertexColor(vr, vg, vb, va or 1) end
+    end
+    if src.GetBlendMode and dst.SetBlendMode then
+        local mode = src:GetBlendMode()
+        if mode then dst:SetBlendMode(mode) end
+    end
+    return copied
+end
+
+local function HeaderTextSource(menu, header)
+    if not menu then return nil end
+    if _G.GameMenuFrameHeaderText then return _G.GameMenuFrameHeaderText end
+    if menu.HeaderText then return menu.HeaderText end
+    if menu.TitleText then return menu.TitleText end
+    if header and header.Text then return header.Text end
+    return nil
+end
+
+local function FrameNamedTexture(frame, ...)
+    if type(frame) ~= "table" then return nil end
+    for i = 1, select("#", ...) do
+        local key = select(i, ...)
+        local piece = frame[key]
+        if piece and piece.GetObjectType and piece:GetObjectType() == "Texture" then
+            return piece
+        end
+    end
+
+    local frameName = frame.GetName and frame:GetName()
+    if type(frameName) == "string" and frameName ~= "" then
+        for i = 1, select("#", ...) do
+            local key = select(i, ...)
+            local piece = _G[frameName .. key]
+            if piece and piece.GetObjectType and piece:GetObjectType() == "Texture" then
+                return piece
+            end
+        end
+    end
+    return nil
+end
+
+local function BorderTextureSource(border, ...)
+    local piece = FrameNamedTexture(border, ...)
+    if piece then return piece end
+
+    -- Classic-era templates often expose these as globals rather than fields.
+    for i = 1, select("#", ...) do
+        local key = select(i, ...)
+        piece = _G["GameMenuFrameBorder" .. key]
+        if piece and piece.GetObjectType and piece:GetObjectType() == "Texture" then
+            return piece
+        end
+    end
+    return nil
+end
+
+local function EnsureBorderPiece(slot)
+    if not caveBorderPieces then caveBorderPieces = {} end
+    local tex = caveBorderPieces[slot]
+    if not tex then
+        tex = window:CreateTexture(nil, "BORDER", nil, 2)
+        caveBorderPieces[slot] = tex
+    end
+    return tex
+end
+
+local function SkinBorderPiece(slot, src, apply)
+    local dst = EnsureBorderPiece(slot)
+    if not src or not CopyTextureStyle(dst, src) then
+        dst:Hide()
+        return false
+    end
+    dst:ClearAllPoints()
+    apply(dst, src)
+    dst:Show()
+    return true
+end
+
+--- Match cave window chrome to the game's own menu frame art so it aligns
+--- with the Forever look while leaving every other Ace3 frame untouched.
+local function ApplyGameMenuChrome()
+    if not window then return end
+    local menu = _G.GameMenuFrame
+    if not menu then return end
+
+    local drewMenuPieces = false
+
+    if window.SetBackdrop and menu.GetBackdrop then
+        local ok, live = pcall(menu.GetBackdrop, menu)
+        if ok and live then
+            local border = menu.Border
+            local leftEdge = BorderTextureSource(border, "LeftEdge", "LeftBorder", "Left")
+
+            window:SetBackdrop({
+                bgFile = live.bgFile,
+                edgeFile = nil,
+                tile = live.tile,
+                tileSize = live.tileSize,
+                edgeSize = 0,
+                insets = live.insets,
+            })
+
+            local okBg, br, bg, bb, ba = pcall(menu.GetBackdropColor, menu)
+            if okBg and br then
+                window:SetBackdropColor(br, bg, bb, ba or 1)
+            end
+            local okBorder, rr, rg, rb, ra = pcall(menu.GetBackdropBorderColor, menu)
+            if okBorder and rr then
+                window:SetBackdropBorderColor(rr, rg, rb, ra or 1)
+            end
+
+            local srcL = BorderTextureSource(border, "LeftEdge", "LeftBorder", "Left")
+            local srcR = BorderTextureSource(border, "RightEdge", "RightBorder", "Right")
+            local srcT = BorderTextureSource(border, "TopEdge", "TopBorder", "Top")
+            local srcB = BorderTextureSource(border, "BottomEdge", "BottomBorder", "Bottom")
+            local srcTL = BorderTextureSource(border,
+                "TopLeft", "TopLeftCorner", "TopLeftEdge", "UpperLeft", "UL")
+            local srcTR = BorderTextureSource(border,
+                "TopRight", "TopRightCorner", "TopRightEdge", "UpperRight", "UR")
+            local srcBL = BorderTextureSource(border,
+                "BottomLeft", "BottomLeftCorner", "BottomLeftEdge", "LowerLeft", "LL")
+            local srcBR = BorderTextureSource(border,
+                "BottomRight", "BottomRightCorner", "BottomRightEdge", "LowerRight", "LR")
+
+            if Config.tracing then
+                local function tf(tex)
+                    return tex and tex.GetTexture and tostring(tex:GetTexture()) or "nil"
+                end
+                P(("Cave skin border sources L=%s R=%s T=%s B=%s TL=%s TR=%s BL=%s BR=%s"):format(
+                    tf(srcL), tf(srcR), tf(srcT), tf(srcB),
+                    tf(srcTL), tf(srcTR), tf(srcBL), tf(srcBR)))
+            end
+
+            drewMenuPieces = SkinBorderPiece("left", srcL, function(dst, src)
+                local w = src:GetWidth()
+                if w and w > 0 then dst:SetWidth(w) end
+                dst:SetPoint("TOPLEFT", window, "TOPLEFT")
+                dst:SetPoint("BOTTOMLEFT", window, "BOTTOMLEFT")
+            end) or drewMenuPieces
+
+            drewMenuPieces = SkinBorderPiece("right", srcR, function(dst, src)
+                local w = src:GetWidth()
+                if w and w > 0 then dst:SetWidth(w) end
+                dst:SetPoint("TOPRIGHT", window, "TOPRIGHT")
+                dst:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT")
+            end) or drewMenuPieces
+
+            drewMenuPieces = SkinBorderPiece("top", srcT, function(dst, src)
+                local h = src:GetHeight()
+                if h and h > 0 then dst:SetHeight(h) end
+                dst:SetPoint("TOPLEFT", window, "TOPLEFT")
+                dst:SetPoint("TOPRIGHT", window, "TOPRIGHT")
+            end) or drewMenuPieces
+
+            drewMenuPieces = SkinBorderPiece("bottom", srcB, function(dst, src)
+                local h = src:GetHeight()
+                if h and h > 0 then dst:SetHeight(h) end
+                dst:SetPoint("BOTTOMLEFT", window, "BOTTOMLEFT")
+                dst:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT")
+            end) or drewMenuPieces
+
+            drewMenuPieces = SkinBorderPiece("tl", srcTL, function(dst, src)
+                local w, h = src:GetWidth(), src:GetHeight()
+                if w and w > 0 then dst:SetWidth(w) end
+                if h and h > 0 then dst:SetHeight(h) end
+                dst:SetPoint("TOPLEFT", window, "TOPLEFT")
+            end) or drewMenuPieces
+
+            drewMenuPieces = SkinBorderPiece("tr", srcTR, function(dst, src)
+                local w, h = src:GetWidth(), src:GetHeight()
+                if w and w > 0 then dst:SetWidth(w) end
+                if h and h > 0 then dst:SetHeight(h) end
+                dst:SetPoint("TOPRIGHT", window, "TOPRIGHT")
+            end) or drewMenuPieces
+
+            drewMenuPieces = SkinBorderPiece("bl", srcBL, function(dst, src)
+                local w, h = src:GetWidth(), src:GetHeight()
+                if w and w > 0 then dst:SetWidth(w) end
+                if h and h > 0 then dst:SetHeight(h) end
+                dst:SetPoint("BOTTOMLEFT", window, "BOTTOMLEFT")
+            end) or drewMenuPieces
+
+            drewMenuPieces = SkinBorderPiece("br", srcBR, function(dst, src)
+                local w, h = src:GetWidth(), src:GetHeight()
+                if w and w > 0 then dst:SetWidth(w) end
+                if h and h > 0 then dst:SetHeight(h) end
+                dst:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT")
+            end) or drewMenuPieces
+
+            window:SetBackdropBorderColor(1, 1, 1, 0)
+        end
+    end
+
+    local headerSrc = FrameNamedTexture(menu, "Header") and menu.Header
+    if not headerSrc then
+        headerSrc = _G.GameMenuFrameHeader or _G.GameMenuFrame.Header
+    end
+    local headerTextSrc = HeaderTextSource(menu, headerSrc)
+    if headerSrc then
+        if not caveHeaderTex then
+            caveHeaderTex = window:CreateTexture(nil, "BORDER", nil, 3)
+            caveHeaderTex:SetPoint("TOP", window, "TOP", 0, 12)
+        end
+        if CopyTextureStyle(caveHeaderTex, headerSrc) then
+            local hw, hh = headerSrc:GetWidth(), headerSrc:GetHeight()
+            if (not hw or hw <= 0) and aceWindow and aceWindow.titlebg then
+                hw = aceWindow.titlebg:GetWidth()
+            end
+            if (not hh or hh <= 0) and aceWindow and aceWindow.titlebg then
+                hh = aceWindow.titlebg:GetHeight()
+            end
+            if hw and hw > 0 then caveHeaderTex:SetWidth(hw) end
+            if hh and hh > 0 then caveHeaderTex:SetHeight(hh) end
+            caveHeaderTex:Show()
+            if aceWindow and aceWindow.titlebg then
+                aceWindow.titlebg:SetAlpha(0)
+            end
+            if Config.tracing then
+                local hdr = headerSrc.GetTexture and headerSrc:GetTexture() or "nil"
+                P("Cave skin header source=" .. tostring(hdr))
+            end
+        end
+    end
+
+    if aceWindow and aceWindow.titletext then
+        if headerTextSrc and headerTextSrc.GetFontObject
+           and aceWindow.titletext.SetFontObject then
+            local fontObj = headerTextSrc:GetFontObject()
+            if fontObj then
+                aceWindow.titletext:SetFontObject(fontObj)
+            end
+        end
+
+        local anchored = false
+        if headerTextSrc and headerTextSrc.GetPoint then
+            local p, relTo, rp, x, y = headerTextSrc:GetPoint(1)
+            if p then
+                aceWindow.titletext:ClearAllPoints()
+                if relTo == menu then
+                    aceWindow.titletext:SetPoint(p, window, rp, x or 0, y or 0)
+                    anchored = true
+                elseif relTo == headerSrc and caveHeaderTex then
+                    aceWindow.titletext:SetPoint(p, caveHeaderTex, rp, x or 0, y or 0)
+                    anchored = true
+                elseif caveHeaderTex then
+                    aceWindow.titletext:SetPoint(p, caveHeaderTex, rp, x or 0, y or 0)
+                    anchored = true
+                end
+            end
+        end
+
+        if not anchored then
+            aceWindow.titletext:ClearAllPoints()
+            aceWindow.titletext:SetPoint("TOP", caveHeaderTex or window, "TOP", 0, -14)
+        end
+
+        if headerTextSrc and headerTextSrc.GetTextColor
+           and aceWindow.titletext.SetTextColor then
+            local r, g, b, a = headerTextSrc:GetTextColor()
+            if r then aceWindow.titletext:SetTextColor(r, g, b, a or 1) end
+        end
+        aceWindow.titletext:SetAlpha(1)
+        aceWindow.titletext:Show()
+    end
 end
 
 -- Exposed so other modules (currently ToggleButton) can give their own
@@ -1481,6 +1784,8 @@ local function EnsureWindow()
     aceWindow:EnableResize(false)
     window:Hide()
 
+    ApplyGameMenuChrome()
+
     -- The library's own bottom-right "Close" text button duplicates the X
     -- this window has always had in its own top-right corner, and unlike
     -- that X it has no way to tell this addon a close is a statement about
@@ -2176,6 +2481,7 @@ function CaveRenderer:ShowCave(floorMapID)
         drew = self:RenderTiles(floorMapID)
     end
     aceWindow:SetTitle(ns.Cave:GetAreaTitle(floorMapID))
+    ApplyGameMenuChrome()
 
     if n > 1 and not StatusBarNeeded() then
         -- "All" layers every floor together (see InitFloorPickerMenu): with
