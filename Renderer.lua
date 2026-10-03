@@ -967,6 +967,21 @@ local function DoRefresh(force)
         end
     end
 
+    -- Fog of War only applies when this map actually has explored-data to
+    -- honor. Some maps (or some areas within a map) have no live
+    -- exploration textures at all, and stale overlay textures from a prior
+    -- zone can otherwise keep the SD base art visible after the user
+    -- navigates back. If the current map reports zero explored chunks, treat
+    -- the stale textures as irrelevant and keep the full HD grid active.
+    local explored = fogOfWar and useBundled
+        and C_MapExplorationInfo and C_MapExplorationInfo.GetExploredMapTextures(mapID)
+    local blizExploredTextures = fogOfWar and useBundled and Exploration:EnumerateOverlayTextures()
+    local hasExploredChunks = explored and #explored > 0
+    local hasLiveBlizTextures = blizExploredTextures and #blizExploredTextures > 0
+    local fogActive = fogOfWar and useBundled and (
+        hasExploredChunks or (not explored and hasLiveBlizTextures)
+    )
+
     if trace then
         P(("  tileSource[1]=%s"):format(tostring(tileSource[1])))
         if type(tileSource[1]) == "string" then
@@ -995,25 +1010,23 @@ local function DoRefresh(force)
         local bg
         if useBundled then
             bg = ApplyBackground(background)
-            if fogOfWar then
+            if fogActive then
                 -- Fog of War wants Blizzard's own detail-layer art
-                -- underneath this addon's tiles on THIS map (fogOfWar is
-                -- already gated on this map's own `background` being
-                -- Hybrid -- see where it's computed above): that
-                -- grayscale-until-explored art is what shows through
-                -- wherever the tile-layout section below does not draw one
-                -- of this addon's own tiles over it, which on purpose is
-                -- now wherever the player has not actually explored.
-                -- Overrides ApplyBackground's own BaseArt choice above on
-                -- purpose.
+                -- underneath this addon's tiles on THIS map. That
+                -- grayscale-until-explored art is only used when the map
+                -- actually has live explored data to honor; otherwise the
+                -- regular HD tiles must stay in front and the SD base layer
+                -- must not leak through.
                 BaseArt:SetVisible(true)
+            else
+                BaseArt:SetVisible(false)
             end
         else
             if Config.backdropTexture then Config.backdropTexture:Hide() end
             BaseArt:SetVisible(false)
             MapFrameBg:SetVisible(not background.seeThrough)
         end
-        if fogOfWar and useBundled then
+        if fogActive and useBundled then
             -- Fog of War's own tiles below are drawn FROM Blizzard's live
             -- exploration textures (Exploration:EnumerateOverlayTextures /
             -- DrawExploredPiece), so unlike the plain-suppression case,
@@ -1060,11 +1073,9 @@ local function DoRefresh(force)
     -- exploration reveal textures. `fogActive` is deliberately the gate
     -- for which loop below runs, not a separate flag next to it, so every
     -- way this can end up unusable (feature off, or this map having no
-    -- bundled art of ours to selectively show) falls back to the
-    -- ordinary full grid rather than needing its own case.
-    local fogActive = fogOfWar and useBundled
-    local blizExploredTextures = fogActive
-        and Exploration:EnumerateOverlayTextures()
+    -- bundled art of ours to selectively show, or no explored data at all)
+    -- falls back to the ordinary full grid rather than leaving the SD base
+    -- art visible through the map.
     local fogPiecesDrawn = 0
 
     if fogActive then
