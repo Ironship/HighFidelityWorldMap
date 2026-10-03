@@ -1,0 +1,53 @@
+name: CurseForge metadata reminder
+
+on:
+  pull_request:
+    paths:
+      - docs/DESCRIPTION.md
+      - assets/images/logo.png
+      - .github/scripts/collect-curseforge-metadata.sh
+      - .github/scripts/comment-curseforge-metadata.sh
+      - .github/workflows/curseforge-metadata-reminder.yml
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  remind:
+    name: Package description and logo for CurseForge
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Collect changed description and logo
+        id: collect
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: .github/scripts/collect-curseforge-metadata.sh
+
+      - name: Upload artifact
+        id: upload
+        if: steps.collect.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: curseforge-metadata
+          path: curseforge-metadata/
+          if-no-files-found: error
+
+      - name: Comment on PR
+        if: steps.collect.outputs.changed == 'true'
+        env:
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          # Fork PRs get a read-only token, so only the job summary is written.
+          POST_COMMENT: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: .github/scripts/comment-curseforge-metadata.sh
