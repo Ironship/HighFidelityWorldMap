@@ -1,0 +1,44 @@
+name: Map art cache
+
+# Builds the map art and saves it to the Actions cache *from main*, which is the
+# only scope a tag-triggered release can read. See .github/actions/map-art.
+#
+#   - push to main touching the generator: rebuild so the next release is a
+#     cache hit.
+#   - weekly: GitHub evicts caches unused for 7 days; restoring the entry
+#     resets that clock. A miss here (evicted, or never built) rebuilds it.
+#   - manual: warm it on demand.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "generateHFWM.py"
+      - "hfwm/**"
+      - "requirements.txt"
+      - ".github/actions/map-art/**"
+  schedule:
+    - cron: "17 4 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: map-art
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and cache
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Map art
+        uses: ./.github/actions/map-art
+        with:
+          save: "true"

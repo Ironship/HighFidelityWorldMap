@@ -6,9 +6,19 @@ name: Release
 #   2. Actions -> Release -> Run workflow, pick patch/minor/major and the tag is
 #      created for you.
 #
-# Option 2 deliberately tags *and* packages in the same job. A tag pushed with
-# GITHUB_TOKEN does not trigger other workflows, so chaining two workflows would
-# silently do nothing.
+# Option 2 deliberately tags and packages inside this one workflow. A tag pushed
+# with GITHUB_TOKEN does not trigger other workflows, so chaining two workflows
+# would silently do nothing.
+#
+# Three jobs, so a failure late on does not redo the expensive part:
+#
+#   art      generates the map art (~40 min) and saves it to the Actions cache
+#   tag      (manual runs only) bumps the version and pushes the tag
+#   publish  restores the art, packages, uploads to CurseForge and GitHub
+#
+# If publish fails (bad CF_API_TOKEN, CurseForge outage, ...), fix it and use
+# "Re-run failed jobs": art and tag are not repeated, and a re-run does not bump
+# the version a second time.
 
 on:
   create:
@@ -35,14 +45,14 @@ on:
 permissions:
   contents: write
 
-# A release pushes ~350 MB to CurseForge; never run two at once.
+# A release pushes a multi-GB zip to CurseForge; never run two at once.
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Build and publish
+  art:
+    name: Generate map art
     if: >-
       github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
       || (
@@ -51,155 +61,81 @@ jobs:
         && startsWith(github.ref, 'refs/tags/v')
       )
     runs-on: ubuntu-latest
-    # Phase 3 runs twice (art + Original/), so give it plenty of room.
+    # A cache miss regenerates the art (phase 3 runs twice: art + Original/),
+    # so give it plenty of room.
     timeout-minutes: 300
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          # release.sh walks back through tags to build the changelog.
           fetch-depth: 0
-
-      - name: Bump version and push tag
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          BUMP: ${{ inputs.bump }}
-          PRERELEASE: ${{ inputs.prerelease }}
-        run: |
-          set -euo pipefail
-
-          latest="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -n1)"
-          if [[ -z "$latest" ]]; then
-            base="0.1.0"
-          else
-            # Strip the leading v and any -prerelease suffix.
-            core="${latest#v}"
-            core="${core%%-*}"
-            IFS=. read -r major minor patch <<< "$core"
-            major="${major:-0}"; minor="${minor:-0}"; patch="${patch:-0}"
-            case "$BUMP" in
-              major) base="$((major + 1)).0.0" ;;
-              minor) base="${major}.$((minor + 1)).0" ;;
-              patch) base="${major}.${minor}.$((patch + 1))" ;;
-              *) echo "::error::unknown bump '$BUMP'"; exit 1 ;;
-            esac
-          fi
-
-          next="v${base}"
-          if [[ -n "$PRERELEASE" ]]; then
-            next="${next}-${PRERELEASE#-}"
-          fi
-
-          if git rev-parse -q --verify "refs/tags/$next" >/dev/null; then
-            echo "::error::tag $next already exists"
-            exit 1
-          fi
-
-          echo "Previous tag: ${latest:-<none>}  ->  new tag: $next"
-          echo "### Releasing \`$next\` (previous: \`${latest:-none}\`)" >> "$GITHUB_STEP_SUMMARY"
-
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Annotated: release.sh only recognises annotated tags as versions.
-          git tag -a "$next" -m "$next"
-          git push origin "refs/tags/$next"
 
       - name: Verify tag is on main
         if: github.event_name == 'create'
-        run: |
-          set -euo pipefail
-          git fetch --no-tags --depth=1 origin main
-          git fetch --tags --force origin
-          git merge-base --is-ancestor "${GITHUB_SHA}" origin/main
-          echo "Tag ${GITHUB_REF_NAME} is contained in main."
+        run: .github/scripts/verify-tag-on-main.sh
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      # Reuses the art from the last build of the same generator code, so a
+      # release that only changes Lua/docs skips the long generation entirely.
+      # Always saves, so the publish job (and a re-run of it) can pick the art
+      # up. Only a copy saved from main is visible to *later* tags; see
+      # .github/workflows/map-art.yml. lookup-only: on a hit there is nothing
+      # to do here, so don't download GBs just for publish to download them again.
+      - name: Map art
+        uses: ./.github/actions/map-art
         with:
-          python-version: "3.12"
+          save: "true"
+          lookup-only: "true"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+  tag:
+    name: Bump version and push tag
+    needs: art
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.bump.outputs.tag }}
 
-      - name: Resolve game build
-        id: pipeline
-        run: |
-          set -euo pipefail
-          python - >> "$GITHUB_OUTPUT" <<'PY'
-          from hfwm.constants import GAME_BUILD, GAME_PRODUCT
-          print(f"build={GAME_BUILD}")
-          print(f"cache_dir=.cache-{GAME_PRODUCT}-{GAME_BUILD}")
-          PY
-
-      # ~270 MB of DB2 exports, WDTs and minimap BLPs pulled from wago.tools.
-      # Caching it turns the download phase into a no-op on later releases.
-      - name: Restore cache
-        uses: actions/cache@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
         with:
-          path: ${{ steps.pipeline.outputs.cache_dir }}
-          key: casc-${{ steps.pipeline.outputs.build }}-${{ hashFiles('hfwm/constants.py') }}
-          restore-keys: |
-            casc-${{ steps.pipeline.outputs.build }}-
+          fetch-depth: 0
 
-      - name: Generate map art
-        run: python generateHFWM.py ./WorldMap
+      - name: Bump version and push tag
+        id: bump
+        env:
+          BUMP: ${{ inputs.bump }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: .github/scripts/bump-version.sh
 
-      - name: Verify map art
-        run: |
-          set -euo pipefail
+  publish:
+    name: Package and publish
+    needs: [art, tag]
+    # tag is skipped on a pushed-tag release; that is fine. A failed art or
+    # tag job is not.
+    if: ${{ !cancelled() && needs.art.result == 'success' && needs.tag.result != 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
 
-          # Count the two trees separately. A single total lets one of them
-          # cover for the other: when every zone in phase 3 died and only the
-          # Original/ dump succeeded, the combined figure still looked like a
-          # half-finished build rather than a total failure of the art the
-          # addon actually ships.
-          # One find over the whole tree, split after the fact. Pointing find
-          # at WorldMap/Original directly would exit non-zero when the dump is
-          # missing, and pipefail turns that into a dead step before it can say
-          # anything useful — which is the case worth reporting clearly. Counted
-          # into an array rather than with `grep -c` because an empty result is
-          # still one empty line, which would report 1 for a build that produced
-          # nothing whatsoever.
-          mapfile -t blps < <(find WorldMap -type f -name '*.blp')
-          main=0
-          orig=0
-          for f in ${blps[@]+"${blps[@]}"}; do
-            case "$f" in
-              WorldMap/Original/*) orig=$((orig + 1)) ;;
-              *)                   main=$((main + 1)) ;;
-            esac
-          done
-          echo "Generated $main BLPs + $orig raw, $(du -sh WorldMap | cut -f1) total."
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # Empty on a pushed-tag release, which means the triggering ref.
+          ref: ${{ needs.tag.outputs.tag }}
+          # release.sh walks back through tags to build the changelog.
+          fetch-depth: 0
 
-          # A full build is ~687 tiles per tree. Anything far below that means
-          # zones failed and the package would ship with holes in it.
-          status=0
-          if (( main < 650 )); then
-            echo "::error::only $main BLPs in WorldMap/, expected ~687 — refusing to publish an incomplete map"
-            status=1
-          fi
-          # Generated with --original on, so an empty Original/ is a failure
-          # too: FDIDMap.lua would ship the background with no textures.
-          if (( orig < 650 )); then
-            echo "::error::only $orig BLPs in WorldMap/Original/, expected ~687 — the in-game Original background would have no art"
-            status=1
-          fi
-          test -s FDIDMap.lua
-          # Both tables have to be populated, or the addon silently drops a
-          # background that the TOC and the options panel still advertise.
-          grep -q '^HFWMF_FDID_MAP_ORIGINAL = {$' FDIDMap.lua || {
-            echo "::error::FDIDMap.lua has no populated HFWMF_FDID_MAP_ORIGINAL table"
-            status=1
-          }
-          exit $status
+      # Normally a straight cache hit from the art job. If the cache entry
+      # vanished or failed to save, this rebuilds rather than failing.
+      - name: Map art
+        uses: ./.github/actions/map-art
 
       # release.sh excludes anything `git ls-files --others` reports, which
-      # includes .gitignored paths — so the freshly generated WorldMap/ would be
+      # includes .gitignored paths — so the generated WorldMap/ would be
       # dropped from the zip. Adding it to the index with --intent-to-add (-N)
-      # takes it off that list without writing 350 MB of blobs into .git. The
+      # takes it off that list without writing GBs of blobs into .git. The
       # index is thrown away with the runner; nothing is committed.
       - name: Stage generated art
         run: git add -fN WorldMap FDIDMap.lua

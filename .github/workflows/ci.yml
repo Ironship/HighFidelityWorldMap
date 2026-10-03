@@ -1,7 +1,7 @@
 name: CI
 
 # Cheap checks on every push and PR. Deliberately does *not* generate the map
-# art — that is a ~350 MB job and belongs only in the release workflow.
+# art — that is a multi-GB job and belongs only in the release workflow.
 
 on:
   push:
@@ -38,6 +38,7 @@ jobs:
               - 'hfwm/**'
               - 'requirements.txt'
               - '.github/workflows/ci.yml'
+              - '.github/scripts/smoke-test.sh'
 
   lua:
     name: Lua
@@ -56,27 +57,9 @@ jobs:
       - name: Fetch Ace3 libraries
         run: ./dev/fetch-libs.sh
 
+      # Covers the files listed in the TOC and the fetched Ace3 libraries.
       - name: Lint Lua
-        run: |
-          set -euo pipefail
-          status=0
-          # Read the file list out of the TOC so a file added to the repo but
-          # never wired into the TOC does not silently pass.
-          while IFS= read -r file; do
-            [[ -f "$file" ]] || { echo "::error::$file is in the TOC but missing"; status=1; continue; }
-            [[ "$file" == *.lua ]] || continue
-            luac5.1 -p "$file" || status=1
-          done < <(grep -E '^[^#[:space:]].*\.(lua|xml)[[:space:]]*$' HighFidelityWorldMapForever.toc | tr -d '\r')
-          exit $status
-
-      - name: Lint fetched Ace3 libraries
-        run: |
-          set -euo pipefail
-          status=0
-          while IFS= read -r file; do
-            luac5.1 -p "$file" || status=1
-          done < <(find Libs -name '*.lua')
-          exit $status
+        run: .github/scripts/lint-lua.sh
 
   python:
     name: Generator
@@ -93,9 +76,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+        run: .github/scripts/install-python-deps.sh
 
       - name: Lint Python
         run: python -m compileall -q hfwm generateHFWM.py
@@ -115,25 +96,12 @@ jobs:
       # rather than into the output dir, and a one-zone map would overwrite the
       # committed one.
       - name: Smoke test
-        run: |
-          set -euo pipefail
-          python generateHFWM.py ./smoke --zones ThunderBluff --skip-fdid-map
-          count="$(find smoke -type f -name '*.blp' | wc -l)"
-          echo "Smoke build produced $count BLPs."
-          # 12 for the zone, 12 again for the Original/ dump.
-          if (( count != 24 )); then
-            echo "::error::expected 24 BLPs from the smoke build, got $count"
-            exit 1
-          fi
+        run: .github/scripts/smoke-test.sh
 
       # ThunderBluff is landlocked, so the run above never reaches the ocean
       # pass's cell classification. Same zone, other code path.
       - name: Smoke test (ocean pass)
-        run: |
-          set -euo pipefail
-          python generateHFWM.py ./smoke-ocean --zones ThunderBluff \
-            --ocean --no-original --skip-fdid-map
-          test "$(find smoke-ocean -type f -name '*.blp' | wc -l)" -eq 12
+        run: .github/scripts/smoke-test.sh ocean
 
   package:
     name: Packager

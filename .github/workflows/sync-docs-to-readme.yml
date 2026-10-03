@@ -33,13 +33,4 @@ jobs:
         run: python .github/scripts/generate_readme.py
 
       - name: Commit generated README
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add README.md
-          if git diff --cached --quiet; then
-            echo "No README changes generated."
-            exit 0
-          fi
-          git commit -m "Generate README from docs"
-          git push
+        run: .github/scripts/commit-readme.sh
