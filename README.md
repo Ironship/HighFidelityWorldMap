@@ -45,3 +45,111 @@ That's just… how it actually looks on the minimap, I'm afraid.
 This happens a lot throughout the game, and so I do actually want to go through and fix each issue manually eventually. This will make its way into the mod as a secondary selectable map.
 
 Cave map controller support coming soon.
+
+# Building High Fidelity World Map: Forever
+
+This project is split into two parts:
+
+- a Lua addon that hooks into the in-game world map
+- a Python pipeline that generates the bundled map tiles and FDID map tables
+
+The addon itself is not a traditional "build" in the sense of compiling a binary. The real work is:
+
+1. fetching Ace3 libraries for local dev
+2. generating the map data from minimap tiles and DB2/ADT metadata
+3. packaging the addon for release
+
+## Prerequisites
+
+- Git
+- Python 3.12+
+- Lua 5.1 (for syntax checks)
+- A working World of Warcraft Forever beta environment for in-game testing
+
+## 1) Clone and initialize
+
+```sh
+git clone https://github.com/Sectimus/HighFidelityWorldMapForever.git
+cd HighFidelityWorldMapForever
+```
+
+## 2) Fetch Ace3 dependencies
+
+The repo does not commit the Ace3 libraries. Fetch them before testing locally:
+
+```sh
+./dev/fetch-libs.sh
+```
+
+This populates the `Libs/` folders required for the addon to load.
+
+## 3) Install Python dependencies
+
+```sh
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+## 4) Generate the map art
+
+The generated map data is not tracked in Git and is rebuilt from source data.
+
+```sh
+python generateHFWM.py
+```
+
+Useful flags include:
+
+- `--zones` to process only selected zones
+- `--dry-run` to test the pipeline without writing output
+- `--refresh` to re-download cached inputs
+- `--threads` to parallelize generation
+- `--ocean` / `--base-art` / `--alpha-sea` for setting the sea/background behavior
+- `--skip-fdid-map` for some focused local testing runs
+
+## 5) Local smoke tests
+
+You can run a quick validation pass without a full world build:
+
+```sh
+python generateHFWM.py ./smoke --zones ThunderBluff --skip-fdid-map
+```
+
+This runs a small zone through the generation pipeline and checks the output is created correctly.
+
+## 6) Lua syntax validation
+
+You can validate the Lua files directly:
+
+```sh
+luac5.1 -p *.lua
+```
+
+or, with a loop over the addon TOC:
+
+```sh
+while IFS= read -r file; do
+  [[ "$file" == *.lua ]] || continue
+  luac5.1 -p "$file" || exit 1
+done < <(grep -E '^[^#[:space:]].*\.(lua|xml)[[:space:]]*$' HighFidelityWorldMapForever.toc | tr -d '\r')
+```
+
+## 7) CI checks
+
+The repo includes a GitHub Actions workflow that runs linting and smoke-test generation. This is the same rough validation path contributors should run locally before opening a PR.
+
+## 8) Release packaging
+
+Release packaging is handled by the release workflow and packager tool, not by a local manual compile step.
+
+When ready to publish:
+
+- push a version tag to `main`
+- let the release workflow generate the map data and package the addon
+- the packager then uploads the zip to the configured release targets
+
+## Notes
+
+- The generated `WorldMap/` directory is a build artifact and is not normally committed.
+- `FDIDMap.lua` is part of the repo and is produced by the generator.
+- `Libs/` is fetched during local dev and CI, and is required for a clean checkout to work.
