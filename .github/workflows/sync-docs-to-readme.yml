@@ -1,0 +1,45 @@
+name: Sync docs to README
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - docs/DESCRIPTION.md
+      - docs/BUILDING.md
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  compile-readme:
+    name: Regenerate root README
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Regenerate root README
+        run: python .github/scripts/generate_readme.py
+
+      - name: Commit generated README
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          if git diff --cached --quiet; then
+            echo "No README changes generated."
+            exit 0
+          fi
+          git commit -m "Generate README from docs"
+          git push

@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib import request, error
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-README_PATH = REPO_ROOT / "README.md"
+DESCRIPTION_PATH = REPO_ROOT / "docs" / "DESCRIPTION.md"
 
 
 def fail(message: str) -> None:
@@ -33,9 +33,9 @@ def main() -> None:
     if not mod_id:
         fail("CF_MOD_ID is required.")
 
-    raw_readme = README_PATH.read_text(encoding="utf-8")
-    if not raw_readme.strip():
-        fail(f"README at {README_PATH} is empty.")
+    raw_description = DESCRIPTION_PATH.read_text(encoding="utf-8")
+    if not raw_description.strip():
+        fail(f"DESCRIPTION at {DESCRIPTION_PATH} is empty.")
 
     base_url = os.environ.get("CF_API_BASE", "https://api.curseforge.com/v1")
     endpoints = [
@@ -43,9 +43,9 @@ def main() -> None:
         f"{base_url}/mods/{mod_id}/description",
     ]
     payloads = [
-        {"description": raw_readme},
-        {"body": raw_readme},
-        {"markdown": raw_readme},
+        {"description": raw_description},
+        {"body": raw_description},
+        {"markdown": raw_description},
     ]
 
     last_error = None
