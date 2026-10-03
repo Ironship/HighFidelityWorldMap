@@ -1,4 +1,4 @@
-name: Sync docs description to CurseForge
+name: Sync metadata to CurseForge
 
 on:
   push:
@@ -6,15 +6,15 @@ on:
       - main
     paths:
       - docs/DESCRIPTION.md
-      - README.md
+      - assets/images/logo.png
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  sync-description:
-    name: Update project description
+  sync-metadata:
+    name: Update project metadata
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
 
@@ -22,7 +22,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Update CurseForge project description
+      - name: Update CurseForge metadata
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CF_MOD_ID: ${{ vars.CF_MOD_ID || '1701034' }}
