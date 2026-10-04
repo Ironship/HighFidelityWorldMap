@@ -1,3 +1,5 @@
+![HFWM Logo](assets/images/logo.png)
+
 # High-Fidelity World Map (HFWM)
 
 (Beta)
