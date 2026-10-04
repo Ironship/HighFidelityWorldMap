@@ -1,20 +1,24 @@
-![High-Fidelity World Map logo](../main/assets/images/logo.png)
+![High-Fidelity World Map logo](../assets/images/logo.png)
 
 # High-Fidelity World Map (HFWM)
+
+[![CurseForge Downloads](https://img.shields.io/curseforge/dt/1701034?color=orange&logo=curseforge&style=flat-square)](https://www.curseforge.com/projects/1701034)
 
 Adds a "HD/SD" toggle to view the world map pane with a detailed, high-resolution map constructed by stitching together minimap satellite imagery across entire zones. The result is a seamless, richly detailed world map that shows all the finer details of the world of Azeroth with far greater clarity than the game's default map ever could.
 
 ![HD/SD Toggle](https://i.postimg.cc/3kXr2BBY/hd-sd-toggle.jpg)
-
-Not just individual zones, continents too, with full control and various customization options.
-
-![Continents](https://i.postimg.cc/ZW8Y6ccq/continents.jpg)
 
 ## Fog of War support:
 
 Exploration is at the heart of WoW. To keep the spirit of mystery alive going into forever, HFWM also comes with complete, native fog of war support!
 
 ![Fog of War](https://i.postimg.cc/0zY57ff8/fog-of-war.jpg)
+
+## Offers optional replacements for *all* maps
+
+Not just individual zones, continents too! With full control and various customization options.
+
+![Continents](https://i.postimg.cc/ZW8Y6ccq/continents.jpg)
 
 ## Increased zoom distance:
 
