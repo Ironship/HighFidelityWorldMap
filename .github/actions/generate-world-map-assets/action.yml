@@ -45,7 +45,7 @@ runs:
 
     - name: Restore world map assets cache
       id: art
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v5
       with:
         lookup-only: ${{ inputs.lookup-only }}
         path: |
@@ -56,7 +56,7 @@ runs:
 
     - name: Set up Python
       if: steps.art.outputs.cache-hit != 'true'
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: "3.12"
 
@@ -75,7 +75,7 @@ runs:
     # Only needed when the art itself has to be rebuilt.
     - name: Restore pipeline cache
       if: steps.art.outputs.cache-hit != 'true'
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ${{ steps.pipeline.outputs.cache_dir }}
         key: casc-${{ steps.pipeline.outputs.build }}-${{ hashFiles('hfwm/constants.py') }}
@@ -97,7 +97,7 @@ runs:
     # Only after verification, so a broken build is never cached.
     - name: Save world map assets cache
       if: inputs.save == 'true' && steps.art.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v5
       with:
         path: |
           WorldMap

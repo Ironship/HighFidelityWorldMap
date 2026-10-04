@@ -35,7 +35,7 @@ jobs:
       - name: Upload artifact
         id: upload
         if: steps.collect.outputs.changed == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: curseforge-metadata
           path: curseforge-metadata/
