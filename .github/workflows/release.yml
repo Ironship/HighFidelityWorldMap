@@ -1,9 +1,10 @@
 name: Create Release
 
 # Creates an official tagged release: the version tag, the map art, the package
-# and the GitHub Release with the zip attached. It deliberately uploads nowhere
-# else. To put a release on the marketplaces, run "Publish Release to all
-# Marketplaces" (or "Publish Release to CurseForge") and give it the tag.
+# and the GitHub Release with the zip attached. The package step itself uploads
+# nowhere else; the last job then starts "Publish Release to all Marketplaces"
+# with the new tag. If that fails, re-run it on its own (or run "Publish Release
+# to CurseForge") and give it the tag.
 #
 # Two ways in:
 #
@@ -15,15 +16,16 @@ name: Create Release
 # with GITHUB_TOKEN does not trigger other workflows, so chaining two workflows
 # would silently do nothing.
 #
-# Three jobs, so a failure late on does not redo the expensive part:
+# Four jobs, so a failure late on does not redo the expensive part:
 #
 #   art      generates the map art (~40 min) and saves it to the Actions cache
 #   tag      (manual runs only) bumps the version and pushes the tag
 #   release  restores the art, packages and creates the GitHub Release
+#   publish  starts "Publish Release to all Marketplaces" and waits for it
 #
-# If release fails (GitHub outage, ...), fix it and use "Re-run failed jobs":
-# art and tag are not repeated, and a re-run does not bump the version a second
-# time.
+# If release or publish fails (GitHub outage, ...), fix it and use "Re-run
+# failed jobs": the jobs before it are not repeated, and a re-run does not bump
+# the version a second time.
 
 on:
   create:
@@ -183,3 +185,28 @@ jobs:
           retention-days: 7
           # BLPs are already DXT-compressed; re-deflating them is wasted time.
           compression-level: 0
+
+  publish:
+    name: Publish to all marketplaces
+    needs: [tag, release]
+    # Only once the GitHub Release exists, which publish-all.yml checks for.
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
+    runs-on: ubuntu-latest
+    # actions: write lets it start publish-all.yml.
+    permissions:
+      contents: read
+      actions: write
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Dispatched rather than called, so it is a run of its own workflow and
+      # can be re-run from there. The tag is the one just created by a manual
+      # run, or the pushed tag itself.
+      - name: Publish to all marketplaces
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.tag.outputs.tag || github.ref_name }}
+        run: .github/scripts/dispatch-workflow-and-wait.sh publish-all.yml -f "tag=${RELEASE_TAG}"

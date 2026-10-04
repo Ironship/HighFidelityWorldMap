@@ -96,8 +96,8 @@ Release packaging is handled by GitHub Actions workflows and the packager tool, 
 
 When ready to publish:
 
-- run **Create Release** (or push a version tag to `main`) to generate the map data, package the addon and create the GitHub release
-- run **Publish Release to all Marketplaces** with that release's tag to upload it to CurseForge (and any marketplaces added later)
+- run **Create Release** (or push a version tag to `main`) to generate the map data, package the addon, create the GitHub release and then start **Publish Release to all Marketplaces** with the new tag
+- run **Publish Release to all Marketplaces** yourself with a release's tag to retry or redo that upload to CurseForge (and any marketplaces added later)
 - **Publish Release to CurseForge** does the CurseForge step on its own if you only need that one
 
 ## Notes
