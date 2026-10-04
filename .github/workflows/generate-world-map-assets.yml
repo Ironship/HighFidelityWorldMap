@@ -24,7 +24,6 @@ on:
       - main
     paths:
       - "src/generator/**"
-      - ".github/actions/generate-world-map-assets/**"
   schedule:
     - cron: "17 4 * * 0"
   workflow_dispatch:
