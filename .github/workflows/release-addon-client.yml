@@ -148,10 +148,10 @@ jobs:
   publish:
     name: Publish to all marketplaces
     needs: [tag, release]
-    # Only once the GitHub Release exists, which publish-all.yml checks for.
+    # Only once the GitHub Release exists, which publish-curseforge.yml checks for.
     if: ${{ !cancelled() && needs.release.result == 'success' }}
     runs-on: ubuntu-latest
-    # actions: write lets it start publish-all.yml.
+    # actions: write lets it start publish-curseforge.yml.
     permissions:
       contents: read
       actions: write
@@ -168,4 +168,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.tag.outputs.tag || github.ref_name }}
-        run: .github/scripts/dispatch-workflow-and-wait.sh publish-all.yml -f "tag=${RELEASE_TAG}"
+        run: .github/scripts/dispatch-workflow-and-wait.sh publish-curseforge.yml -f "tag=${RELEASE_TAG}"
