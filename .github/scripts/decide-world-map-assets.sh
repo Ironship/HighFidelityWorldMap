@@ -24,11 +24,11 @@ if [[ "$bypass" != "true" && "$tables_hit" == "true" ]]; then
   fi
 fi
 
-# Only the tables were actually downloaded when the art was merely looked up,
-# so there is nothing under src/addon/mapdata to check. After generation
-# everything exists locally.
+# The tables-only path never builds src/addon/mapdata/WorldMap. It must
+# verify only the Lua tables, even when generation is required for that fast
+# metadata-only path.
 verify=all
-if [[ "$generate" == "false" && ( "$tables_only" == "true" || "$lookup_only" == "true" ) ]]; then
+if [[ "$tables_only" == "true" || ( "$generate" == "false" && "$lookup_only" == "true" ) ]]; then
   verify=tables
 fi
 
