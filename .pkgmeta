@@ -60,10 +60,8 @@ enable-nolib-creation: no
 enable-toc-creation: no
 
 # The map art is its own CurseForge project (built from .pkgmeta-mapdata).
-# CurseForge installs it automatically through this required-dependency
-# relation. The value is the project's CurseForge slug; it has to match the
-# real slug, or the relation is not created on upload. The TOC says
+# The client project does not declare it as a relation on upload: CurseForge
+# rejects relations to projects that are not approved and public. Add the
+# relation in the CurseForge project settings (Relations) instead. The TOC says
 # OptionalDeps rather than Dependencies so a missing data addon produces a chat
 # warning (MapData.lua) instead of this addon silently failing to load.
-required-dependencies:
-  - high-fidelity-world-map-art
