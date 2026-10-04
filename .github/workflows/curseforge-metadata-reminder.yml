@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - docs/DESCRIPTION.md
-      - assets/images/logo.png
+      - assets/images/icon.png
       - .github/scripts/collect-curseforge-metadata.sh
       - .github/scripts/comment-curseforge-metadata.sh
       - .github/workflows/curseforge-metadata-reminder.yml

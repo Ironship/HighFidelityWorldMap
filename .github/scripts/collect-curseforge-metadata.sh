@@ -10,7 +10,7 @@
 set -euo pipefail
 
 out_dir=curseforge-metadata
-files=(docs/DESCRIPTION.md assets/images/logo.png)
+files=(docs/DESCRIPTION.md assets/images/icon.png)
 
 rm -rf "$out_dir"
 mkdir -p "$out_dir"

@@ -16,7 +16,7 @@ body_file=$(mktemp)
   echo "CurseForge has no API for editing the description or logo, so after this PR is merged, apply the changed file(s) in the CurseForge project settings:"
   echo
   [[ -f "$dir/DESCRIPTION.md" ]] && echo "- Description: \`DESCRIPTION.md\`"
-  [[ -f "$dir/logo.png" ]] && echo "- Logo: \`logo.png\`"
+  [[ -f "$dir/icon.png" ]] && echo "- Logo: \`icon.png\`"
   echo
   echo "Download: [curseforge-metadata artifact]($ARTIFACT_URL)"
 } > "$body_file"
