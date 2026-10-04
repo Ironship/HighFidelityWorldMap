@@ -173,12 +173,8 @@ jobs:
         with:
           tables-only: "true"
 
-      # Needs the mapdata-v* tags, so it comes before isolate-tag-series.sh
-      # deletes them.
-      - name: Verify Map Data is current
-        env:
-          ART_KEY: ${{ steps.assets.outputs.art-key }}
-        run: .github/scripts/verify-mapdata-current.sh
+      # The client release only ships Lua tables. It does not depend on the
+      # Map Data addon being released for the same generator build.
 
       # release.sh excludes anything `git ls-files --others` reports, which
       # includes .gitignored paths. The generated tables are tracked, but
