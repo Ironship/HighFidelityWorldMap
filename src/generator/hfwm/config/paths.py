@@ -1,10 +1,11 @@
 """Filesystem layout: what the generator reads, caches and writes.
 
 The repository has three parts — ``src/generator/`` (this package),
-``src/addon/`` (the World of Warcraft addon it feeds) and ``src/mapdata/`` (the
-separate Map Data addon that holds the tile art).  The generated Lua tables land
-in ``src/addon/``, the generated tiles in ``src/mapdata/WorldMap/``; everything
-it merely *caches* stays in ``src/generator/`` so it can never be packaged.
+``src/addon/client/`` (the World of Warcraft addon it feeds), and
+``src/addon/mapdata/`` (the separate Map Data addon that holds the tile art).
+The generated Lua tables land in ``src/addon/client/``, the generated tiles in
+``src/addon/mapdata/WorldMap/``; everything it merely *caches* stays in
+``src/generator/`` so it can never be packaged.
 """
 
 from __future__ import annotations
@@ -17,8 +18,8 @@ from .build import GAME_BUILD, GAME_PRODUCT
 GENERATOR_DIR = Path(__file__).resolve().parents[2]
 SRC_DIR = GENERATOR_DIR.parent
 REPO_ROOT = SRC_DIR.parent
-ADDON_DIR = SRC_DIR / "addon"
-MAPDATA_DIR = SRC_DIR / "mapdata"
+ADDON_DIR = SRC_DIR / "addon" / "client"
+MAPDATA_DIR = SRC_DIR / "addon" / "mapdata"
 
 # ---------------------------------------------------------------------------
 # Caches (generator-side)

@@ -9,7 +9,7 @@
 ## X-Curse-Project-ID: 1701034
 
 # Ace3 libs are fetched at build/dev time rather than committed; see .pkgmeta
-# and src/addon/dev/fetch-libs.sh. Kept flat at the addon root (not under Libs\) so the
+# and src/addon/client/dev/fetch-libs.sh. Kept flat at the addon root (not under Libs\) so the
 # CI lint job's plain-bash file-exists check, which does not understand
 # backslashed subdirectories, still finds it.
 embeds.xml

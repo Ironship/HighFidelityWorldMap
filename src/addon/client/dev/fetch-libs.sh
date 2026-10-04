@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Hydrates src/addon/Libs/ with the Ace3 libraries this addon depends on, for local
-# testing and CI linting. Not committed (see .gitignore).
+# Hydrates src/addon/client/Libs/ with the Ace3 libraries this addon depends on,
+# for local testing and CI linting. Not committed (see .gitignore).
 #
 # Uses a shallow, sparse clone of https://github.com/WoWUIDev/Ace3 -- the
 # GitHub mirror Ace3's own project page names as its development
@@ -13,7 +13,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 mirror="https://github.com/WoWUIDev/Ace3.git"
-# local dir name (matches .pkgmeta's src/addon/Libs/<name>) = path inside the mirror
+# local dir name (matches .pkgmeta's src/addon/client/Libs/<name>) = path inside the mirror
 paths=(
     "LibStub=LibStub"
     "CallbackHandler-1.0=CallbackHandler-1.0"
@@ -46,4 +46,4 @@ for entry in "${paths[@]}"; do
     cp -r "$tmp/ace3/$src" "Libs/$name"
 done
 
-echo "Done. src/addon/Libs/ hydrated from the Ace3 mirror."
+echo "Done. src/addon/client/Libs/ hydrated from the Ace3 mirror."

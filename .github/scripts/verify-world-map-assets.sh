@@ -4,8 +4,8 @@
 # any working directory.
 #
 # The generated output lands in two addons, which is why there are two checks:
-#   art     src/mapdata/WorldMap/                  (Map Data addon, multi-GB)
-#   tables  src/addon/FDIDMap.lua, CaveData.lua    (core addon, small)
+#   art     src/addon/mapdata/WorldMap/           (Map Data addon, multi-GB)
+#   tables  src/addon/client/FDIDMap.lua, CaveData.lua (core addon, small)
 #
 # Usage: verify-world-map-assets.sh [tables|art|all]    (default: all)
 set -euo pipefail
@@ -15,7 +15,7 @@ repo="$(cd "$(dirname "$0")/../.." && pwd)"
 status=0
 
 verify_art() {
-  cd "$repo/src/mapdata"
+  cd "$repo/src/addon/mapdata"
 
   # Count the two trees separately. A single total lets one of them
   # cover for the other: when every zone in phase 3 died and only the

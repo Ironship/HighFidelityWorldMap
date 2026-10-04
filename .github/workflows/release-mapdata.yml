@@ -13,7 +13,7 @@ name: "Create Release: MapData"
 #      job skips everything unless the art would actually change (see below).
 #      Automatic releases are stable (minor bump) and go to CurseForge straight
 #      away. Release the addon right after: an old addon with new art shows a
-#      mismatch warning in game (see src/addon/MapData.lua).
+#      mismatch warning in game (see src/addon/client/MapData.lua).
 #   2. Actions -> Create Release: MapData -> Run workflow, pick the bump and
 #      optionally a prerelease suffix such as "beta.1". Must run on main.
 #
@@ -175,13 +175,13 @@ jobs:
         uses: ./.github/actions/generate-world-map-assets
 
       # release.sh excludes anything `git ls-files --others` reports, which
-      # includes .gitignored paths, so the generated src/mapdata/WorldMap/
+      # includes .gitignored paths, so the generated src/addon/mapdata/WorldMap/
       # would be dropped from the zip. Adding it to the index with
       # --intent-to-add (-N) takes it off that list without writing GBs of
       # blobs into .git. The index is thrown away with the runner; nothing is
       # committed.
       - name: Stage generated art
-        run: git add -fN src/mapdata/WorldMap
+        run: git add -fN src/addon/mapdata/WorldMap
 
       # Writes X-HFWM-Data-Build into the TOC, which the packager copies as it
       # finds it. The addon compares it with the HFWMF_DATA_BUILD in its own

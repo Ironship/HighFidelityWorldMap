@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Syntax-checks every Lua file listed in the TOC, plus the fetched Ace3 libs.
-# Runs against src/addon/ whatever the working directory; needs luac5.1.
+# Runs against src/addon/client/ whatever the working directory; needs luac5.1.
 set -euo pipefail
 
-cd "$(dirname "$0")/../../src/addon"
+cd "$(dirname "$0")/../../src/addon/client"
 
 status=0
 

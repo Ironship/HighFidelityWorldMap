@@ -8,7 +8,7 @@
 #   packager_args  extra BigWigs packager arguments for this project
 #
 # core    v1.2.3          the Lua addon; ships FDIDMap.lua and CaveData.lua
-# mapdata mapdata-v1.2.3  the art addon; ships src/mapdata/WorldMap/
+# mapdata mapdata-v1.2.3  the art addon; ships src/addon/mapdata/WorldMap/
 #
 # Inputs (environment): RELEASE_TAG.
 set -euo pipefail

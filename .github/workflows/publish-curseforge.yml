@@ -119,7 +119,7 @@ jobs:
       # tables without writing blobs into .git.
       - name: Stage generated tables
         if: steps.project.outputs.project == 'core'
-        run: git add -fN src/addon/FDIDMap.lua src/addon/CaveData.lua
+        run: git add -fN src/addon/client/FDIDMap.lua src/addon/client/CaveData.lua
 
       # See release-mapdata.yml: takes the gitignored art off the packager's
       # exclude list without writing GBs of blobs into .git. The TOC at the tag
@@ -127,7 +127,7 @@ jobs:
       # needs the same stamp.
       - name: Stage generated art
         if: steps.project.outputs.project == 'mapdata'
-        run: git add -fN src/mapdata/WorldMap
+        run: git add -fN src/addon/mapdata/WorldMap
 
       - name: Stamp the TOC with the art build
         if: steps.project.outputs.project == 'mapdata'

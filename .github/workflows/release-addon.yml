@@ -186,7 +186,7 @@ jobs:
       # shipping the regenerated copies without writing blobs into .git. The
       # index is thrown away with the runner; nothing is committed.
       - name: Stage generated tables
-        run: git add -fN src/addon/FDIDMap.lua src/addon/CaveData.lua
+        run: git add -fN src/addon/client/FDIDMap.lua src/addon/client/CaveData.lua
 
       # The packager has no tag-prefix option: its changelog uses "the previous
       # tag" among all tags. Hide the MapData series from it.

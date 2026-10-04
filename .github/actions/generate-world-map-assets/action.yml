@@ -1,8 +1,9 @@
 name: Generate world map assets
 description: >-
-  Produce the generated map content: the art in src/mapdata/WorldMap/ plus the
-  Lua tables src/addon/FDIDMap.lua and src/addon/CaveData.lua, reusing cached
-  copies when the generator has not changed since they were last built.
+  Produce the generated map content: the art in src/addon/mapdata/WorldMap/
+  plus the Lua tables src/addon/client/FDIDMap.lua and
+  src/addon/client/CaveData.lua, reusing cached copies when the generator has
+  not changed since they were last built.
 
 # The output is a pure function of the generator (src/generator/generateHFWM.py,
 # src/generator/hfwm/**, src/generator/requirements.txt), so that is the whole
@@ -11,10 +12,10 @@ description: >-
 #
 # Two cache entries share that hash, because they are consumed separately:
 #
-#   mapart-v2-<hash>     src/mapdata/WorldMap, multi-GB. Only the Map Data
-#                        release ships it.
-#   maptables-v2-<hash>  src/addon/FDIDMap.lua and CaveData.lua, small. The
-#                        core addon ships these, so an addon release restores
+#   mapart-v2-<hash>     src/addon/mapdata/WorldMap, multi-GB. Only the Map
+#                        Data release ships it.
+#   maptables-v2-<hash>  src/addon/client/FDIDMap.lua and CaveData.lua, small.
+#                        The core addon ships these, so an addon release restores
 #                        only this one (`tables-only`) and never downloads the
 #                        art.
 #
@@ -100,8 +101,8 @@ runs:
       uses: actions/cache/restore@v5
       with:
         path: |
-          src/addon/FDIDMap.lua
-          src/addon/CaveData.lua
+          src/addon/client/FDIDMap.lua
+          src/addon/client/CaveData.lua
         key: ${{ steps.key.outputs.tables-key }}
 
     # Always looked up, so the save step below knows whether the art entry
@@ -112,7 +113,7 @@ runs:
       uses: actions/cache/restore@v5
       with:
         lookup-only: ${{ inputs.lookup-only == 'true' || inputs.tables-only == 'true' }}
-        path: src/mapdata/WorldMap
+        path: src/addon/mapdata/WorldMap
         key: ${{ steps.key.outputs.art-key }}
 
     - name: Decide what to generate
@@ -188,13 +189,13 @@ runs:
       uses: actions/cache/save@v5
       with:
         path: |
-          src/addon/FDIDMap.lua
-          src/addon/CaveData.lua
+          src/addon/client/FDIDMap.lua
+          src/addon/client/CaveData.lua
         key: ${{ steps.key.outputs.tables-key }}
 
     - name: Save world map art cache
       if: inputs.save == 'true' && steps.decide.outputs.generate == 'true' && steps.art.outputs.cache-hit != 'true'
       uses: actions/cache/save@v5
       with:
-        path: src/mapdata/WorldMap
+        path: src/addon/mapdata/WorldMap
         key: ${{ steps.key.outputs.art-key }}

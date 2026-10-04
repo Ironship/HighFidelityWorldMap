@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Prints the two cache keys for the generator hash, as step outputs
 # (redirect into $GITHUB_OUTPUT):
-#   art-key     mapart-v2-<hash>      the art, src/mapdata/WorldMap
+#   art-key     mapart-v2-<hash>      the art, src/addon/mapdata/WorldMap
 #   tables-key  maptables-v2-<hash>   FDIDMap.lua and CaveData.lua
 #
 # Inputs (environment): HASH, the hashFiles() of the generator sources. The

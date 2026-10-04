@@ -25,8 +25,8 @@ if [[ "$bypass" != "true" && "$tables_hit" == "true" ]]; then
 fi
 
 # Only the tables were actually downloaded when the art was merely looked up,
-# so there is nothing under src/mapdata to check. After generation everything
-# exists locally.
+# so there is nothing under src/addon/mapdata to check. After generation
+# everything exists locally.
 verify=all
 if [[ "$generate" == "false" && ( "$tables_only" == "true" || "$lookup_only" == "true" ) ]]; then
   verify=tables

@@ -14,7 +14,7 @@ if [[ ! "$hash" =~ ^[0-9a-f]+$ ]]; then
   exit 1
 fi
 
-toc="$(cd "$(dirname "$0")/../.." && pwd)/src/mapdata/HighFidelityWorldMap_MapData_Forever.toc"
+toc="$(cd "$(dirname "$0")/../.." && pwd)/src/addon/mapdata/HighFidelityWorldMap_MapData_Forever.toc"
 if ! grep -q '^## X-HFWM-Data-Build:' "$toc"; then
   echo "::error::$toc has no '## X-HFWM-Data-Build:' line to stamp"
   exit 1
