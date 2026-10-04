@@ -39,6 +39,11 @@ if [[ ${#missing[@]} -eq 0 ]]; then
   exit 0
 fi
 
+if [[ "$require" == "tables" ]]; then
+  echo "::error::No cached world map tables are available for this generator build on main. Run \"Create Release: MapData\" first so the generated MapData cache exists, then rerun the client release."
+  exit 1
+fi
+
 echo "Decision: Generating a fresh world map asset set because main has no cache for: ${missing[*]}"
 
 base_ref=""

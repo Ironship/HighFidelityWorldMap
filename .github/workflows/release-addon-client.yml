@@ -98,12 +98,12 @@ jobs:
         if: github.event_name == 'create'
         run: .github/scripts/verify-tag-on-main.sh
 
-      # If main's cache has no tables for this generator code, run the Generate
-      # World Map Assets workflow on main (so the build is visible there) and
-      # wait for it. A release that only changes Lua/docs finds the cache and
-      # skips this entirely. Only the tables are required: the art is the Map
-      # Data addon's business.
-      - name: Generate World Map Assets?
+      # Only the tables are required here; the art belongs to the Map Data
+      # release workflow. If main's cache is missing the tables for this
+      # generator build, fail fast and tell the maintainer to do the MapData
+      # release first. A release that only changes Lua/docs finds the cache and
+      # skips this entirely.
+      - name: Verify world map tables cache
         env:
           GH_TOKEN: ${{ github.token }}
           ART_KEY: mapart-v2-${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}
