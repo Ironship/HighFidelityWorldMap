@@ -66,6 +66,10 @@ jobs:
         && startsWith(github.ref, 'refs/tags/v')
       )
     runs-on: ubuntu-latest
+    # actions: write lets it start generate-world-map-assets.yml.
+    permissions:
+      contents: read
+      actions: write
     # A cache miss regenerates the art (phase 3 runs twice: art + Original/),
     # so give it plenty of room.
     timeout-minutes: 300
@@ -80,10 +84,19 @@ jobs:
         if: github.event_name == 'create'
         run: .github/scripts/verify-tag-on-main.sh
 
-      # Reuses the art from the last build of the same generator code, so a
-      # release that only changes Lua/docs skips the long generation entirely.
-      # Always saves, so the publish job (and a re-run of it) can pick the art
-      # up. Only a copy saved from main is visible to *later* tags; see
+      # If main's cache has no art for this generator code, run the Generate
+      # World Map Assets workflow on main (so the build is visible there) and
+      # wait for it. A release that only changes Lua/docs finds the cache and
+      # skips this entirely.
+      - name: Ensure world map assets are cached on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ART_KEY: mapart-v1-${{ hashFiles('generateHFWM.py', 'hfwm/**/*.py', 'requirements.txt') }}
+        run: .github/scripts/ensure-world-map-assets-cache.sh
+
+      # Fallback: if the key above still misses (the tag's generator differs
+      # from main's), build it here and save it for this run. Only a copy saved
+      # from main is visible to *later* tags; see
       # .github/workflows/generate-world-map-assets.yml. lookup-only: on a hit
       # there is nothing to do here, so don't download GBs just for publish to
       # download them again.

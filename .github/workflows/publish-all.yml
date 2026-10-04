@@ -28,6 +28,10 @@ jobs:
   curseforge:
     name: CurseForge
     uses: ./.github/workflows/publish-curseforge.yml
+    # A called workflow cannot hold more permissions than its caller grants.
+    permissions:
+      contents: read
+      actions: write
     with:
       tag: ${{ inputs.tag }}
     secrets:

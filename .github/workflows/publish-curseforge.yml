@@ -66,6 +66,10 @@ jobs:
     name: Package and upload to CurseForge
     needs: verify
     runs-on: ubuntu-latest
+    # actions: write lets it start generate-world-map-assets.yml.
+    permissions:
+      contents: read
+      actions: write
     timeout-minutes: 300
 
     steps:
@@ -75,6 +79,15 @@ jobs:
           ref: refs/tags/${{ inputs.tag }}
           # release.sh walks back through tags to build the changelog.
           fetch-depth: 0
+
+      # If main's cache has no art for this generator code, run the Generate
+      # World Map Assets workflow on main (so the build is visible there) and
+      # wait for it.
+      - name: Ensure world map assets are cached on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ART_KEY: mapart-v1-${{ hashFiles('generateHFWM.py', 'hfwm/**/*.py', 'requirements.txt') }}
+        run: .github/scripts/ensure-world-map-assets-cache.sh
 
       # A hit when the generator has not changed since main last built it (see
       # generate-world-map-assets.yml). A miss rebuilds, and saving means a
