@@ -1,4 +1,4 @@
-name: Sync docs to README
+name: Compile README.md
 
 on:
   push:
