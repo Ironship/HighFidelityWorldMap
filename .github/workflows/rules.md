@@ -11,7 +11,7 @@ Put the code in a real file under `.github/scripts/` and call it from the YAML:
 
 | Language | Location | Example |
 |---|---|---|
-| Shell | `.github/scripts/<name>.sh` | `run: .github/scripts/verify-map-art.sh` |
+| Shell | `.github/scripts/<name>.sh` | `run: .github/scripts/verify-world-map-assets.sh` |
 | Python | `.github/scripts/<name>.py` | `run: python .github/scripts/resolve_game_build.py >> "$GITHUB_OUTPUT"` |
 
 Other languages follow the same pattern: a file with the proper extension,

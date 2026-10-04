@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Sanity-checks the generated map art so a broken build is never published or
-# cached. Run from the repo root.
+# Sanity-checks the generated world map assets so a broken build is never
+# published or cached. Run from the repo root.
 set -euo pipefail
 
 # Count the two trees separately. A single total lets one of them

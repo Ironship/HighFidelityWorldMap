@@ -79,8 +79,8 @@ jobs:
       # A hit when the generator has not changed since main last built it (see
       # generate-world-map-assets.yml). A miss rebuilds, and saving means a
       # re-run of a failed upload does not rebuild it again.
-      - name: Map art
-        uses: ./.github/actions/map-art
+      - name: Generate world map assets
+        uses: ./.github/actions/generate-world-map-assets
         with:
           save: "true"
 

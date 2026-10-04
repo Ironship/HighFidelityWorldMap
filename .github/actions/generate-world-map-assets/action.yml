@@ -1,4 +1,4 @@
-name: Map art
+name: Generate world map assets
 description: >-
   Produce WorldMap/, FDIDMap.lua and CaveData.lua, reusing a cached copy when
   the generator has not changed since it was last built.
@@ -43,7 +43,7 @@ runs:
       shell: bash
       run: .github/scripts/free-disk-space.sh
 
-    - name: Restore map art cache
+    - name: Restore world map assets cache
       id: art
       uses: actions/cache/restore@v4
       with:
@@ -89,13 +89,13 @@ runs:
 
     # Runs on cache hits too: a bad entry should fail here, not ship. Except
     # on a lookup-only hit, where nothing was downloaded to look at.
-    - name: Verify map art
+    - name: Verify world map assets
       if: inputs.lookup-only != 'true' || steps.art.outputs.cache-hit != 'true'
       shell: bash
-      run: .github/scripts/verify-map-art.sh
+      run: .github/scripts/verify-world-map-assets.sh
 
     # Only after verification, so a broken build is never cached.
-    - name: Save map art cache
+    - name: Save world map assets cache
       if: inputs.save == 'true' && steps.art.outputs.cache-hit != 'true'
       uses: actions/cache/save@v4
       with:

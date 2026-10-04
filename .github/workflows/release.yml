@@ -87,8 +87,8 @@ jobs:
       # .github/workflows/generate-world-map-assets.yml. lookup-only: on a hit
       # there is nothing to do here, so don't download GBs just for publish to
       # download them again.
-      - name: Map art
-        uses: ./.github/actions/map-art
+      - name: Generate world map assets
+        uses: ./.github/actions/generate-world-map-assets
         with:
           save: "true"
           lookup-only: "true"
@@ -135,8 +135,8 @@ jobs:
 
       # Normally a straight cache hit from the art job. If the cache entry
       # vanished or failed to save, this rebuilds rather than failing.
-      - name: Map art
-        uses: ./.github/actions/map-art
+      - name: Generate world map assets
+        uses: ./.github/actions/generate-world-map-assets
 
       # release.sh excludes anything `git ls-files --others` reports, which
       # includes .gitignored paths — so the generated WorldMap/ would be

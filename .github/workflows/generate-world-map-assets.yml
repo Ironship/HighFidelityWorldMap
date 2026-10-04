@@ -4,7 +4,8 @@ name: Generate World Map Assets
 # FDIDMap.lua and CaveData.lua, and saves the result to the Actions cache *from
 # main*. That is the only scope a tag-triggered release can read, so every
 # release, Create Release and the publish workflows alike, can reuse it instead
-# of repeating the ~40 minute generation. See .github/actions/map-art.
+# of repeating the ~40 minute generation. See
+# .github/actions/generate-world-map-assets.
 #
 # The cache key is a hash of the generator only (generateHFWM.py, hfwm/**,
 # requirements.txt). A change that leaves those alone, such as an addon Lua fix,
@@ -25,7 +26,7 @@ on:
       - "generateHFWM.py"
       - "hfwm/**"
       - "requirements.txt"
-      - ".github/actions/map-art/**"
+      - ".github/actions/generate-world-map-assets/**"
   schedule:
     - cron: "17 4 * * 0"
   workflow_dispatch:
@@ -34,7 +35,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: map-art
+  group: generate-world-map-assets
   cancel-in-progress: false
 
 jobs:
@@ -46,7 +47,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Map art
-        uses: ./.github/actions/map-art
+      - name: Generate world map assets
+        uses: ./.github/actions/generate-world-map-assets
         with:
           save: "true"
