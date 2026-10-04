@@ -29,6 +29,13 @@ inputs:
     required: false
     default: "false"
 
+  bypass-cache:
+    description: >-
+      Skip restoring the art cache and regenerate the assets even when a valid
+      cache entry already exists.
+    required: false
+    default: "false"
+
 outputs:
   cache-hit:
     description: "'true' when the art came from the cache instead of being generated."
@@ -44,8 +51,20 @@ runs:
       shell: bash
       run: .github/scripts/free-disk-space.sh
 
+    - name: Delete world map assets cache
+      if: inputs.bypass-cache == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        ART_CACHE_KEY: mapart-v2-${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}
+      run: |
+        if [[ -n "$(gh cache list --ref refs/heads/main --key "$ART_CACHE_KEY" --json key --jq '.[].key')" ]]; then
+          gh cache delete "$ART_CACHE_KEY" --ref refs/heads/main
+        fi
+
     - name: Restore world map assets cache
       id: art
+      if: inputs.bypass-cache != 'true'
       uses: actions/cache/restore@v5
       with:
         lookup-only: ${{ inputs.lookup-only }}
