@@ -90,7 +90,7 @@ jobs:
       # World Map Assets workflow on main (so the build is visible there) and
       # wait for it. A release that only changes Lua/docs finds the cache and
       # skips this entirely.
-      - name: Ensure world map assets are cached on main
+      - name: Generate World Map Assets?
         env:
           GH_TOKEN: ${{ github.token }}
           ART_KEY: mapart-v2-${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}
