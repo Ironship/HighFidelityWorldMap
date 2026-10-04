@@ -1,0 +1,37 @@
+## Interface: 16001
+## Title: High Fidelity World Map Forever
+## Notes: Overlays high-resolution minimap exploration textures onto the world map for a satellite-view experience. Built from World of Warcraft Forever (wow_classic_beta 1.60.1.69913) map data. Type /hfwm to toggle.
+## Author: HighFidelityWorldMapForever
+## Version: @project-version@
+## SavedVariables: HighFidelityWorldMapForeverDB
+## IconTexture: Interface\Icons\INV_Misc_Map02
+## X-Curse-Project-ID: 1701034
+
+# Ace3 libs are fetched at build/dev time rather than committed; see .pkgmeta
+# and src/addon/dev/fetch-libs.sh. Kept flat at the addon root (not under Libs\) so the
+# CI lint job's plain-bash file-exists check, which does not understand
+# backslashed subdirectories, still finds it.
+embeds.xml
+
+# Generated data tables. Plain globals with no dependency on the addon
+# namespace, so they load first and Namespace.lua can fold them in.
+FDIDMap.lua
+CaveData.lua
+Namespace.lua
+Config.lua
+TexturePool.lua
+BaseArt.lua
+MapFrameBg.lua
+Exploration.lua
+Watchdog.lua
+Renderer.lua
+CaveTable.lua
+Cave.lua
+CaveRenderer.lua
+MapMemory.lua
+ZoomLevels.lua
+ResetView.lua
+ToggleButton.lua
+Commands.lua
+Options.lua
+Core.lua

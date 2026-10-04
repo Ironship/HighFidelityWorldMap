@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Sanity-checks the generated world map assets so a broken build is never
-# published or cached. Run from the repo root.
+# published or cached. Checks src/addon/ whatever the working directory.
 set -euo pipefail
+
+cd "$(dirname "$0")/../../src/addon"
 
 # Count the two trees separately. A single total lets one of them
 # cover for the other: when every zone in phase 3 died and only the

@@ -93,7 +93,7 @@ jobs:
       - name: Ensure world map assets are cached on main
         env:
           GH_TOKEN: ${{ github.token }}
-          ART_KEY: mapart-v1-${{ hashFiles('generateHFWM.py', 'hfwm/**/*.py', 'requirements.txt') }}
+          ART_KEY: mapart-v2-${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}
         run: .github/scripts/ensure-world-map-assets-cache.sh
 
       # Fallback: if the key above still misses (the tag's generator differs
@@ -154,12 +154,12 @@ jobs:
         uses: ./.github/actions/generate-world-map-assets
 
       # release.sh excludes anything `git ls-files --others` reports, which
-      # includes .gitignored paths — so the generated WorldMap/ would be
+      # includes .gitignored paths — so the generated src/addon/WorldMap/ would be
       # dropped from the zip. Adding it to the index with --intent-to-add (-N)
       # takes it off that list without writing GBs of blobs into .git. The
       # index is thrown away with the runner; nothing is committed.
       - name: Stage generated art
-        run: git add -fN WorldMap FDIDMap.lua
+        run: git add -fN src/addon/WorldMap src/addon/FDIDMap.lua
 
       # The packager only uploads to a destination whose token is set. Only
       # GITHUB_OAUTH is passed here, so this creates the GitHub Release and

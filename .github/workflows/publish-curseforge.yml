@@ -86,7 +86,7 @@ jobs:
       - name: Ensure world map assets are cached on main
         env:
           GH_TOKEN: ${{ github.token }}
-          ART_KEY: mapart-v1-${{ hashFiles('generateHFWM.py', 'hfwm/**/*.py', 'requirements.txt') }}
+          ART_KEY: mapart-v2-${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}
         run: .github/scripts/ensure-world-map-assets-cache.sh
 
       # A hit when the generator has not changed since main last built it (see
@@ -100,7 +100,7 @@ jobs:
       # See release.yml: takes the gitignored art off the packager's exclude
       # list without writing GBs of blobs into .git.
       - name: Stage generated art
-        run: git add -fN WorldMap FDIDMap.lua
+        run: git add -fN src/addon/WorldMap src/addon/FDIDMap.lua
 
       # Only CF_API_TOKEN is passed, so the packager uploads to CurseForge and
       # does not touch the GitHub Release. Nothing goes to WoWInterface, so skip

@@ -35,9 +35,7 @@ jobs:
         with:
           filters: |
             generator:
-              - 'generateHFWM.py'
-              - 'hfwm/**'
-              - 'requirements.txt'
+              - 'src/generator/**'
               - '.github/workflows/validate-changes.yml'
               - '.github/scripts/smoke-test.sh'
 
@@ -56,7 +54,7 @@ jobs:
       # .pkgmeta's externals use for the actual release, so a renamed or
       # broken path there fails here rather than silently at release time.
       - name: Fetch Ace3 libraries
-        run: ./dev/fetch-libs.sh
+        run: ./src/addon/dev/fetch-libs.sh
 
       # Covers the files listed in the TOC and the fetched Ace3 libraries.
       - name: Lint Lua
@@ -81,12 +79,12 @@ jobs:
         run: .github/scripts/install-python-deps.sh
 
       - name: Lint Python
-        run: python -m compileall -q hfwm generateHFWM.py
+        run: python -m compileall -q generator
 
       # Hits wago.tools for the DB2 exports but writes no tiles. Catches a
       # pinned build going away or the zone DB changing shape.
       - name: Dry run generator
-        run: python generateHFWM.py ./WorldMap --dry-run
+        run: python src/generator/generateHFWM.py --dry-run
 
       # The dry run stops before a single pixel is touched, so it never
       # imports what the processing phase needs — a missing numpy got all the
@@ -94,9 +92,9 @@ jobs:
       # source tiles and about a second, and it runs the whole path: download,
       # stitch, the sea erase, the resample, BLP2 encode.
       #
-      # --skip-fdid-map because phase 4 writes FDIDMap.lua next to the script
-      # rather than into the output dir, and a one-zone map would overwrite the
-      # committed one.
+      # --skip-fdid-map because phase 4 writes src/addon/FDIDMap.lua rather than
+      # into the output dir, and a one-zone map would overwrite the committed
+      # one.
       - name: Smoke test
         run: .github/scripts/smoke-test.sh
 

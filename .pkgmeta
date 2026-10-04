@@ -1,42 +1,54 @@
 # BigWigs packager config: https://github.com/BigWigsMods/packager/wiki/Preparing-the-PackageMeta-File
 #
-# The zip is dominated by WorldMap/, which is generated (and .gitignored), not
-# committed. CI regenerates it and then `git add -fN`s it so the packager stops
-# treating it as an untracked file and copies it into the package. See
-# .github/workflows/release.yml.
+# Repository layout: the addon lives in src/addon/, everything else (src/generator/,
+# docs/, dev/, assets/, CI) is repo machinery that must not ship. The packager
+# wants the TOC at the top of the checkout, so it copies the whole checkout
+# into the package folder and `move-folders` below hoists src/addon/ to the top.
+#
+# The zip is dominated by src/addon/WorldMap/, which is generated (and
+# .gitignored), not committed. CI regenerates it and then `git add -fN`s it so
+# the packager stops treating it as an untracked file and copies it into the
+# package. See .github/workflows/release.yml.
 
 package-as: HighFidelityWorldMapForever
 
 # No colon in the value: the packager's pkgmeta parser splits on the first one.
 changelog-title: High Fidelity World Map Forever
 
-# Everything below is either build machinery or a local artefact, none of it
-# belongs in the package users download.
+# Hoist the addon out of src/addon/ so the TOC ends up at the package root.
+move-folders:
+  HighFidelityWorldMapForever/src/addon: HighFidelityWorldMapForever
+
+# Everything outside src/addon/ is build machinery or a repo-level document, none
+# of it belongs in the package users download. Dotfiles (.github, .git,
+# .gitignore, .pkgmeta, .release, src/generator/.cache-*) are skipped by the
+# packager on its own. A new top-level file or folder that is not part of the
+# addon needs an entry here.
 ignore:
-  - .github
-  - .pkgmeta
-  - .gitignore
-  - .release
-  - .cache-*
-  - __pycache__
-  - hfwm/__pycache__
-  - dev
+  - AI-DISCLOSURE.md
+  - CONTRIBUTING.md
+  - CurseForgeDescription.md
+  - README.md
+  - assets
+  - docs
+  - src/generator
 
 # Ace3: fetched here rather than committed, from the canonical WowAce svn
-# trunk, per Ace3's own packaging guidance. dev/fetch-libs.sh gets the same
-# libraries locally from a GitHub mirror instead, so a checkout only needs
+# trunk, per Ace3's own packaging guidance. Paths are inside the package
+# before move-folders runs, hence the src/addon/ prefix. src/addon/dev/fetch-libs.sh gets
+# the same libraries locally from a GitHub mirror instead, so a checkout only needs
 # git, not svn, to test with; see that script's own comment for why.
 externals:
-  Libs/LibStub: https://repos.wowace.com/wow/ace3/trunk/LibStub
-  Libs/CallbackHandler-1.0: https://repos.wowace.com/wow/ace3/trunk/CallbackHandler-1.0
-  Libs/AceAddon-3.0: https://repos.wowace.com/wow/ace3/trunk/AceAddon-3.0
-  Libs/AceEvent-3.0: https://repos.wowace.com/wow/ace3/trunk/AceEvent-3.0
-  Libs/AceConsole-3.0: https://repos.wowace.com/wow/ace3/trunk/AceConsole-3.0
-  Libs/AceDB-3.0: https://repos.wowace.com/wow/ace3/trunk/AceDB-3.0
-  Libs/AceDBOptions-3.0: https://repos.wowace.com/wow/ace3/trunk/AceDBOptions-3.0
-  Libs/AceGUI-3.0: https://repos.wowace.com/wow/ace3/trunk/AceGUI-3.0
-  Libs/AceConfigRegistry-3.0: https://repos.wowace.com/wow/ace3/trunk/AceConfig-3.0/AceConfigRegistry-3.0
-  Libs/AceConfigDialog-3.0: https://repos.wowace.com/wow/ace3/trunk/AceConfig-3.0/AceConfigDialog-3.0
+  src/addon/Libs/LibStub: https://repos.wowace.com/wow/ace3/trunk/LibStub
+  src/addon/Libs/CallbackHandler-1.0: https://repos.wowace.com/wow/ace3/trunk/CallbackHandler-1.0
+  src/addon/Libs/AceAddon-3.0: https://repos.wowace.com/wow/ace3/trunk/AceAddon-3.0
+  src/addon/Libs/AceEvent-3.0: https://repos.wowace.com/wow/ace3/trunk/AceEvent-3.0
+  src/addon/Libs/AceConsole-3.0: https://repos.wowace.com/wow/ace3/trunk/AceConsole-3.0
+  src/addon/Libs/AceDB-3.0: https://repos.wowace.com/wow/ace3/trunk/AceDB-3.0
+  src/addon/Libs/AceDBOptions-3.0: https://repos.wowace.com/wow/ace3/trunk/AceDBOptions-3.0
+  src/addon/Libs/AceGUI-3.0: https://repos.wowace.com/wow/ace3/trunk/AceGUI-3.0
+  src/addon/Libs/AceConfigRegistry-3.0: https://repos.wowace.com/wow/ace3/trunk/AceConfig-3.0/AceConfigRegistry-3.0
+  src/addon/Libs/AceConfigDialog-3.0: https://repos.wowace.com/wow/ace3/trunk/AceConfig-3.0/AceConfigDialog-3.0
 
 # A nolib build would be missing Ace3 entirely and not load, so don't offer one.
 enable-nolib-creation: no

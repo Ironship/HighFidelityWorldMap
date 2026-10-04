@@ -1,11 +1,12 @@
 name: Generate world map assets
 description: >-
-  Produce WorldMap/, FDIDMap.lua and CaveData.lua, reusing a cached copy when
-  the generator has not changed since it was last built.
+  Produce src/addon/WorldMap/, src/addon/FDIDMap.lua and src/addon/CaveData.lua, reusing a
+  cached copy when the generator has not changed since it was last built.
 
-# The art is a pure function of the generator (generateHFWM.py, hfwm/**,
-# requirements.txt), so that is the whole cache key. A release that only
-# touches Lua, docs or workflows hits the cache and skips the ~40 minute build.
+# The art is a pure function of the generator (src/generator/generateHFWM.py,
+# src/generator/hfwm/**, src/generator/requirements.txt), so that is the whole cache
+# key. A release that only touches Lua, docs or workflows hits the cache and
+# skips the ~40 minute build.
 #
 # GitHub scopes caches by ref: a run on a tag can read caches saved from the
 # default branch but not from any other tag. So the copy that *later* releases
@@ -49,10 +50,10 @@ runs:
       with:
         lookup-only: ${{ inputs.lookup-only }}
         path: |
-          WorldMap
-          FDIDMap.lua
-          CaveData.lua
-        key: mapart-v1-${{ hashFiles('generateHFWM.py', 'hfwm/**/*.py', 'requirements.txt') }}
+          src/addon/WorldMap
+          src/addon/FDIDMap.lua
+          src/addon/CaveData.lua
+        key: mapart-v2-${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}
 
     - name: Set up Python
       if: steps.art.outputs.cache-hit != 'true'
@@ -78,14 +79,14 @@ runs:
       uses: actions/cache@v5
       with:
         path: ${{ steps.pipeline.outputs.cache_dir }}
-        key: casc-${{ steps.pipeline.outputs.build }}-${{ hashFiles('hfwm/constants.py') }}
+        key: casc-${{ steps.pipeline.outputs.build }}-${{ hashFiles('src/generator/hfwm/config/*.py') }}
         restore-keys: |
           casc-${{ steps.pipeline.outputs.build }}-
 
     - name: Generate map art
       if: steps.art.outputs.cache-hit != 'true'
       shell: bash
-      run: python generateHFWM.py ./WorldMap
+      run: python src/generator/generateHFWM.py
 
     # Runs on cache hits too: a bad entry should fail here, not ship. Except
     # on a lookup-only hit, where nothing was downloaded to look at.
@@ -100,7 +101,7 @@ runs:
       uses: actions/cache/save@v5
       with:
         path: |
-          WorldMap
-          FDIDMap.lua
-          CaveData.lua
-        key: mapart-v1-${{ hashFiles('generateHFWM.py', 'hfwm/**/*.py', 'requirements.txt') }}
+          src/addon/WorldMap
+          src/addon/FDIDMap.lua
+          src/addon/CaveData.lua
+        key: mapart-v2-${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}

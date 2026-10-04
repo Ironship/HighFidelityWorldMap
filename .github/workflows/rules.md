@@ -21,7 +21,7 @@ invoked by a single `run:` line.
 
 - No `run: |` blocks and no heredocs. A `run:` is a single command line that
   invokes a script, or a single trivial command (for example
-  `python generateHFWM.py ./WorldMap --dry-run`).
+  `python src/generator/generateHFWM.py --dry-run`).
 - Shell scripts start with `#!/usr/bin/env bash` and `set -euo pipefail`, and
   are committed executable (`chmod +x`).
 - Scripts run from the repo root, which is the default working directory of a

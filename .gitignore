@@ -1,6 +1,5 @@
-# Generated map art — regenerate with `python generateHFWM.py`
-WorldMap/
-WorldMap*
+# Generated map art — regenerate with `python src/generator/generateHFWM.py`
+src/addon/WorldMap*
 
 # Build-stamped pipeline cache (DB2 CSVs, WDTs, minimap BLPs)
 .cache-*/
@@ -18,5 +17,5 @@ __pycache__/
 .env
 
 # Ace3 libraries are fetched at build/dev time (see .pkgmeta's externals and
-# dev/fetch-libs.sh) and are not committed.
-Libs/*
+# src/addon/dev/fetch-libs.sh) and are not committed.
+src/addon/Libs/*

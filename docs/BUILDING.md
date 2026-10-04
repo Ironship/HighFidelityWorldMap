@@ -2,8 +2,12 @@
 
 This project is split into two parts:
 
-- a Lua addon that hooks into the in-game world map
-- a Python pipeline that generates the bundled map tiles and FDID map tables
+- `src/addon/` — the Lua addon that hooks into the in-game world map. This is
+  the folder that ships, and the only one the game client sees.
+- `src/generator/` — the Python pipeline that generates the bundled map tiles
+  and FDID map tables. It writes its output into `src/addon/`.
+
+Everything else (`docs/`, `assets/`, `.github/`) is repository machinery and is not packaged.
 
 The addon itself is not a traditional "build" in the sense of compiling a binary. The real work is:
 
@@ -30,16 +34,24 @@ cd HighFidelityWorldMapForever
 The repo does not commit the Ace3 libraries. Fetch them before testing locally:
 
 ```sh
-./dev/fetch-libs.sh
+./src/addon/dev/fetch-libs.sh
 ```
 
-This populates the `Libs/` folders required for the addon to load.
+This populates the `src/addon/Libs/` folders required for the addon to load.
+
+To load the addon in the game, the client needs a folder named after the
+addon with the TOC directly inside it. Link `src/addon/` into your AddOns
+directory under that name:
+
+```sh
+ln -s "$PWD/src/addon" "<WoW install>/_classic_beta_/Interface/AddOns/HighFidelityWorldMapForever"
+```
 
 ## 3) Install Python dependencies
 
 ```sh
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install -r src/generator/requirements.txt
 ```
 
 ## 4) Generate the map art
@@ -47,8 +59,11 @@ python -m pip install -r requirements.txt
 The generated map data is not tracked in Git and is rebuilt from source data.
 
 ```sh
-python generateHFWM.py
+python src/generator/generateHFWM.py
 ```
+
+Tiles are written to `src/addon/WorldMap/`, alongside `src/addon/FDIDMap.lua` and
+`src/addon/CaveData.lua`. Downloads are cached under `src/generator/.cache-*/`.
 
 Useful flags include:
 
@@ -64,7 +79,7 @@ Useful flags include:
 You can run a quick validation pass without a full world build:
 
 ```sh
-python generateHFWM.py ./smoke --zones ThunderBluff --skip-fdid-map
+python src/generator/generateHFWM.py ./smoke --zones ThunderBluff --skip-fdid-map
 ```
 
 This runs a small zone through the generation pipeline and checks the output is created correctly.
@@ -74,7 +89,7 @@ This runs a small zone through the generation pipeline and checks the output is 
 You can validate the Lua files directly:
 
 ```sh
-luac5.1 -p *.lua
+(cd addon && luac5.1 -p *.lua)
 ```
 
 or, with a loop over the addon TOC:
@@ -83,7 +98,7 @@ or, with a loop over the addon TOC:
 while IFS= read -r file; do
   [[ "$file" == *.lua ]] || continue
   luac5.1 -p "$file" || exit 1
-done < <(grep -E '^[^#[:space:]].*\.(lua|xml)[[:space:]]*$' HighFidelityWorldMapForever.toc | tr -d '\r')
+done < <(grep -E '^[^#[:space:]].*\.(lua|xml)[[:space:]]*$' src/addon/HighFidelityWorldMapForever.toc | tr -d '\r')
 ```
 
 ## 7) CI checks
@@ -102,6 +117,6 @@ When ready to publish:
 
 ## Notes
 
-- The generated `WorldMap/` directory is a build artifact and is not normally committed.
-- `FDIDMap.lua` is part of the repo and is produced by the generator.
-- `Libs/` is fetched during local dev and CI; none of its contents are committed.
+- The generated `src/addon/WorldMap/` directory is a build artifact and is not normally committed.
+- `src/addon/FDIDMap.lua` and `src/addon/CaveData.lua` are part of the repo and are produced by the generator.
+- `src/addon/Libs/` is fetched during local dev and CI; none of its contents are committed.

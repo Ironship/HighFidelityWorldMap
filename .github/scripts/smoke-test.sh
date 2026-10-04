@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Generator smoke tests. Run from the repo root.
+# Generator smoke tests. Run from the repo root; output goes to ./smoke*,
+# which .gitignore covers.
 #   smoke-test.sh          one interior zone through the full pipeline
 #   smoke-test.sh ocean    same zone through the ocean pass
 set -euo pipefail
 
 case "${1:-default}" in
   default)
-    python generateHFWM.py ./smoke --zones ThunderBluff --skip-fdid-map
+    python src/generator/generateHFWM.py ./smoke --zones ThunderBluff --skip-fdid-map
     count="$(find smoke -type f -name '*.blp' | wc -l)"
     echo "Smoke build produced $count BLPs."
     # 12 for the zone, 12 again for the Original/ dump.
@@ -16,7 +17,7 @@ case "${1:-default}" in
     fi
     ;;
   ocean)
-    python generateHFWM.py ./smoke-ocean --zones ThunderBluff \
+    python src/generator/generateHFWM.py ./smoke-ocean --zones ThunderBluff \
       --ocean --no-original --skip-fdid-map
     test "$(find smoke-ocean -type f -name '*.blp' | wc -l)" -eq 12
     ;;
