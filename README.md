@@ -55,8 +55,7 @@ This project is split into two parts:
 - `src/generator/` — the Python pipeline that generates the bundled map tiles
   and FDID map tables. It writes its output into `src/addon/`.
 
-Everything else (`docs/`, `dev/`, `assets/`, `.github/`) is repository
-machinery and is not packaged.
+Everything else (`docs/`, `assets/`, `.github/`) is repository machinery and is not packaged.
 
 The addon itself is not a traditional "build" in the sense of compiling a binary. The real work is:
 
@@ -83,7 +82,7 @@ cd HighFidelityWorldMapForever
 The repo does not commit the Ace3 libraries. Fetch them before testing locally:
 
 ```sh
-./dev/fetch-libs.sh
+./src/addon/dev/fetch-libs.sh
 ```
 
 This populates the `src/addon/Libs/` folders required for the addon to load.
