@@ -1,0 +1,34 @@
+name: Publish Release to all Marketplaces
+
+# Publishes an existing release (made by "Create Release") to every marketplace
+# the addon is listed on. Pick the release by its tag.
+#
+# Each marketplace is its own reusable workflow and one job below. To add
+# another, write its publish-<marketplace>.yml with a `workflow_call` trigger
+# and a `tag` input, then add a job here that calls it.
+#
+# Currently: CurseForge.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, as shown on the Releases page, e.g. v1.0.1"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-all
+  cancel-in-progress: false
+
+jobs:
+  curseforge:
+    name: CurseForge
+    uses: ./.github/workflows/publish-curseforge.yml
+    with:
+      tag: ${{ inputs.tag }}
+    secrets:
+      CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}

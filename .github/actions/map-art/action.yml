@@ -9,9 +9,10 @@ description: >-
 #
 # GitHub scopes caches by ref: a run on a tag can read caches saved from the
 # default branch but not from any other tag. So the copy that *later* releases
-# restore has to be saved from main (see .github/workflows/map-art.yml). A copy
+# restore has to be saved from main (see
+# .github/workflows/generate-world-map-assets.yml). A copy
 # saved from a tag still serves its own run (release.yml's art job saves it and
-# the publish job restores it), it just costs ~2-3 GB of the repo's 10 GB
+# the release job restores it), it just costs ~2-3 GB of the repo's 10 GB
 # cache quota and is invisible to every other tag.
 
 inputs:

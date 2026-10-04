@@ -92,13 +92,13 @@ The repo includes a GitHub Actions workflow that runs linting and smoke-test gen
 
 ## 8) Release packaging
 
-Release packaging is handled by the release workflow and packager tool, not by a local manual compile step.
+Release packaging is handled by GitHub Actions workflows and the packager tool, not by a local manual compile step.
 
 When ready to publish:
 
-- push a version tag to `main`
-- let the release workflow generate the map data and package the addon
-- the packager then uploads the zip to the configured release targets
+- run **Create Release** (or push a version tag to `main`) to generate the map data, package the addon and create the GitHub release
+- run **Publish Release to all Marketplaces** with that release's tag to upload it to CurseForge (and any marketplaces added later)
+- **Publish Release to CurseForge** does the CurseForge step on its own if you only need that one
 
 ## Notes
 

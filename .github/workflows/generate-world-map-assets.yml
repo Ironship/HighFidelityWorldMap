@@ -1,0 +1,52 @@
+name: Generate World Map Assets
+
+# Runs the Python pipeline (generateHFWM.py) that builds the world map art,
+# FDIDMap.lua and CaveData.lua, and saves the result to the Actions cache *from
+# main*. That is the only scope a tag-triggered release can read, so every
+# release, Create Release and the publish workflows alike, can reuse it instead
+# of repeating the ~40 minute generation. See .github/actions/map-art.
+#
+# The cache key is a hash of the generator only (generateHFWM.py, hfwm/**,
+# requirements.txt). A change that leaves those alone, such as an addon Lua fix,
+# docs or a workflow tweak, resolves to the same key, so a new tag or manual
+# release reuses the existing assets without regenerating anything.
+#
+#   - push to main touching the generator: regenerate so the next release is a
+#     cache hit.
+#   - weekly: GitHub evicts caches unused for 7 days; restoring the entry
+#     resets that clock. A miss here (evicted, or never built) regenerates it.
+#   - manual: warm it on demand.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "generateHFWM.py"
+      - "hfwm/**"
+      - "requirements.txt"
+      - ".github/actions/map-art/**"
+  schedule:
+    - cron: "17 4 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: map-art
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Generate and cache world map assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Map art
+        uses: ./.github/actions/map-art
+        with:
+          save: "true"

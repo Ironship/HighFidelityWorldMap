@@ -1,0 +1,100 @@
+name: Publish Release to CurseForge
+
+# Uploads an existing release to CurseForge. It never creates tags or GitHub
+# Releases; run "Create Release" first.
+#
+# Run it on its own from the Actions tab, or let "Publish Release to all
+# Marketplaces" call it.
+#
+# The package is rebuilt from the release tag rather than downloaded from the
+# GitHub Release: the packager is what turns the TOC and tag into CurseForge
+# game versions and a release channel (release/beta/alpha), and it cannot
+# upload a zip it did not build. The art is a pure function of the generator
+# code at that tag, so the result matches what Create Release shipped.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, as shown on the Releases page, e.g. v1.0.1"
+        type: string
+        required: true
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag to publish, e.g. v1.0.1"
+        type: string
+        required: true
+    secrets:
+      CF_API_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+# A publish uploads a multi-GB zip to CurseForge; never run two at once.
+concurrency:
+  group: publish-curseforge
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify release
+    # The workflow file and CF_API_TOKEN are only trusted from main. In a called
+    # workflow github.ref is the caller's ref, so this covers both entry points.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Verify release exists
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/verify-release-exists.sh
+
+      - name: Verify tag is on main
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: .github/scripts/verify-tag-on-main.sh
+
+  publish:
+    name: Package and upload to CurseForge
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          # release.sh walks back through tags to build the changelog.
+          fetch-depth: 0
+
+      # A hit when the generator has not changed since main last built it (see
+      # generate-world-map-assets.yml). A miss rebuilds, and saving means a
+      # re-run of a failed upload does not rebuild it again.
+      - name: Map art
+        uses: ./.github/actions/map-art
+        with:
+          save: "true"
+
+      # See release.yml: takes the gitignored art off the packager's exclude
+      # list without writing GBs of blobs into .git.
+      - name: Stage generated art
+        run: git add -fN WorldMap FDIDMap.lua
+
+      # Only CF_API_TOKEN is passed, so the packager uploads to CurseForge and
+      # does not touch the GitHub Release. Nothing goes to WoWInterface, so skip
+      # the pandoc install.
+      - name: Package and upload to CurseForge
+        uses: BigWigsMods/packager@v2
+        with:
+          pandoc: "false"
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}

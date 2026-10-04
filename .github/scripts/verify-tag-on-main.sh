@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# Fails unless the commit being released is contained in origin/main.
-# Expects GITHUB_SHA and GITHUB_REF_NAME from the Actions environment.
+# Fails unless the commit a release tag points at is contained in origin/main.
+# The tag is RELEASE_TAG when set (publishing an existing release), otherwise
+# GITHUB_REF_NAME (the run was triggered by the tag push itself).
 set -euo pipefail
 
-git fetch --no-tags --depth=1 origin main
+tag="${RELEASE_TAG:-${GITHUB_REF_NAME}}"
+
+# Not --depth=1: a published release is usually older than main's tip, and a
+# shallow main would make every commit but the tip look like it is not on main.
+git fetch --no-tags origin main
 git fetch --tags --force origin
-git merge-base --is-ancestor "${GITHUB_SHA}" origin/main
-echo "Tag ${GITHUB_REF_NAME} is contained in main."
+git merge-base --is-ancestor "refs/tags/${tag}^{commit}" origin/main
+echo "Tag ${tag} is contained in main."

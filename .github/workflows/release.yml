@@ -1,10 +1,15 @@
-name: Release
+name: Create Release
 
+# Creates an official tagged release: the version tag, the map art, the package
+# and the GitHub Release with the zip attached. It deliberately uploads nowhere
+# else. To put a release on the marketplaces, run "Publish Release to all
+# Marketplaces" (or "Publish Release to CurseForge") and give it the tag.
+#
 # Two ways in:
 #
 #   1. Push a tag yourself:  git tag -a v1.0.1 -m v1.0.1 && git push origin v1.0.1
-#   2. Actions -> Release -> Run workflow, pick patch/minor/major and the tag is
-#      created for you.
+#   2. Actions -> Create Release -> Run workflow, pick patch/minor/major and the
+#      tag is created for you.
 #
 # Option 2 deliberately tags and packages inside this one workflow. A tag pushed
 # with GITHUB_TOKEN does not trigger other workflows, so chaining two workflows
@@ -14,11 +19,11 @@ name: Release
 #
 #   art      generates the map art (~40 min) and saves it to the Actions cache
 #   tag      (manual runs only) bumps the version and pushes the tag
-#   publish  restores the art, packages, uploads to CurseForge and GitHub
+#   release  restores the art, packages and creates the GitHub Release
 #
-# If publish fails (bad CF_API_TOKEN, CurseForge outage, ...), fix it and use
-# "Re-run failed jobs": art and tag are not repeated, and a re-run does not bump
-# the version a second time.
+# If release fails (GitHub outage, ...), fix it and use "Re-run failed jobs":
+# art and tag are not repeated, and a re-run does not bump the version a second
+# time.
 
 on:
   create:
@@ -37,7 +42,7 @@ on:
           - minor
           - major
       prerelease:
-        description: 'Optional suffix, e.g. "beta.1" -> v1.0.1-beta.1. A tag containing "beta" or "alpha" uploads to that CurseForge channel.'
+        description: 'Optional suffix, e.g. "beta.1" -> v1.0.1-beta.1. A tag containing "beta" or "alpha" is marked as a pre-release, and is published to that CurseForge channel.'
         type: string
         required: false
         default: ""
@@ -45,7 +50,7 @@ on:
 permissions:
   contents: write
 
-# A release pushes a multi-GB zip to CurseForge; never run two at once.
+# A release builds and uploads a multi-GB zip; never run two at once.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -79,8 +84,9 @@ jobs:
       # release that only changes Lua/docs skips the long generation entirely.
       # Always saves, so the publish job (and a re-run of it) can pick the art
       # up. Only a copy saved from main is visible to *later* tags; see
-      # .github/workflows/map-art.yml. lookup-only: on a hit there is nothing
-      # to do here, so don't download GBs just for publish to download them again.
+      # .github/workflows/generate-world-map-assets.yml. lookup-only: on a hit
+      # there is nothing to do here, so don't download GBs just for publish to
+      # download them again.
       - name: Map art
         uses: ./.github/actions/map-art
         with:
@@ -109,8 +115,8 @@ jobs:
           PRERELEASE: ${{ inputs.prerelease }}
         run: .github/scripts/bump-version.sh
 
-  publish:
-    name: Package and publish
+  release:
+    name: Package and create GitHub release
     needs: [art, tag]
     # tag is skipped on a pushed-tag release; that is fine. A failed art or
     # tag job is not.
@@ -140,17 +146,20 @@ jobs:
       - name: Stage generated art
         run: git add -fN WorldMap FDIDMap.lua
 
-      - name: Package and publish
+      # The packager only uploads to a destination whose token is set. Only
+      # GITHUB_OAUTH is passed here, so this creates the GitHub Release and
+      # skips CurseForge; publish-curseforge.yml is the one that sets
+      # CF_API_TOKEN.
+      - name: Package and create GitHub release
         uses: BigWigsMods/packager@v2
         with:
           # Nothing goes to WoWInterface, so skip the pandoc install.
           pandoc: "false"
         env:
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
 
       # Redundant once the GitHub Release exists, but it is the only copy of the
-      # zip if the CurseForge or Release upload is what failed.
+      # zip if the Release upload is what failed.
       - name: Upload package
         if: always()
         uses: actions/upload-artifact@v4
