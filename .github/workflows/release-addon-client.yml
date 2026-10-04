@@ -6,10 +6,10 @@ name: "Create Release: Client"
 # Release to all Marketplaces" with the new tag. If that fails, re-run it on its
 # own (or run "Publish Release to CurseForge") and give it the tag.
 #
-# The map art is NOT part of this release. It is the separate Map Data addon,
-# released by "Create Release: MapData" with its own mapdata-v* tags and its own
-# CurseForge project. The two workflows are independent and do not trigger each
-# other, so a UI or settings fix never means a multi-GB download.
+# The map art and runtime map metadata are NOT part of this release. They are
+# the separate Map Data addon, released by "Create Release: MapData" with its
+# own mapdata-v* tags and its own CurseForge project. The client addon only ships
+# the Lua/UI logic; it consumes the data addon's bridge and art at runtime.
 #
 # Two ways in:
 #
@@ -21,19 +21,12 @@ name: "Create Release: Client"
 # with GITHUB_TOKEN does not trigger other workflows, so chaining two workflows
 # would silently do nothing.
 #
-# Four jobs, so a failure late on does not redo an earlier part:
+# Three jobs, so a failure late on does not redo an earlier part:
 #
-#   art      makes sure the generated Lua tables (FDIDMap.lua, CaveData.lua) are
-#            available. Normally a small cache restore; the art itself is never
-#            downloaded here.
 #   tag      (manual runs only) bumps the version and pushes the tag
-#   release  checks MapData is current, packages and creates the GitHub Release
+#   release  packages and creates the GitHub Release from the checked-in client
+#            source only
 #   publish  starts "Publish Release to all Marketplaces" and waits for it
-#
-# The release job refuses to ship when the generator changed and the Map Data
-# addon has not been released from it yet (verify-mapdata-current.sh): the tables
-# would point at art users cannot download. Wait for "Create Release: MapData"
-# (or run it), then use "Re-run failed jobs" here; the tag is not bumped again.
 #
 # If release or publish fails (GitHub outage, ...), fix it and use "Re-run
 # failed jobs": the jobs before it are not repeated, and a re-run does not bump
@@ -70,59 +63,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  art:
-    name: Prepare generated Lua tables
-    if: >-
-      github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-      || (
-        github.event_name == 'create'
-        && github.ref_type == 'tag'
-        && startsWith(github.ref, 'refs/tags/v')
-      )
-    runs-on: ubuntu-latest
-    # actions: write lets it start generate-world-map-assets.yml.
-    permissions:
-      contents: read
-      actions: write
-    # A cache miss regenerates everything (phase 3 runs twice: art + Original/),
-    # so give it plenty of room.
-    timeout-minutes: 300
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Verify tag is on main
-        if: github.event_name == 'create'
-        run: .github/scripts/verify-tag-on-main.sh
-
-      # Only the tables are required here; the art belongs to the Map Data
-      # release workflow. If main's cache is missing the tables for this
-      # generator build, fail fast and tell the maintainer to do the MapData
-      # release first. A release that only changes Lua/docs finds the cache and
-      # skips this entirely.
-      - name: Verify world map tables cache
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ART_KEY: mapart-v2-${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}
-          REQUIRE: tables
-        run: .github/scripts/ensure-world-map-assets-cache.sh
-
-      # Fallback: if the key above still misses (the tag's generator differs
-      # from main's), build it here and save it for this run. Only a copy saved
-      # from main is visible to *later* tags; see
-      # .github/workflows/generate-world-map-assets.yml.
-      - name: Generate world map assets
-        uses: ./.github/actions/generate-world-map-assets
-        with:
-          save: "true"
-          tables-only: "true"
-
   tag:
     name: Bump version and push tag
-    needs: art
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -144,12 +86,10 @@ jobs:
 
   release:
     name: Package and create GitHub release
-    needs: [art, tag]
-    # tag is skipped on a pushed-tag release; that is fine. A failed art or
-    # tag job is not.
-    if: ${{ !cancelled() && needs.art.result == 'success' && needs.tag.result != 'failure' }}
+    needs: tag
+    # tag is skipped on a pushed-tag release; that is fine. A failed tag job is not.
+    if: ${{ !cancelled() && needs.tag.result != 'failure' }}
     runs-on: ubuntu-latest
-    # A vanished cache entry means regenerating here, so keep the long limit.
     timeout-minutes: 300
     env:
       # Empty on a pushed-tag release, where the tag is the triggering ref.
@@ -161,28 +101,11 @@ jobs:
         with:
           # Empty on a pushed-tag release, which means the triggering ref.
           ref: ${{ needs.tag.outputs.tag }}
-          # release.sh walks back through tags to build the changelog, and
-          # verify-mapdata-current.sh reads the mapdata-v* tags.
           fetch-depth: 0
 
-      # Normally a straight cache hit from the art job. If the cache entry
-      # vanished or failed to save, this rebuilds rather than failing.
-      - name: Generate world map assets
-        id: assets
-        uses: ./.github/actions/generate-world-map-assets
-        with:
-          tables-only: "true"
-
-      # The client release only ships Lua tables. It does not depend on the
-      # Map Data addon being released for the same generator build.
-
-      # release.sh excludes anything `git ls-files --others` reports, which
-      # includes .gitignored paths. The generated tables are tracked, but
-      # adding them to the index with --intent-to-add (-N) keeps the packager
-      # shipping the regenerated copies without writing blobs into .git. The
-      # index is thrown away with the runner; nothing is committed.
-      - name: Stage generated tables
-        run: git add -fN src/addon/client/FDIDMap.lua src/addon/client/CaveData.lua
+      # The core addon is Lua-only. The Map Data addon owns the generated map
+      # art and runtime bridge, so the client release packages the checked-in
+      # source as-is and never invokes the world-map asset generator.
 
       # The packager has no tag-prefix option: its changelog uses "the previous
       # tag" among all tags. Hide the MapData series from it.
