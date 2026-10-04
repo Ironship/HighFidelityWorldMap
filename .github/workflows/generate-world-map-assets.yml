@@ -43,8 +43,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  cache-check:
+    name: Check world map asset cache
+    runs-on: ubuntu-latest
+    outputs:
+      cache-hit: ${{ steps.art.outputs.cache-hit }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Restore world map assets cache
+        id: art
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.bypass-asset-cache }}
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            src/addon/WorldMap
+            src/addon/FDIDMap.lua
+            src/addon/CaveData.lua
+          key: mapart-v2-${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}
+
   build:
     name: Generate and cache world map assets
+    needs: cache-check
+    if: ${{ needs.cache-check.outputs.cache-hit != 'true' || inputs.bypass-asset-cache == true }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
