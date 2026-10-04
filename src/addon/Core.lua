@@ -1,5 +1,5 @@
 -------------------------------------------------------------------------------
--- High Fidelity World Map Forever -- Bootstrap
+-- High Fidelity World Map -- Bootstrap
 -- Wires up events and hooks once Ace3 initializes the addon.
 --
 -- /hfwm             - toggle on / off

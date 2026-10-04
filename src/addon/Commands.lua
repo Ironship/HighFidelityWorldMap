@@ -427,7 +427,7 @@ function Commands:Handle(msg)
     elseif cmd == "" then
         db.enabled = not db.enabled
     else
-        print("|cff33ccffHigh Fidelity World Map Forever|r commands:")
+        print("|cff33ccffHigh Fidelity World Map|r commands:")
         print("  /hfwm               - toggle overlay")
         print("  /hfwm on|off        - enable / disable")
         print("  /hfwm options       - open the options panel")

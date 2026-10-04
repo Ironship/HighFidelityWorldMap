@@ -7,4 +7,4 @@ from __future__ import annotations
 GAME_PRODUCT = "wow_classic_beta"
 GAME_BUILD = "1.60.1.69913"
 
-USER_AGENT = f"HighFidelityWorldMapForever/1.0 (build {GAME_BUILD})"
+USER_AGENT = f"HighFidelityWorldMap/1.0 (build {GAME_BUILD})"

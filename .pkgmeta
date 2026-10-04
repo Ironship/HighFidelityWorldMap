@@ -10,14 +10,14 @@
 # the packager stops treating it as an untracked file and copies it into the
 # package. See .github/workflows/release.yml.
 
-package-as: HighFidelityWorldMapForever
+package-as: HighFidelityWorldMap
 
 # No colon in the value: the packager's pkgmeta parser splits on the first one.
-changelog-title: High Fidelity World Map Forever
+changelog-title: High Fidelity World Map
 
 # Hoist the addon out of src/addon/ so the TOC ends up at the package root.
 move-folders:
-  HighFidelityWorldMapForever/src/addon: HighFidelityWorldMapForever
+  HighFidelityWorldMap/src/addon: HighFidelityWorldMap
 
 # Everything outside src/addon/ is build machinery or a repo-level document, none
 # of it belongs in the package users download. Dotfiles (.github, .git,

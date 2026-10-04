@@ -85,7 +85,7 @@ def _print_banner(
     pass_notes: list[str],
 ) -> None:
     print("=" * 66, flush=True)
-    print("  High Fidelity World Map Forever — texture generator", flush=True)
+    print("  High Fidelity World Map — texture generator", flush=True)
     print("=" * 66, flush=True)
     print(f"Product:   {GAME_PRODUCT}", flush=True)
     print(f"Build:     {GAME_BUILD}", flush=True)

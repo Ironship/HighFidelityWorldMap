@@ -1,4 +1,4 @@
-"""hfwm — High Fidelity World Map Forever pipeline toolkit.
+"""hfwm — High Fidelity World Map pipeline toolkit.
 
 A fork of the retail HFWM pipeline pinned to the "World of Warcraft
 Forever" beta client.  The community listfile, AI inpainting, continent

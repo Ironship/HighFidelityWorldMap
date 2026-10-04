@@ -5,7 +5,7 @@
 local addonName, ns = ...
 local Config = ns.Config
 
--- Defaults (persisted per-profile in HighFidelityWorldMapForeverDB)
+-- Defaults (persisted per-profile in HighFidelityWorldMapDB)
 Config.DEFAULTS = {
     enabled       = true,
     alpha         = 1.0,
@@ -397,7 +397,7 @@ Config.FDID_MAP_SUB      = HFWMF_FDID_MAP_SUB      or {}
 -- The raw second dump, written only when the pipeline ran with --original.
 -- Its paths carry their own "Original\\" prefix, so FDID_BASE serves both.
 Config.FDID_MAP_ORIGINAL = HFWMF_FDID_MAP_ORIGINAL or {}
-Config.FDID_BASE    = "Interface\\AddOns\\HighFidelityWorldMapForever\\WorldMap\\"
+Config.FDID_BASE    = "Interface\\AddOns\\HighFidelityWorldMap\\WorldMap\\"
 
 -- Higher-resolution maps (see hfwm/gamedata/db2.py's _hires_geometry and
 -- hfwm/lua/fdid_map.py): every Type=Zone map, uncapped, plus Kalimdor/Eastern
@@ -553,7 +553,7 @@ end
 --- the new shape, or has none at all yet.
 ---@param dbObj table AceDB-3.0 database object
 local function MigrateFlatSavedVariables(dbObj)
-    local raw = HighFidelityWorldMapForeverDB
+    local raw = HighFidelityWorldMapDB
     if type(raw) ~= "table" or raw.profiles then return end
 
     MigrateBackgroundKeys(raw)
@@ -589,11 +589,11 @@ end
 --- profiles existed; AceDBOptions still lets anyone split off a
 --- character-specific profile from Options.
 function Config:InitDB()
-    local isUpgrade = type(HighFidelityWorldMapForeverDB) == "table"
-        and not HighFidelityWorldMapForeverDB.profiles
+    local isUpgrade = type(HighFidelityWorldMapDB) == "table"
+        and not HighFidelityWorldMapDB.profiles
 
     self.dbObj = LibStub("AceDB-3.0"):New(
-        "HighFidelityWorldMapForeverDB", { profile = self.DEFAULTS }, true)
+        "HighFidelityWorldMapDB", { profile = self.DEFAULTS }, true)
 
     if isUpgrade then
         MigrateFlatSavedVariables(self.dbObj)

@@ -13,7 +13,7 @@ while IFS= read -r file; do
   [[ -f "$file" ]] || { echo "::error::$file is in the TOC but missing"; status=1; continue; }
   [[ "$file" == *.lua ]] || continue
   luac5.1 -p "$file" || status=1
-done < <(grep -E '^[^#[:space:]].*\.(lua|xml)[[:space:]]*$' HighFidelityWorldMapForever.toc | tr -d '\r')
+done < <(grep -E '^[^#[:space:]].*\.(lua|xml)[[:space:]]*$' HighFidelityWorldMap.toc | tr -d '\r')
 
 while IFS= read -r file; do
   luac5.1 -p "$file" || status=1

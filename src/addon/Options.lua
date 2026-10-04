@@ -13,7 +13,7 @@ local addonName, ns = ...
 local Options = ns.Options
 local Config  = ns.Config
 
-local PANEL_TITLE = "High Fidelity World Map Forever"
+local PANEL_TITLE = "High Fidelity World Map"
 
 --- Blizzard's own colour for a Battle.net-linked friend's name, the
 --- closest thing the client already defines to an official "Blizzard

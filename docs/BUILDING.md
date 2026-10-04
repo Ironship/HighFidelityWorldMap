@@ -25,8 +25,8 @@ The addon itself is not a traditional "build" in the sense of compiling a binary
 ## 1) Clone and initialize
 
 ```sh
-git clone https://github.com/Sectimus/HighFidelityWorldMapForever.git
-cd HighFidelityWorldMapForever
+git clone https://github.com/Sectimus/HighFidelityWorldMap.git
+cd HighFidelityWorldMap
 ```
 
 ## 2) Fetch Ace3 dependencies
@@ -44,7 +44,7 @@ addon with the TOC directly inside it. Link `src/addon/` into your AddOns
 directory under that name:
 
 ```sh
-ln -s "$PWD/src/addon" "<WoW install>/_classic_beta_/Interface/AddOns/HighFidelityWorldMapForever"
+ln -s "$PWD/src/addon" "<WoW install>/_classic_beta_/Interface/AddOns/HighFidelityWorldMap"
 ```
 
 ## 3) Install Python dependencies
@@ -98,7 +98,7 @@ or, with a loop over the addon TOC:
 while IFS= read -r file; do
   [[ "$file" == *.lua ]] || continue
   luac5.1 -p "$file" || exit 1
-done < <(grep -E '^[^#[:space:]].*\.(lua|xml)[[:space:]]*$' src/addon/HighFidelityWorldMapForever.toc | tr -d '\r')
+done < <(grep -E '^[^#[:space:]].*\.(lua|xml)[[:space:]]*$' src/addon/HighFidelityWorldMap.toc | tr -d '\r')
 ```
 
 ## 7) CI checks
