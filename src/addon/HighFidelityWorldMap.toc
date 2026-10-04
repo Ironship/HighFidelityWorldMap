@@ -4,6 +4,7 @@
 ## Author: HighFidelityWorldMap
 ## Version: @project-version@
 ## SavedVariables: HighFidelityWorldMapDB
+## OptionalDeps: HighFidelityWorldMap_MapData_Forever
 ## IconTexture: Interface\Icons\INV_Misc_Map02
 ## X-Curse-Project-ID: 1701034
 
@@ -19,6 +20,7 @@ FDIDMap.lua
 CaveData.lua
 Namespace.lua
 Config.lua
+MapData.lua
 TexturePool.lua
 BaseArt.lua
 MapFrameBg.lua

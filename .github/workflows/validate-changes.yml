@@ -3,7 +3,7 @@ name: Validate Changes
 # Cheap checks on PRs into main and on manual dispatch. Deliberately does not
 # run on pushes to main: anything that reached main already passed as a PR.
 # Also does *not* generate the map art — that is a multi-GB job and belongs
-# only in Generate World Map Assets and Create Release.
+# only in Generate World Map Assets and the Create Release workflows.
 
 on:
   pull_request:
@@ -36,6 +36,7 @@ jobs:
           filters: |
             generator:
               - 'src/generator/**'
+              - 'src/mapdata/**'
               - '.github/workflows/validate-changes.yml'
               - '.github/scripts/smoke-test.sh'
 
@@ -114,8 +115,15 @@ jobs:
 
       # -d skips uploading, -z skips zip creation: validates the TOC, the
       # .pkgmeta and the changelog without building or publishing anything.
-      - name: Validate package config
+      - name: Validate package config (addon)
         uses: BigWigsMods/packager@v2
         with:
           args: -d -z
+          pandoc: "false"
+
+      # Same check for the Map Data addon, which has its own pkgmeta and TOC.
+      - name: Validate package config (Map Data)
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -d -z -m .pkgmeta-mapdata
           pandoc: "false"

@@ -1,9 +1,10 @@
 """Filesystem layout: what the generator reads, caches and writes.
 
-The repository has two halves — ``src/generator/`` (this package) and
-``src/addon/`` (the World of Warcraft addon it feeds).  Everything the
-generator *emits* lands in ``src/addon/``; everything it merely *caches* stays
-in ``src/generator/`` so it can never be packaged.
+The repository has three parts — ``src/generator/`` (this package),
+``src/addon/`` (the World of Warcraft addon it feeds) and ``src/mapdata/`` (the
+separate Map Data addon that holds the tile art).  The generated Lua tables land
+in ``src/addon/``, the generated tiles in ``src/mapdata/WorldMap/``; everything
+it merely *caches* stays in ``src/generator/`` so it can never be packaged.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ GENERATOR_DIR = Path(__file__).resolve().parents[2]
 SRC_DIR = GENERATOR_DIR.parent
 REPO_ROOT = SRC_DIR.parent
 ADDON_DIR = SRC_DIR / "addon"
+MAPDATA_DIR = SRC_DIR / "mapdata"
 
 # ---------------------------------------------------------------------------
 # Caches (generator-side)
@@ -50,7 +52,7 @@ PROVENANCE_FILE = CACHE_ROOT / "provenance.json"
 # ---------------------------------------------------------------------------
 FDID_MAP_FILE = ADDON_DIR / "FDIDMap.lua"
 CAVE_DATA_FILE = ADDON_DIR / "CaveData.lua"
-WORLDMAP_DIR = ADDON_DIR / "WorldMap"
+WORLDMAP_DIR = MAPDATA_DIR / "WorldMap"
 
 # Subdirectory of the output dir holding the raw second dump (--original).
 # It cannot collide with a zone folder: zone folders are named from UiMap's

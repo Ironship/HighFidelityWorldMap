@@ -485,6 +485,7 @@ function Commands:Debug()
     P("debug: FDID_MAP=" .. mapCount .. " entries, FDID_MAP_SUB=" .. subCount
         .. "  enabled=" .. tostring(Config.db and Config.db.enabled))
     print(("  FDID_BASE: %s"):format(Config.FDID_BASE or "nil"))
+    print(("  map data addon: %s"):format(ns.MapData:Describe()))
     print(("  tile tables: bundled=%d  original=%d"):format(
         Config._fdidMapSize or -1, Config._fdidMapOriginalSize or -1))
     print(("  native zones: bundled=%d  original=%d"):format(

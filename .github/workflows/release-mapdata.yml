@@ -1,0 +1,258 @@
+name: "Create Release: MapData"
+
+# Creates an official tagged release of the Map Data addon
+# (HighFidelityWorldMap_MapData_Forever): the generated map art, 7 GB or so. It
+# has its own tags (mapdata-v<semver>), its own version and its own CurseForge
+# project, so the core addon can ship UI and settings updates without anyone
+# re-downloading the art. "Create Release: Addon" is the other half; the two
+# workflows are independent and do not trigger each other.
+#
+# Two ways in:
+#
+#   1. Automatically: a push to main that touches src/generator/**. The `plan`
+#      job skips everything unless the art would actually change (see below).
+#      Automatic releases are stable (minor bump) and go to CurseForge straight
+#      away. Release the addon right after: an old addon with new art shows a
+#      mismatch warning in game (see src/addon/MapData.lua).
+#   2. Actions -> Create Release: MapData -> Run workflow, pick the bump and
+#      optionally a prerelease suffix such as "beta.1". Must run on main.
+#
+# Tags are created inside this workflow on purpose: a tag pushed with
+# GITHUB_TOKEN does not trigger other workflows.
+#
+# Five jobs, so a failure late on does not redo the expensive part:
+#
+#   plan     push: skip when the art key equals the one on the newest stable
+#            MapData tag (a push to src/generator/** that does not change what
+#            the hash covers, e.g. tests). Manual runs always release.
+#   art      generates the art (~40 min on a cache miss) and saves it to the
+#            Actions cache from main, which is what addon releases and the
+#            publish workflow later read
+#   tag      bumps the version and pushes mapdata-v*, recording the art key in
+#            the annotated tag's body
+#   release  restores the art, stamps the TOC, packages and creates the GitHub
+#            Release
+#   publish  starts "Publish Release to all Marketplaces" and waits for it
+#
+# If release or publish fails (GitHub outage, ...), fix it and use "Re-run
+# failed jobs": the jobs before it are not repeated, and a re-run does not bump
+# the version a second time.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/generator/**"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Which part of the version to bump"
+        type: choice
+        required: true
+        default: minor
+        options:
+          - patch
+          - minor
+          - major
+      prerelease:
+        description: 'Optional suffix, e.g. "beta.1" -> mapdata-v1.1.0-beta.1. A tag containing "beta" or "alpha" is marked as a pre-release, and is published to that CurseForge channel.'
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+# Back-to-back pushes queue rather than cancel the one running: GitHub keeps
+# only the newest pending run, so the latest push wins and a release in progress
+# is never cut off halfway through an upload.
+concurrency:
+  group: release-mapdata
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Decide whether to release
+    # Releases are cut from main only. A skipped plan skips every job below.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      release: ${{ steps.plan.outputs.release }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # The mapdata-v* tags hold the art key of every earlier release.
+          fetch-depth: 0
+
+      - name: Compare art key with the last release
+        id: plan
+        env:
+          ART_KEY: mapart-v2-${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}
+        run: .github/scripts/plan-mapdata-release.sh
+
+  art:
+    name: Generate map art
+    needs: plan
+    if: needs.plan.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      art-key: ${{ steps.assets.outputs.art-key }}
+    # A cache miss regenerates the art (phase 3 runs twice: art + Original/),
+    # so give it plenty of room.
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # This run is on main, so it saves to the cache scope that tag-triggered
+      # runs (the addon release, the publish workflow) can read. No need to
+      # dispatch the generate workflow. lookup-only: on a hit there is nothing
+      # to do here, so don't download GBs just for the release job to
+      # download them again.
+      - name: Generate world map assets
+        id: assets
+        uses: ./.github/actions/generate-world-map-assets
+        with:
+          save: "true"
+          lookup-only: "true"
+
+  tag:
+    name: Bump version and push tag
+    needs: [plan, art]
+    if: needs.art.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.bump.outputs.tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # Tag the commit that was planned and generated, not whatever main
+          # moved on to in the meantime.
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bump version and push tag
+        id: bump
+        env:
+          BUMP: ${{ inputs.bump || 'minor' }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          TAG_PREFIX: mapdata-v
+          TAG_NOTE: "art-key: ${{ needs.art.outputs.art-key }}"
+        run: .github/scripts/bump-version.sh
+
+  release:
+    name: Package and create GitHub release
+    needs: tag
+    if: ${{ !cancelled() && needs.tag.result == 'success' }}
+    runs-on: ubuntu-latest
+    # A vanished cache entry means regenerating here, so keep the long limit.
+    timeout-minutes: 300
+    env:
+      RELEASE_TAG: ${{ needs.tag.outputs.tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+          # release.sh walks back through tags to build the changelog.
+          fetch-depth: 0
+
+      # Normally a straight cache hit from the art job. If the cache entry
+      # vanished or failed to save, this rebuilds rather than failing.
+      - name: Generate world map assets
+        id: assets
+        uses: ./.github/actions/generate-world-map-assets
+
+      # release.sh excludes anything `git ls-files --others` reports, which
+      # includes .gitignored paths, so the generated src/mapdata/WorldMap/
+      # would be dropped from the zip. Adding it to the index with
+      # --intent-to-add (-N) takes it off that list without writing GBs of
+      # blobs into .git. The index is thrown away with the runner; nothing is
+      # committed.
+      - name: Stage generated art
+        run: git add -fN src/mapdata/WorldMap
+
+      # Writes X-HFWM-Data-Build into the TOC, which the packager copies as it
+      # finds it. The addon compares it with the HFWMF_DATA_BUILD in its own
+      # FDIDMap.lua.
+      - name: Stamp the TOC with the art build
+        env:
+          ART_KEY: ${{ steps.assets.outputs.art-key }}
+        run: .github/scripts/stamp-mapdata-toc.sh
+
+      # The packager has no tag-prefix option: its changelog uses "the previous
+      # tag" among all tags. Hide the core addon's series from it.
+      - name: Isolate the mapdata-v* tag series
+        run: .github/scripts/isolate-tag-series.sh mapdata-v
+
+      # The packager only uploads to a destination whose token is set. Only
+      # GITHUB_OAUTH is passed here, so this creates the GitHub Release and
+      # skips CurseForge; publish-curseforge.yml is the one that sets
+      # CF_API_TOKEN. -n names the zip and the upload label by version only
+      # (the default would append the game flavour). Keep the arguments in
+      # sync with resolve-release-project.sh.
+      - name: Package and create GitHub release
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -m .pkgmeta-mapdata -n {package-name}-{project-version}:{project-version}
+          # Nothing goes to WoWInterface, so skip the pandoc install.
+          pandoc: "false"
+        env:
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+
+      # The packager marks the Release as Latest. That belongs to the addon,
+      # which is what people download from the Releases page.
+      - name: Keep the addon as latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$RELEASE_TAG" --latest=false
+
+      # Redundant once the GitHub Release exists, but it is the only copy of the
+      # zip if the Release upload is what failed.
+      - name: Upload package
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: package
+          path: .release/*.zip
+          if-no-files-found: warn
+          retention-days: 7
+          # BLPs are already DXT-compressed; re-deflating them is wasted time.
+          compression-level: 0
+
+  publish:
+    name: Publish to all marketplaces
+    needs: [tag, release]
+    # Only once the GitHub Release exists, which publish-all.yml checks for.
+    # The release is stable (unless a prerelease suffix was given) and goes to
+    # CurseForge straight away.
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
+    runs-on: ubuntu-latest
+    # actions: write lets it start publish-all.yml.
+    permissions:
+      contents: read
+      actions: write
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Dispatched rather than called, so it is a run of its own workflow and
+      # can be re-run from there.
+      - name: Publish to all marketplaces
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.tag.outputs.tag }}
+        run: .github/scripts/dispatch-workflow-and-wait.sh publish-all.yml -f "tag=${RELEASE_TAG}"

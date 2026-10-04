@@ -1,0 +1,106 @@
+-------------------------------------------------------------------------------
+-- HFWM-Forever MapData
+--
+-- The map art is not part of this addon. It ships as the separate
+-- HighFidelityWorldMap_MapData_Forever addon (see Config.FDID_BASE), so a UI
+-- or settings update does not mean re-downloading gigabytes of tiles, and the
+-- art can be released on its own schedule.
+--
+-- Two things can go wrong with a split like that, and neither would be
+-- visible on its own: the data addon is missing (every tile is a green
+-- placeholder), or it is a different generator build than this addon's
+-- FDIDMap.lua (tiles renamed or moved, so some are missing). This module
+-- turns both into one chat line at login.
+--
+-- The data addon's build is the `X-HFWM-Data-Build` line in its TOC. This
+-- addon's is HFWMF_DATA_BUILD in FDIDMap.lua. CI stamps both with the same
+-- generator hash. Either one missing means a local/dev build, where there is
+-- nothing meaningful to compare, so that check is skipped.
+-------------------------------------------------------------------------------
+local addonName, ns = ...
+local MapData = ns.MapData
+local P       = ns.P
+
+local DATA_ADDON = "HighFidelityWorldMap_MapData_Forever"
+local BUILD_KEY  = "X-HFWM-Data-Build"
+
+MapData.ADDON_NAME = DATA_ADDON
+
+local function GetMetadata(name, field)
+    local getter = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+    if not getter then return nil end
+    return getter(name, field)
+end
+
+local function IsAddOnLoaded_(name)
+    local fn = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
+    return fn and fn(name) and true or false
+end
+
+--- Whether the data addon is installed (enabled or not). A TOC the client
+--- has read always has a Title, so that is the probe: it answers for a
+--- disabled addon too, which a loaded check would not.
+function MapData:IsInstalled()
+    local exists = C_AddOns and C_AddOns.DoesAddOnExist
+    if exists then return exists(DATA_ADDON) and true or false end
+    return GetMetadata(DATA_ADDON, "Title") ~= nil
+end
+
+function MapData:IsLoaded()
+    return IsAddOnLoaded_(DATA_ADDON)
+end
+
+--- The generator build the installed data addon was made from, or nil when
+--- it is not installed or carries no stamp (a dev build).
+function MapData:GetBuild()
+    local build = GetMetadata(DATA_ADDON, BUILD_KEY)
+    if build == nil or build == "" then return nil end
+    return build
+end
+
+--- The generator build this addon's FDIDMap.lua was made from, or nil for a
+--- dev build.
+function MapData:GetExpectedBuild()
+    local build = HFWMF_DATA_BUILD
+    if build == nil or build == "" then return nil end
+    return build
+end
+
+--- A short human description for /hfwm debug.
+function MapData:Describe()
+    if not self:IsInstalled() then
+        return "NOT INSTALLED (" .. DATA_ADDON .. ")"
+    end
+    local have, want = self:GetBuild(), self:GetExpectedBuild()
+    local state = self:IsLoaded() and "loaded" or "installed, not loaded"
+    local match
+    if not have or not want then
+        match = "build not stamped (dev build), check skipped"
+    elseif have == want then
+        match = "build " .. have .. " matches"
+    else
+        match = ("build %s <-- this addon expects %s"):format(have, want)
+    end
+    return state .. ", " .. match
+end
+
+--- One-time chat warning. Called from Core.lua's OnEnable, which fires once
+--- per session, so no extra bookkeeping is needed to keep it to one line.
+---@return boolean ok  false when a warning was printed
+function MapData:Check()
+    if not self:IsInstalled() then
+        P("|cffff8800Map Data addon not found.|r The world map will show "
+            .. "missing textures until " .. DATA_ADDON .. " is installed.")
+        return false
+    end
+
+    local have, want = self:GetBuild(), self:GetExpectedBuild()
+    if have and want and have ~= want then
+        P("|cffff8800Map Data is out of date or ahead of this addon|r (data "
+            .. have .. ", expected " .. want .. "). Update High Fidelity "
+            .. "World Map and " .. DATA_ADDON .. " to the latest versions; "
+            .. "some map tiles may be missing until you do.")
+        return false
+    end
+    return true
+end

@@ -1,0 +1,37 @@
+# BigWigs packager config for the Map Data addon (the generated map art):
+# https://github.com/BigWigsMods/packager/wiki/Preparing-the-PackageMeta-File
+#
+# Used with `-m .pkgmeta-mapdata` by release-mapdata.yml, publish-curseforge.yml
+# and validate-changes.yml. The core addon is built from the default .pkgmeta.
+#
+# The zip is dominated by src/mapdata/WorldMap/, which is generated (and
+# .gitignored), not committed. CI regenerates it and then `git add -fN`s it so
+# the packager stops treating it as an untracked file and copies it into the
+# package. See .github/workflows/release-mapdata.yml.
+
+package-as: HighFidelityWorldMap_MapData_Forever
+
+# No colon in the value: the packager's pkgmeta parser splits on the first one.
+changelog-title: High Fidelity World Map - Map Data
+
+# Hoist the addon out of src/mapdata/ so the TOC ends up at the package root.
+move-folders:
+  HighFidelityWorldMap_MapData_Forever/src/mapdata: HighFidelityWorldMap_MapData_Forever
+
+# Everything outside src/mapdata/ belongs to the core addon or is build
+# machinery. Dotfiles (.github, .git, .gitignore, .pkgmeta, .release,
+# src/generator/.cache-*) are skipped by the packager on its own. A new
+# top-level file or folder that is not part of the art needs an entry here.
+ignore:
+  - AI-DISCLOSURE.md
+  - CONTRIBUTING.md
+  - CurseForgeDescription.md
+  - README.md
+  - assets
+  - docs
+  - src/addon
+  - src/generator
+
+# Art only: no libraries, and nothing to split into flavours or nolib builds.
+enable-nolib-creation: no
+enable-toc-creation: no

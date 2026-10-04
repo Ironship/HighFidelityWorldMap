@@ -1,0 +1,15 @@
+## Interface: 16001
+## Title: High Fidelity World Map - Map Data
+## Notes: Required map art for High Fidelity World Map: Forever. Contains the stitched high-resolution world map, cave and dungeon textures. No settings or UI of its own; install High Fidelity World Map to use it.
+## Author: HighFidelityWorldMap
+## Version: @project-version@
+## IconTexture: Interface\Icons\INV_Misc_Map02
+## X-Curse-Project-ID: TODO_MAPDATA_PROJECT_ID
+## X-HFWM-Data-Build:
+
+# This addon is art only: the tiles under WorldMap\ are read by High Fidelity
+# World Map through their file paths, so there is nothing to load and no file
+# entries below. The X-HFWM-Data-Build line is stamped by CI
+# (.github/scripts/stamp-mapdata-toc.sh) with the generator hash the art was
+# built from; the core addon compares it with its own FDIDMap.lua. Left empty
+# in the repository, which the core addon treats as a dev build.

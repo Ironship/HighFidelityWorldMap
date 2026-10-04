@@ -12,6 +12,7 @@ ns.addon = LibStub("AceAddon-3.0"):NewAddon(addonName, "AceConsole-3.0", "AceEve
 
 -- Public sub-tables filled by individual modules
 ns.Config      = {}
+ns.MapData     = {}
 ns.Pool        = {}
 ns.MaskPool    = {}
 ns.BaseArt     = {}

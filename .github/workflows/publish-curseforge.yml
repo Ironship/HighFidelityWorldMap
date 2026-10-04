@@ -1,7 +1,13 @@
 name: Publish Release to CurseForge
 
 # Uploads an existing release to CurseForge. It never creates tags or GitHub
-# Releases; run "Create Release" first.
+# Releases; run "Create Release: Addon" or "Create Release: MapData" first.
+#
+# The tag decides which of the two CurseForge projects is published (the same
+# CF_API_TOKEN covers both; each TOC carries its own X-Curse-Project-ID):
+#
+#   v1.2.3          the core addon, built with .pkgmeta
+#   mapdata-v1.2.3  the Map Data addon, built with .pkgmeta-mapdata
 #
 # Run it on its own from the Actions tab, or let "Publish Release to all
 # Marketplaces" call it.
@@ -9,20 +15,21 @@ name: Publish Release to CurseForge
 # The package is rebuilt from the release tag rather than downloaded from the
 # GitHub Release: the packager is what turns the TOC and tag into CurseForge
 # game versions and a release channel (release/beta/alpha), and it cannot
-# upload a zip it did not build. The art is a pure function of the generator
-# code at that tag, so the result matches what Create Release shipped.
+# upload a zip it did not build. The generated files are a pure function of the
+# generator code at that tag, so the result matches what the Create Release
+# workflow shipped.
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to publish, as shown on the Releases page, e.g. v1.0.1"
+        description: "Release tag to publish, as shown on the Releases page, e.g. v1.0.1 or mapdata-v1.0.0"
         type: string
         required: true
   workflow_call:
     inputs:
       tag:
-        description: "Release tag to publish, e.g. v1.0.1"
+        description: "Release tag to publish, e.g. v1.0.1 or mapdata-v1.0.0"
         type: string
         required: true
     secrets:
@@ -32,7 +39,7 @@ on:
 permissions:
   contents: read
 
-# A publish uploads a multi-GB zip to CurseForge; never run two at once.
+# A publish can upload a multi-GB zip to CurseForge; never run two at once.
 concurrency:
   group: publish-curseforge
   cancel-in-progress: false
@@ -80,27 +87,60 @@ jobs:
           # release.sh walks back through tags to build the changelog.
           fetch-depth: 0
 
-      # If main's cache has no art for this generator code, run the Generate
-      # World Map Assets workflow on main (so the build is visible there) and
-      # wait for it.
+      # Which project the tag belongs to, and with it the packager arguments,
+      # the tag series and how much of the generated output is needed.
+      - name: Resolve project from the tag
+        id: project
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: .github/scripts/resolve-release-project.sh >> "$GITHUB_OUTPUT"
+
+      # If main's cache is missing what this release ships (the Lua tables for
+      # the core addon, tables and art for Map Data), run the Generate World Map
+      # Assets workflow on main (so the build is visible there) and wait for it.
       - name: Generate World Map Assets?
         env:
           GH_TOKEN: ${{ github.token }}
           ART_KEY: mapart-v2-${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}
+          REQUIRE: ${{ steps.project.outputs.require }}
         run: .github/scripts/ensure-world-map-assets-cache.sh
 
       # A hit when the generator has not changed since main last built it (see
       # generate-world-map-assets.yml). A miss rebuilds, and saving means a
       # re-run of a failed upload does not rebuild it again.
       - name: Generate world map assets
+        id: assets
         uses: ./.github/actions/generate-world-map-assets
         with:
           save: "true"
+          tables-only: ${{ steps.project.outputs.tables_only }}
 
-      # See release.yml: takes the gitignored art off the packager's exclude
-      # list without writing GBs of blobs into .git.
+      # See release-addon.yml: keeps the packager shipping the regenerated
+      # tables without writing blobs into .git.
+      - name: Stage generated tables
+        if: steps.project.outputs.project == 'core'
+        run: git add -fN src/addon/FDIDMap.lua src/addon/CaveData.lua
+
+      # See release-mapdata.yml: takes the gitignored art off the packager's
+      # exclude list without writing GBs of blobs into .git. The TOC at the tag
+      # is unstamped; the release workflow stamped its own copy, so this one
+      # needs the same stamp.
       - name: Stage generated art
-        run: git add -fN src/addon/WorldMap src/addon/FDIDMap.lua
+        if: steps.project.outputs.project == 'mapdata'
+        run: git add -fN src/mapdata/WorldMap
+
+      - name: Stamp the TOC with the art build
+        if: steps.project.outputs.project == 'mapdata'
+        env:
+          ART_KEY: ${{ steps.assets.outputs.art-key }}
+        run: .github/scripts/stamp-mapdata-toc.sh
+
+      # The packager has no tag-prefix option: its changelog uses "the previous
+      # tag" among all tags. Hide the other project's series from it.
+      - name: Isolate the tag series
+        env:
+          TAG_SERIES: ${{ steps.project.outputs.series }}
+        run: .github/scripts/isolate-tag-series.sh "$TAG_SERIES"
 
       # Only CF_API_TOKEN is passed, so the packager uploads to CurseForge and
       # does not touch the GitHub Release. Nothing goes to WoWInterface, so skip
@@ -108,6 +148,7 @@ jobs:
       - name: Package and upload to CurseForge
         uses: BigWigsMods/packager@v2
         with:
+          args: ${{ steps.project.outputs.packager_args }}
           pandoc: "false"
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}

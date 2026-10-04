@@ -8,6 +8,10 @@ Adds a "HD/SD" toggle to view the world map pane with a detailed, high-resolutio
 
 ![HD/SD Toggle](https://i.postimg.cc/3kXr2BBY/hd-sd-toggle.jpg)
 
+## Requires Map Data
+
+The map art ships as a separate addon, [High Fidelity World Map Art](https://www.curseforge.com/wow/addons/high-fidelity-world-map-art) (`HighFidelityWorldMap_MapData_Forever`), because it is large and rarely changes. CurseForge and most addon managers install it automatically as a dependency. If you install by hand, install both. HFWM prints a warning in chat when the Map Data addon is missing or out of date.
+
 ## Fog of War support:
 
 Exploration is at the heart of WoW. To keep the spirit of mystery alive going into forever, HFWM also comes with complete, native fog of war support!

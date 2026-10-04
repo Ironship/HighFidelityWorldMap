@@ -397,7 +397,9 @@ Config.FDID_MAP_SUB      = HFWMF_FDID_MAP_SUB      or {}
 -- The raw second dump, written only when the pipeline ran with --original.
 -- Its paths carry their own "Original\\" prefix, so FDID_BASE serves both.
 Config.FDID_MAP_ORIGINAL = HFWMF_FDID_MAP_ORIGINAL or {}
-Config.FDID_BASE    = "Interface\\AddOns\\HighFidelityWorldMap\\WorldMap\\"
+-- The art lives in the separate HighFidelityWorldMap_MapData_Forever addon;
+-- see MapData.lua for the check that it is installed and matches this build.
+Config.FDID_BASE    = "Interface\\AddOns\\HighFidelityWorldMap_MapData_Forever\\WorldMap\\"
 
 -- Higher-resolution maps (see hfwm/gamedata/db2.py's _hires_geometry and
 -- hfwm/lua/fdid_map.py): every Type=Zone map, uncapped, plus Kalimdor/Eastern

@@ -1,20 +1,33 @@
 name: Generate world map assets
 description: >-
-  Produce src/addon/WorldMap/, src/addon/FDIDMap.lua and src/addon/CaveData.lua, reusing a
-  cached copy when the generator has not changed since it was last built.
+  Produce the generated map content: the art in src/mapdata/WorldMap/ plus the
+  Lua tables src/addon/FDIDMap.lua and src/addon/CaveData.lua, reusing cached
+  copies when the generator has not changed since they were last built.
 
-# The art is a pure function of the generator (src/generator/generateHFWM.py,
-# src/generator/hfwm/**, src/generator/requirements.txt), so that is the whole cache
-# key. A release that only touches Lua, docs or workflows hits the cache and
-# skips the ~40 minute build.
+# The output is a pure function of the generator (src/generator/generateHFWM.py,
+# src/generator/hfwm/**, src/generator/requirements.txt), so that is the whole
+# cache key. A release that only touches Lua, docs or workflows hits the cache
+# and skips the ~40 minute build.
+#
+# Two cache entries share that hash, because they are consumed separately:
+#
+#   mapart-v2-<hash>     src/mapdata/WorldMap, multi-GB. Only the Map Data
+#                        release ships it.
+#   maptables-v2-<hash>  src/addon/FDIDMap.lua and CaveData.lua, small. The
+#                        core addon ships these, so an addon release restores
+#                        only this one (`tables-only`) and never downloads the
+#                        art.
+#
+# A miss on whatever is needed falls back to full generation, which saves both.
+# After generation, FDIDMap.lua is stamped with the hash (stamp-data-build.sh) so
+# the addon can detect a Map Data addon from a different build.
 #
 # GitHub scopes caches by ref: a run on a tag can read caches saved from the
 # default branch but not from any other tag. So the copy that *later* releases
 # restore has to be saved from main (see
-# .github/workflows/generate-world-map-assets.yml). A copy
-# saved from a tag still serves its own run (release.yml's art job saves it and
-# the release job restores it), it just costs ~2-3 GB of the repo's 10 GB
-# cache quota and is invisible to every other tag.
+# .github/workflows/generate-world-map-assets.yml and release-mapdata.yml). A
+# copy saved from a tag still serves its own run, it just costs ~2-3 GB of the
+# repo's 10 GB cache quota and is invisible to every other tag.
 
 inputs:
   save:
@@ -24,77 +37,121 @@ inputs:
 
   lookup-only:
     description: >-
-      Only check whether the cache entry exists, without downloading it. On a
-      hit nothing else runs. On a miss the art is generated and saved as usual.
+      Only check whether the art cache entry exists, without downloading it.
+      On a hit the art is not fetched. On a miss everything is generated and
+      saved as usual. The small tables entry is always downloaded.
+    required: false
+    default: "false"
+
+  tables-only:
+    description: >-
+      The caller needs only the Lua tables (the core addon release): restore
+      the small tables entry and just check that the art entry exists. A miss
+      on the tables falls back to full generation.
     required: false
     default: "false"
 
   bypass-cache:
     description: >-
-      Skip restoring the art cache and regenerate the assets even when a valid
-      cache entry already exists.
+      Skip restoring the caches and regenerate the assets even when valid
+      cache entries already exist.
     required: false
     default: "false"
 
 outputs:
   cache-hit:
-    description: "'true' when the art came from the cache instead of being generated."
-    value: ${{ steps.art.outputs.cache-hit }}
+    description: "'true' when everything came from the cache instead of being generated."
+    value: ${{ steps.decide.outputs.cache-hit }}
+  art-key:
+    description: "The art cache key, mapart-v2-<hash>. The hash identifies the generator build."
+    value: ${{ steps.key.outputs.art-key }}
 
 runs:
   using: composite
   steps:
-    # The tree is ~7 GB. The packager then copies it into .release/ and zips
+    - name: Compute cache keys
+      id: key
+      shell: bash
+      env:
+        HASH: ${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}
+      run: .github/scripts/world-map-assets-keys.sh >> "$GITHUB_OUTPUT"
+
+    # The art tree is ~7 GB. The packager then copies it into .release/ and zips
     # that, so a stock runner's ~14 GB runs out partway through the zip.
     # Everything removed here is preinstalled tooling this job never touches.
+    # A tables-only run does not need the room unless it falls back to
+    # generating; see the second free-space step below.
     - name: Free disk space
+      if: inputs.tables-only != 'true'
       shell: bash
       run: .github/scripts/free-disk-space.sh
 
-    - name: Delete world map assets cache
+    - name: Delete world map assets caches
       if: inputs.bypass-cache == 'true'
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-        ART_CACHE_KEY: mapart-v2-${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}
-      run: |
-        if [[ -n "$(gh cache list --ref refs/heads/main --key "$ART_CACHE_KEY" --json key --jq '.[].key')" ]]; then
-          gh cache delete "$ART_CACHE_KEY" --ref refs/heads/main
-        fi
+        ART_KEY: ${{ steps.key.outputs.art-key }}
+      run: .github/scripts/delete-world-map-assets-cache.sh
 
-    - name: Restore world map assets cache
+    - name: Restore world map tables cache
+      id: tables
+      if: inputs.bypass-cache != 'true'
+      uses: actions/cache/restore@v5
+      with:
+        path: |
+          src/addon/FDIDMap.lua
+          src/addon/CaveData.lua
+        key: ${{ steps.key.outputs.tables-key }}
+
+    # Always looked up, so the save step below knows whether the art entry
+    # exists. Only downloaded when the caller wants the art itself.
+    - name: Restore world map art cache
       id: art
       if: inputs.bypass-cache != 'true'
       uses: actions/cache/restore@v5
       with:
-        lookup-only: ${{ inputs.lookup-only }}
-        path: |
-          src/addon/WorldMap
-          src/addon/FDIDMap.lua
-          src/addon/CaveData.lua
-        key: mapart-v2-${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}
+        lookup-only: ${{ inputs.lookup-only == 'true' || inputs.tables-only == 'true' }}
+        path: src/mapdata/WorldMap
+        key: ${{ steps.key.outputs.art-key }}
+
+    - name: Decide what to generate
+      id: decide
+      shell: bash
+      env:
+        TABLES_HIT: ${{ steps.tables.outputs.cache-hit }}
+        ART_HIT: ${{ steps.art.outputs.cache-hit }}
+        TABLES_ONLY: ${{ inputs.tables-only }}
+        LOOKUP_ONLY: ${{ inputs.lookup-only }}
+        BYPASS: ${{ inputs.bypass-cache }}
+      run: .github/scripts/decide-world-map-assets.sh >> "$GITHUB_OUTPUT"
+
+    - name: Free disk space for generation
+      if: inputs.tables-only == 'true' && steps.decide.outputs.generate == 'true'
+      shell: bash
+      run: .github/scripts/free-disk-space.sh
 
     - name: Set up Python
-      if: steps.art.outputs.cache-hit != 'true'
+      if: steps.decide.outputs.generate == 'true'
       uses: actions/setup-python@v6
       with:
         python-version: "3.12"
 
     - name: Install dependencies
-      if: steps.art.outputs.cache-hit != 'true'
+      if: steps.decide.outputs.generate == 'true'
       shell: bash
       run: .github/scripts/install-python-deps.sh
 
     - name: Resolve game build
       id: pipeline
-      if: steps.art.outputs.cache-hit != 'true'
+      if: steps.decide.outputs.generate == 'true'
       shell: bash
       run: python .github/scripts/resolve_game_build.py >> "$GITHUB_OUTPUT"
 
     # ~460 MB of DB2 exports, WDTs and minimap BLPs pulled from wago.tools.
     # Only needed when the art itself has to be rebuilt.
     - name: Restore pipeline cache
-      if: steps.art.outputs.cache-hit != 'true'
+      if: steps.decide.outputs.generate == 'true'
       uses: actions/cache@v5
       with:
         path: ${{ steps.pipeline.outputs.cache_dir }}
@@ -103,24 +160,41 @@ runs:
           casc-${{ steps.pipeline.outputs.build }}-
 
     - name: Generate map art
-      if: steps.art.outputs.cache-hit != 'true'
+      if: steps.decide.outputs.generate == 'true'
       shell: bash
       run: python src/generator/generateHFWM.py
 
-    # Runs on cache hits too: a bad entry should fail here, not ship. Except
-    # on a lookup-only hit, where nothing was downloaded to look at.
-    - name: Verify world map assets
-      if: inputs.lookup-only != 'true' || steps.art.outputs.cache-hit != 'true'
+    # Before verification and before the cache save, so the stamp is part of
+    # what gets cached and verified.
+    - name: Stamp data build
+      if: steps.decide.outputs.generate == 'true'
       shell: bash
-      run: .github/scripts/verify-world-map-assets.sh
+      env:
+        ART_KEY: ${{ steps.key.outputs.art-key }}
+      run: .github/scripts/stamp-data-build.sh
 
-    # Only after verification, so a broken build is never cached.
-    - name: Save world map assets cache
-      if: inputs.save == 'true' && steps.art.outputs.cache-hit != 'true'
+    # Runs on cache hits too: a bad entry should fail here, not ship. What it
+    # checks follows what was downloaded; see decide-world-map-assets.sh.
+    - name: Verify world map assets
+      shell: bash
+      env:
+        VERIFY_MODE: ${{ steps.decide.outputs.verify-mode }}
+      run: .github/scripts/verify-world-map-assets.sh "$VERIFY_MODE"
+
+    # Only after verification, so a broken build is never cached. Each entry is
+    # saved only if it was missing: saving an existing key just fails.
+    - name: Save world map tables cache
+      if: inputs.save == 'true' && steps.decide.outputs.generate == 'true' && steps.tables.outputs.cache-hit != 'true'
       uses: actions/cache/save@v5
       with:
         path: |
-          src/addon/WorldMap
           src/addon/FDIDMap.lua
           src/addon/CaveData.lua
-        key: mapart-v2-${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}
+        key: ${{ steps.key.outputs.tables-key }}
+
+    - name: Save world map art cache
+      if: inputs.save == 'true' && steps.decide.outputs.generate == 'true' && steps.art.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: src/mapdata/WorldMap
+        key: ${{ steps.key.outputs.art-key }}

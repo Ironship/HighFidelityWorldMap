@@ -1,27 +1,39 @@
-name: Create Release
+name: "Create Release: Addon"
 
-# Creates an official tagged release: the version tag, the map art, the package
-# and the GitHub Release with the zip attached. The package step itself uploads
-# nowhere else; the last job then starts "Publish Release to all Marketplaces"
-# with the new tag. If that fails, re-run it on its own (or run "Publish Release
-# to CurseForge") and give it the tag.
+# Creates an official tagged release of the core addon (Lua only, small): the
+# version tag, the package and the GitHub Release with the zip attached. The
+# package step itself uploads nowhere else; the last job then starts "Publish
+# Release to all Marketplaces" with the new tag. If that fails, re-run it on its
+# own (or run "Publish Release to CurseForge") and give it the tag.
+#
+# The map art is NOT part of this release. It is the separate Map Data addon,
+# released by "Create Release: MapData" with its own mapdata-v* tags and its own
+# CurseForge project. The two workflows are independent and do not trigger each
+# other, so a UI or settings fix never means a multi-GB download.
 #
 # Two ways in:
 #
 #   1. Push a tag yourself:  git tag -a v1.0.1 -m v1.0.1 && git push origin v1.0.1
-#   2. Actions -> Create Release -> Run workflow, pick patch/minor/major and the
-#      tag is created for you.
+#   2. Actions -> Create Release: Addon -> Run workflow, pick patch/minor/major
+#      and the tag is created for you.
 #
 # Option 2 deliberately tags and packages inside this one workflow. A tag pushed
 # with GITHUB_TOKEN does not trigger other workflows, so chaining two workflows
 # would silently do nothing.
 #
-# Four jobs, so a failure late on does not redo the expensive part:
+# Four jobs, so a failure late on does not redo an earlier part:
 #
-#   art      generates the map art (~40 min) and saves it to the Actions cache
+#   art      makes sure the generated Lua tables (FDIDMap.lua, CaveData.lua) are
+#            available. Normally a small cache restore; the art itself is never
+#            downloaded here.
 #   tag      (manual runs only) bumps the version and pushes the tag
-#   release  restores the art, packages and creates the GitHub Release
+#   release  checks MapData is current, packages and creates the GitHub Release
 #   publish  starts "Publish Release to all Marketplaces" and waits for it
+#
+# The release job refuses to ship when the generator changed and the Map Data
+# addon has not been released from it yet (verify-mapdata-current.sh): the tables
+# would point at art users cannot download. Wait for "Create Release: MapData"
+# (or run it), then use "Re-run failed jobs" here; the tag is not bumped again.
 #
 # If release or publish fails (GitHub outage, ...), fix it and use "Re-run
 # failed jobs": the jobs before it are not repeated, and a re-run does not bump
@@ -52,14 +64,14 @@ on:
 permissions:
   contents: write
 
-# A release builds and uploads a multi-GB zip; never run two at once.
+# Never run two addon releases at once. Independent of the MapData release.
 concurrency:
-  group: release
+  group: release-addon
   cancel-in-progress: false
 
 jobs:
   art:
-    name: Generate map art
+    name: Prepare generated Lua tables
     if: >-
       github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
       || (
@@ -72,7 +84,7 @@ jobs:
     permissions:
       contents: read
       actions: write
-    # A cache miss regenerates the art (phase 3 runs twice: art + Original/),
+    # A cache miss regenerates everything (phase 3 runs twice: art + Original/),
     # so give it plenty of room.
     timeout-minutes: 300
 
@@ -86,27 +98,27 @@ jobs:
         if: github.event_name == 'create'
         run: .github/scripts/verify-tag-on-main.sh
 
-      # If main's cache has no art for this generator code, run the Generate
+      # If main's cache has no tables for this generator code, run the Generate
       # World Map Assets workflow on main (so the build is visible there) and
       # wait for it. A release that only changes Lua/docs finds the cache and
-      # skips this entirely.
+      # skips this entirely. Only the tables are required: the art is the Map
+      # Data addon's business.
       - name: Generate World Map Assets?
         env:
           GH_TOKEN: ${{ github.token }}
           ART_KEY: mapart-v2-${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}
+          REQUIRE: tables
         run: .github/scripts/ensure-world-map-assets-cache.sh
 
       # Fallback: if the key above still misses (the tag's generator differs
       # from main's), build it here and save it for this run. Only a copy saved
       # from main is visible to *later* tags; see
-      # .github/workflows/generate-world-map-assets.yml. lookup-only: on a hit
-      # there is nothing to do here, so don't download GBs just for publish to
-      # download them again.
+      # .github/workflows/generate-world-map-assets.yml.
       - name: Generate world map assets
         uses: ./.github/actions/generate-world-map-assets
         with:
           save: "true"
-          lookup-only: "true"
+          tables-only: "true"
 
   tag:
     name: Bump version and push tag
@@ -137,7 +149,11 @@ jobs:
     # tag job is not.
     if: ${{ !cancelled() && needs.art.result == 'success' && needs.tag.result != 'failure' }}
     runs-on: ubuntu-latest
+    # A vanished cache entry means regenerating here, so keep the long limit.
     timeout-minutes: 300
+    env:
+      # Empty on a pushed-tag release, where the tag is the triggering ref.
+      RELEASE_TAG: ${{ needs.tag.outputs.tag || github.ref_name }}
 
     steps:
       - name: Checkout
@@ -145,21 +161,37 @@ jobs:
         with:
           # Empty on a pushed-tag release, which means the triggering ref.
           ref: ${{ needs.tag.outputs.tag }}
-          # release.sh walks back through tags to build the changelog.
+          # release.sh walks back through tags to build the changelog, and
+          # verify-mapdata-current.sh reads the mapdata-v* tags.
           fetch-depth: 0
 
       # Normally a straight cache hit from the art job. If the cache entry
       # vanished or failed to save, this rebuilds rather than failing.
       - name: Generate world map assets
+        id: assets
         uses: ./.github/actions/generate-world-map-assets
+        with:
+          tables-only: "true"
+
+      # Needs the mapdata-v* tags, so it comes before isolate-tag-series.sh
+      # deletes them.
+      - name: Verify Map Data is current
+        env:
+          ART_KEY: ${{ steps.assets.outputs.art-key }}
+        run: .github/scripts/verify-mapdata-current.sh
 
       # release.sh excludes anything `git ls-files --others` reports, which
-      # includes .gitignored paths — so the generated src/addon/WorldMap/ would be
-      # dropped from the zip. Adding it to the index with --intent-to-add (-N)
-      # takes it off that list without writing GBs of blobs into .git. The
+      # includes .gitignored paths. The generated tables are tracked, but
+      # adding them to the index with --intent-to-add (-N) keeps the packager
+      # shipping the regenerated copies without writing blobs into .git. The
       # index is thrown away with the runner; nothing is committed.
-      - name: Stage generated art
-        run: git add -fN src/addon/WorldMap src/addon/FDIDMap.lua
+      - name: Stage generated tables
+        run: git add -fN src/addon/FDIDMap.lua src/addon/CaveData.lua
+
+      # The packager has no tag-prefix option: its changelog uses "the previous
+      # tag" among all tags. Hide the MapData series from it.
+      - name: Isolate the v* tag series
+        run: .github/scripts/isolate-tag-series.sh v
 
       # The packager only uploads to a destination whose token is set. Only
       # GITHUB_OAUTH is passed here, so this creates the GitHub Release and
@@ -173,6 +205,16 @@ jobs:
         env:
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
 
+      # The packager creates the Release and may mark it Latest, but a Map Data
+      # release published afterwards would take that over. The addon is what
+      # people download from the Releases page. GitHub does not allow a
+      # pre-release to be Latest, so only stable tags.
+      - name: Mark as latest release
+        if: ${{ !contains(env.RELEASE_TAG, '-') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$RELEASE_TAG" --latest
+
       # Redundant once the GitHub Release exists, but it is the only copy of the
       # zip if the Release upload is what failed.
       - name: Upload package
@@ -183,8 +225,6 @@ jobs:
           path: .release/*.zip
           if-no-files-found: warn
           retention-days: 7
-          # BLPs are already DXT-compressed; re-deflating them is wasted time.
-          compression-level: 0
 
   publish:
     name: Publish to all marketplaces

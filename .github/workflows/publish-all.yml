@@ -1,7 +1,9 @@
 name: Publish Release to all Marketplaces
 
-# Publishes an existing release (made by "Create Release") to every marketplace
-# the addon is listed on. Pick the release by its tag.
+# Publishes an existing release (made by "Create Release: Addon" or "Create
+# Release: MapData") to every marketplace the addon is listed on. Pick the
+# release by its tag: v1.2.3 publishes the core addon, mapdata-v1.2.3 the Map
+# Data addon.
 #
 # Each marketplace is its own reusable workflow and one job below. To add
 # another, write its publish-<marketplace>.yml with a `workflow_call` trigger
@@ -13,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to publish, as shown on the Releases page, e.g. v1.0.1"
+        description: "Release tag to publish, as shown on the Releases page, e.g. v1.0.1 or mapdata-v1.0.0"
         type: string
         required: true
 

@@ -1,24 +1,45 @@
 #!/usr/bin/env bash
-# Makes sure main's Actions cache holds the map art for ART_KEY. On a miss it
-# runs generate-world-map-assets.yml on main, so the build shows up as a run of
-# that workflow, and waits for it to finish. A step that merely calls the
+# Makes sure main's Actions cache holds what a release needs for ART_KEY. On a
+# miss it runs generate-world-map-assets.yml on main, so the build shows up as a
+# run of that workflow, and waits for it to finish. A step that merely calls the
 # composite action would only appear inside the caller's own run.
+#
+# Two cache entries exist per generator hash (see
+# .github/actions/generate-world-map-assets): the art (ART_KEY, multi-GB) and
+# the generated Lua tables (maptables-v2-<hash>, small). What has to be there
+# depends on what is being released:
+#   REQUIRE=tables  the core addon, which ships only the Lua tables
+#   REQUIRE=all     the Map Data addon, which ships the art as well (default)
 #
 # Needs GH_TOKEN with actions: write, and a checkout so gh can infer the repo.
 set -euo pipefail
 
 : "${ART_KEY:?ART_KEY must be set to the cache key the art is saved under}"
+require="${REQUIRE:-all}"
 
 printf 'Generate World Map Assets?\n'
 
+case "$require" in
+  tables) keys=("maptables-v2-${ART_KEY#mapart-v2-}") ;;
+  all)    keys=("maptables-v2-${ART_KEY#mapart-v2-}" "${ART_KEY}") ;;
+  *)      echo "::error::REQUIRE must be tables or all"; exit 1 ;;
+esac
+
 # The cache has to be visible from main: that is the only scope a tag-triggered
 # run can read, and the only one the generate workflow saves to.
-if [[ -n "$(gh cache list --ref refs/heads/main --key "${ART_KEY}" --json key --jq '.[].key')" ]]; then
-  echo "Decision: Using the cached world map assets from main for key ${ART_KEY}."
+missing=()
+for key in "${keys[@]}"; do
+  if [[ -z "$(gh cache list --ref refs/heads/main --key "${key}" --json key --jq '.[].key')" ]]; then
+    missing+=("${key}")
+  fi
+done
+
+if [[ ${#missing[@]} -eq 0 ]]; then
+  echo "Decision: Using the cached world map assets from main (${keys[*]})."
   exit 0
 fi
 
-echo "Decision: Generating a fresh world map asset set because the cache for key ${ART_KEY} is missing on main."
+echo "Decision: Generating a fresh world map asset set because main has no cache for: ${missing[*]}"
 
 base_ref=""
 if git rev-parse --verify main >/dev/null 2>&1; then
