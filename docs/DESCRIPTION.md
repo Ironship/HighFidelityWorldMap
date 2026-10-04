@@ -1,6 +1,8 @@
-![High-Fidelity World Map logo](../main/assets/images/logo.png)
+![High-Fidelity World Map logo](../assets/images/logo.png)
 
 # High-Fidelity World Map (HFWM)
+
+[![CurseForge Downloads](https://img.shields.io/curseforge/dt/1701034?color=orange&logo=curseforge&style=flat-square)](https://www.curseforge.com/projects/1701034)
 
 Adds a "HD/SD" toggle to view the world map pane with a detailed, high-resolution map constructed by stitching together minimap satellite imagery across entire zones. The result is a seamless, richly detailed world map that shows all the finer details of the world of Azeroth with far greater clarity than the game's default map ever could.
 
