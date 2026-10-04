@@ -1,7 +1,7 @@
 # BigWigs packager config for the Map Data addon (the generated map art):
 # https://github.com/BigWigsMods/packager/wiki/Preparing-the-PackageMeta-File
 #
-# Used with `-m .pkgmeta-mapdata` by release-addon-mapdata.yml, publish-curseforge.yml
+# Used with `-m .pkgmeta-mapdata` by release-addon-mapdata.yml, publish-mapdata-release-curseforge.yml
 # and validate-changes.yml. The core addon is built from the default .pkgmeta.
 #
 # The zip is dominated by src/addon/mapdata/WorldMap/, which is generated

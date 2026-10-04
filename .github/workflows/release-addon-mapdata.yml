@@ -32,7 +32,7 @@ name: "Create Release: MapData"
 #            the annotated tag's body
 #   release  restores the art, stamps the TOC, packages and creates the GitHub
 #            Release
-#   publish  starts "Publish Release to all Marketplaces" and waits for it
+#   publish  starts "Publish MapData Release to CurseForge" and waits for it
 #
 # If release or publish fails (GitHub outage, ...), fix it and use "Re-run
 # failed jobs": the jobs before it are not repeated, and a re-run does not bump
@@ -198,10 +198,10 @@ jobs:
 
       # The packager only uploads to a destination whose token is set. Only
       # GITHUB_OAUTH is passed here, so this creates the GitHub Release and
-      # skips CurseForge; publish-curseforge.yml is the one that sets
-      # CF_API_TOKEN. -n names the zip and the upload label by version only
+      # skips CurseForge; publish-mapdata-release-curseforge.yml is the one that
+      # sets CF_API_TOKEN. -n names the zip and the upload label by version only
       # (the default would append the game flavour). Keep the arguments in
-      # sync with resolve-release-project.sh.
+      # sync with publish-mapdata-release-curseforge.yml.
       - name: Package and create GitHub release
         uses: BigWigsMods/packager@v2
         with:
@@ -234,12 +234,12 @@ jobs:
   publish:
     name: Publish to all marketplaces
     needs: [tag, release]
-    # Only once the GitHub Release exists, which publish-curseforge.yml checks for.
+    # Only once the GitHub Release exists, which publish-mapdata-release-curseforge.yml checks for.
     # The release is stable (unless a prerelease suffix was given) and goes to
     # CurseForge straight away.
     if: ${{ !cancelled() && needs.release.result == 'success' }}
     runs-on: ubuntu-latest
-    # actions: write lets it start publish-curseforge.yml.
+    # actions: write lets it start publish-mapdata-release-curseforge.yml.
     permissions:
       contents: read
       actions: write
@@ -255,4 +255,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.tag.outputs.tag }}
-        run: .github/scripts/dispatch-workflow-and-wait.sh publish-curseforge.yml -f "tag=${RELEASE_TAG}"
+        run: .github/scripts/dispatch-workflow-and-wait.sh publish-mapdata-release-curseforge.yml -f "tag=${RELEASE_TAG}"

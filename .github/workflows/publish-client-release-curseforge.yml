@@ -1,0 +1,107 @@
+name: Publish Client Release to CurseForge
+
+# Uploads an existing client release (v1.2.3) to CurseForge. It never creates
+# tags or GitHub Releases; run "Create Release: Client" first. The Map Data
+# addon has its own workflow: "Publish MapData Release to CurseForge".
+#
+# Run it on its own from the Actions tab, or let "Create Release: Client" call
+# it.
+#
+# The package is rebuilt from the release tag rather than downloaded from the
+# GitHub Release: the packager is what turns the TOC and tag into CurseForge
+# game versions and a release channel (release/beta/alpha), and it cannot
+# upload a zip it did not build. The client addon is Lua only, so the checked-in
+# source at the tag is all that is needed; no map assets are generated.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Client release tag to publish, as shown on the Releases page, e.g. v1.0.1"
+        type: string
+        required: true
+  workflow_call:
+    inputs:
+      tag:
+        description: "Client release tag to publish, e.g. v1.0.1"
+        type: string
+        required: true
+    secrets:
+      CF_API_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+  checks: write
+
+# Never run two client publishes at once. Independent of the MapData publish.
+concurrency:
+  group: publish-client-release-curseforge
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify release
+    # The workflow file and CF_API_TOKEN are only trusted from main. In a called
+    # workflow github.ref is the caller's ref, so this covers both entry points.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # The value is not echoed back: it is free text from a workflow input.
+      - name: Verify tag is a client tag
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::The client release tag must look like v1.2.3 or v1.2.3-beta.1 (MapData releases use their own publish workflow)"
+            exit 1
+          fi
+
+      - name: Verify release exists
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/verify-release-exists.sh
+
+      - name: Verify tag is on main
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: .github/scripts/verify-tag-on-main.sh
+
+  publish:
+    name: Package and upload to CurseForge
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          # release.sh walks back through tags to build the changelog.
+          fetch-depth: 0
+
+      # The packager has no tag-prefix option: its changelog uses "the previous
+      # tag" among all tags. Hide the MapData series from it.
+      - name: Isolate the v* tag series
+        run: .github/scripts/isolate-tag-series.sh v
+
+      # Only CF_API_TOKEN is passed, so the packager uploads to CurseForge and
+      # does not touch the GitHub Release. Nothing goes to WoWInterface, so skip
+      # the pandoc install.
+      - name: Package and upload to CurseForge
+        uses: BigWigsMods/packager@v2
+        with:
+          pandoc: "false"
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}

@@ -3,8 +3,8 @@ name: "Create Release: Client"
 # Creates an official tagged release of the core client addon (Lua only, small): the
 # version tag, the package and the GitHub Release with the zip attached. The
 # package step itself uploads nowhere else; the last job then starts "Publish
-# Release to all Marketplaces" with the new tag. If that fails, re-run it on its
-# own (or run "Publish Release to CurseForge") and give it the tag.
+# Client Release to CurseForge" with the new tag. If that fails, re-run it on its
+# own and give it the tag.
 #
 # The map art and runtime map metadata are NOT part of this release. They are
 # the separate Map Data addon, released by "Create Release: MapData" with its
@@ -26,7 +26,7 @@ name: "Create Release: Client"
 #   tag      (manual runs only) bumps the version and pushes the tag
 #   release  packages and creates the GitHub Release from the checked-in client
 #            source only
-#   publish  starts "Publish Release to all Marketplaces" and waits for it
+#   publish  starts "Publish Client Release to CurseForge" and waits for it
 #
 # If release or publish fails (GitHub outage, ...), fix it and use "Re-run
 # failed jobs": the jobs before it are not repeated, and a re-run does not bump
@@ -114,8 +114,8 @@ jobs:
 
       # The packager only uploads to a destination whose token is set. Only
       # GITHUB_OAUTH is passed here, so this creates the GitHub Release and
-      # skips CurseForge; publish-curseforge.yml is the one that sets
-      # CF_API_TOKEN.
+      # skips CurseForge; publish-client-release-curseforge.yml is the one that
+      # sets CF_API_TOKEN.
       - name: Package and create GitHub release
         uses: BigWigsMods/packager@v2
         with:
@@ -148,10 +148,10 @@ jobs:
   publish:
     name: Publish to all marketplaces
     needs: [tag, release]
-    # Only once the GitHub Release exists, which publish-curseforge.yml checks for.
+    # Only once the GitHub Release exists, which publish-client-release-curseforge.yml checks for.
     if: ${{ !cancelled() && needs.release.result == 'success' }}
     runs-on: ubuntu-latest
-    # actions: write lets it start publish-curseforge.yml.
+    # actions: write lets it start publish-client-release-curseforge.yml.
     permissions:
       contents: read
       actions: write
@@ -168,4 +168,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.tag.outputs.tag || github.ref_name }}
-        run: .github/scripts/dispatch-workflow-and-wait.sh publish-curseforge.yml -f "tag=${RELEASE_TAG}"
+        run: .github/scripts/dispatch-workflow-and-wait.sh publish-client-release-curseforge.yml -f "tag=${RELEASE_TAG}"
