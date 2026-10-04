@@ -118,6 +118,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip FDIDMap.lua generation",
     )
+    parser.add_argument(
+        "--tables-only",
+        action="store_true",
+        help=(
+            "Generate only the Lua metadata tables (FDIDMap.lua and "
+            "CaveData.lua) without building the WorldMap art tree. "
+            "Fast path for client releases."
+        ),
+    )
     caves = parser.add_argument_group(
         "cave map",
         "CaveData.lua — the interior (cave / dungeon) map table this "

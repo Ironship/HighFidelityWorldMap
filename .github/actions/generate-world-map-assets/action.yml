@@ -163,7 +163,12 @@ runs:
     - name: Generate map art
       if: steps.decide.outputs.generate == 'true'
       shell: bash
-      run: python src/generator/generateHFWM.py
+      run: |
+        if [[ "${{ inputs.tables-only }}" == "true" ]]; then
+          python src/generator/generateHFWM.py --tables-only --no-original --no-art-passes
+        else
+          python src/generator/generateHFWM.py
+        fi
 
     # Before verification and before the cache save, so the stamp is part of
     # what gets cached and verified.

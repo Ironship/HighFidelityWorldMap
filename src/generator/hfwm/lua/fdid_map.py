@@ -211,11 +211,70 @@ def _collect_native(
     }
 
 
+def _collect_metadata(
+    zones: dict[str, dict],
+    prefix: str = "",
+) -> dict:
+    """Build the FDID map from zone metadata alone, without scanning BLPs.
+
+    This is the fast path used by client-only builds: the Lua table only needs
+    the expected tile layout and IDs, not the generated image tree itself.
+    """
+    entries: list[tuple[int, str]] = []
+    covered: list[str] = []
+
+    for folder in sorted(zones):
+        z = zones[folder]
+        if z.get("native"):
+            continue
+        fdids = z["tile_fdids"]
+        names = tile_filenames(folder, len(fdids))
+        lua_dir = f"{prefix}\\{folder}" if prefix else folder
+        zone_entries = [
+            (fdid, f"{lua_dir}\\{Path(fname).stem}")
+            for fdid, fname in zip(fdids, names)
+        ]
+        if zone_entries:
+            entries.extend(zone_entries)
+            covered.append(folder)
+
+    return {"entries": entries, "covered": covered, "missing": 0, "partial": []}
+
+
+def _collect_native_metadata(
+    zones: dict[str, dict],
+    prefix: str = "",
+) -> dict:
+    """Metadata-only version of _collect_native."""
+    entries: dict[int, dict] = {}
+    covered: list[str] = []
+
+    for folder in sorted(zones):
+        z = zones[folder]
+        native = z.get("native")
+        if not native:
+            continue
+        count = native["cols"] * native["rows"]
+        names = tile_filenames(folder, count)
+        lua_dir = f"{prefix}\\{folder}" if prefix else folder
+        entries[z["ui_map_id"]] = {
+            "cols": native["cols"], "rows": native["rows"],
+            "tile_w": native["tile_w"], "tile_h": native["tile_h"],
+            "layer_w": native["layer_w"], "layer_h": native["layer_h"],
+            "path": f"{lua_dir}\\{folder.lower()}",
+            "continent": bool(native.get("continent")),
+        }
+        covered.append(folder)
+
+    return {"entries": entries, "covered": covered, "missing": 0, "partial": []}
+
+
 def generate_fdid_map(
     output_dir: str,
     zones: dict[str, dict],
     art_passes: list[str] | None = None,
     original: bool = False,
+    metadata_only: bool = False,
 ) -> dict:
     """Write ``FDIDMap.lua`` for every zone whose BLPs are present.
 
@@ -232,21 +291,27 @@ def generate_fdid_map(
     Returns a small summary dict for the caller to report.
     """
     out = Path(output_dir)
-    if not out.is_dir():
-        print("  Output directory not found — skipping FDIDMap.lua.",
-              flush=True)
-        return {"entries": 0, "zones": 0, "missing": 0,
-                "original_entries": 0, "original_zones": 0,
-                "native_zones": 0, "native_original_zones": 0}
+    if metadata_only:
+        main = _collect_metadata(zones)
+        orig = None
+        native_main = _collect_native_metadata(zones)
+        native_orig = None
+    else:
+        if not out.is_dir():
+            print("  Output directory not found — skipping FDIDMap.lua.",
+                  flush=True)
+            return {"entries": 0, "zones": 0, "missing": 0,
+                    "original_entries": 0, "original_zones": 0,
+                    "native_zones": 0, "native_original_zones": 0}
 
-    main = _collect(out, zones)
-    orig = (_collect(out / ORIGINAL_SUBDIR, zones, ORIGINAL_SUBDIR)
-            if original else None)
-    native_main = _collect_native(out, zones)
-    native_orig = (
-        _collect_native(out / ORIGINAL_SUBDIR, zones, ORIGINAL_SUBDIR)
-        if original else None
-    )
+        main = _collect(out, zones)
+        orig = (_collect(out / ORIGINAL_SUBDIR, zones, ORIGINAL_SUBDIR)
+                if original else None)
+        native_main = _collect_native(out, zones)
+        native_orig = (
+            _collect_native(out / ORIGINAL_SUBDIR, zones, ORIGINAL_SUBDIR)
+            if original else None
+        )
 
     # Read whatever is currently on disk *before* overwriting it, so any
     # hand-added cave/mine entries (synthetic FDIDs, see

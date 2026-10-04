@@ -165,12 +165,17 @@ def run_fdid_map_phase(
     *,
     include_original: bool,
     total_out_tiles: int,
+    metadata_only: bool = False,
 ) -> None:
     print("\n--- Phase 4: Generating FDIDMap.lua ---", flush=True)
     summary = None
     try:
         summary = generate_fdid_map(
-            output_dir, zone_db, stamp(passes), original=include_original,
+            output_dir,
+            zone_db,
+            stamp(passes),
+            original=include_original,
+            metadata_only=metadata_only,
         )
     except OSError as exc:
         print(f"  Warning: FDIDMap.lua generation failed: {exc}",

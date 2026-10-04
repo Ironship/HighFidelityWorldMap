@@ -41,7 +41,7 @@ import os
 import sys
 
 from ..config.build import GAME_BUILD, GAME_PRODUCT
-from ..config.paths import CAVE_DATA_FILE, ORIGINAL_SUBDIR
+from ..config.paths import CAVE_DATA_FILE, FDID_MAP_FILE, ORIGINAL_SUBDIR
 from ..imaging.effects import ART_PASSES, banner_lines, resolve
 from .parser import build_parser, print_art_passes
 from .phases import (
@@ -145,6 +145,26 @@ def main() -> None:
         print(f"Output:    {CAVE_DATA_FILE}", flush=True)
         print(flush=True)
         sys.exit(0 if run_cave_pass(args.refresh_caves) else 1)
+
+    if args.tables_only:
+        print("--- Lua tables only ---", flush=True)
+        print(f"Build:     {GAME_BUILD}", flush=True)
+        print(f"FDIDMap:   {FDID_MAP_FILE}", flush=True)
+        print(f"CaveData:  {CAVE_DATA_FILE}", flush=True)
+        print(flush=True)
+        zone_db = load_zone_db(args.refresh, args.maid_field, args.zones)
+        if not args.skip_fdid_map:
+            run_fdid_map_phase(
+                os.path.abspath(args.output_dir),
+                zone_db,
+                {},
+                include_original=False,
+                total_out_tiles=0,
+                metadata_only=True,
+            )
+        if args.caves:
+            run_cave_pass(args.refresh_caves)
+        return
 
     output_dir = os.path.abspath(args.output_dir)
     passes, pass_notes = _resolve_art_passes(args)
