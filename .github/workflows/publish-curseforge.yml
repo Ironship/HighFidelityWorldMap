@@ -38,6 +38,7 @@ on:
 
 permissions:
   contents: read
+  checks: write
 
 # A publish can upload a multi-GB zip to CurseForge; never run two at once.
 concurrency:
@@ -77,6 +78,7 @@ jobs:
     permissions:
       contents: read
       actions: write
+      checks: write
     timeout-minutes: 300
 
     steps:
