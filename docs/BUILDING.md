@@ -104,4 +104,4 @@ When ready to publish:
 
 - The generated `WorldMap/` directory is a build artifact and is not normally committed.
 - `FDIDMap.lua` is part of the repo and is produced by the generator.
-- `Libs/` is fetched during local dev and CI, and is required for a clean checkout to work.
+- `Libs/` is fetched during local dev and CI; none of its contents are committed.

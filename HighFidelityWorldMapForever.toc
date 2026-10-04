@@ -7,11 +7,10 @@
 ## IconTexture: Interface\Icons\INV_Misc_Map02
 ## X-Curse-Project-ID: 1701034
 
-# Ace3: AceAddon-3.0, AceEvent-3.0, AceConsole-3.0, AceDB-3.0, AceDBOptions-3.0,
-# AceGUI-3.0, AceConfigRegistry-3.0, AceConfigDialog-3.0. Fetched at build/dev
-# time rather than committed; see .pkgmeta and dev/fetch-libs.sh. Kept flat at
-# the repo root (not under Libs\) so the CI lint job's plain-bash file-exists
-# check, which does not understand backslashed subdirectories, still finds it.
+# Ace3 libs are fetched at build/dev time rather than committed; see .pkgmeta
+# and dev/fetch-libs.sh. Kept flat at the repo root (not under Libs\) so the
+# CI lint job's plain-bash file-exists check, which does not understand
+# backslashed subdirectories, still finds it.
 embeds.xml
 
 # Generated data tables. Plain globals with no dependency on the addon

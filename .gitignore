@@ -17,12 +17,6 @@ __pycache__/
 .release/
 .env
 
-# Ace3 libraries, fetched at build/dev time (see .pkgmeta's externals and
-# dev/fetch-libs.sh), not committed. LibStub and CallbackHandler-1.0 are
-# tiny, stable shims committed directly instead. embeds.xml lives at the
-# repo root (see the .toc), so it isn't under this Libs/* rule at all.
+# Ace3 libraries are fetched at build/dev time (see .pkgmeta's externals and
+# dev/fetch-libs.sh) and are not committed.
 Libs/*
-!Libs/LibStub/
-!Libs/LibStub/**
-!Libs/CallbackHandler-1.0/
-!Libs/CallbackHandler-1.0/**

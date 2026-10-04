@@ -27,6 +27,8 @@ ignore:
 # libraries locally from a GitHub mirror instead, so a checkout only needs
 # git, not svn, to test with; see that script's own comment for why.
 externals:
+  Libs/LibStub: https://repos.wowace.com/wow/ace3/trunk/LibStub
+  Libs/CallbackHandler-1.0: https://repos.wowace.com/wow/ace3/trunk/CallbackHandler-1.0
   Libs/AceAddon-3.0: https://repos.wowace.com/wow/ace3/trunk/AceAddon-3.0
   Libs/AceEvent-3.0: https://repos.wowace.com/wow/ace3/trunk/AceEvent-3.0
   Libs/AceConsole-3.0: https://repos.wowace.com/wow/ace3/trunk/AceConsole-3.0

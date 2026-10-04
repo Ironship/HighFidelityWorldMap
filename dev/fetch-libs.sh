@@ -15,6 +15,8 @@ cd "$(dirname "$0")/.."
 mirror="https://github.com/WoWUIDev/Ace3.git"
 # local dir name (matches .pkgmeta's Libs/<name>) = path inside the mirror
 paths=(
+    "LibStub=LibStub"
+    "CallbackHandler-1.0=CallbackHandler-1.0"
     "AceAddon-3.0=AceAddon-3.0"
     "AceEvent-3.0=AceEvent-3.0"
     "AceConsole-3.0=AceConsole-3.0"
@@ -44,4 +46,4 @@ for entry in "${paths[@]}"; do
     cp -r "$tmp/ace3/$src" "Libs/$name"
 done
 
-echo "Done. LibStub and CallbackHandler-1.0 are committed under Libs/ already."
+echo "Done. Libs/ hydrated from the Ace3 mirror."
