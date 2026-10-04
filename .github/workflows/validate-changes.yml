@@ -1,7 +1,8 @@
-name: CI
+name: Validate Changes
 
 # Cheap checks on every push and PR. Deliberately does *not* generate the map
-# art — that is a multi-GB job and belongs only in the release workflow.
+# art — that is a multi-GB job and belongs only in Generate World Map Assets
+# and Create Release.
 
 on:
   push:
@@ -16,7 +17,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: validate-changes-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -38,11 +39,11 @@ jobs:
               - 'generateHFWM.py'
               - 'hfwm/**'
               - 'requirements.txt'
-              - '.github/workflows/ci.yml'
+              - '.github/workflows/validate-changes.yml'
               - '.github/scripts/smoke-test.sh'
 
   lua:
-    name: Lua
+    name: Lint addon Lua
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -63,7 +64,7 @@ jobs:
         run: .github/scripts/lint-lua.sh
 
   python:
-    name: Generator
+    name: Test map generator
     needs: changes
     if: needs.changes.outputs.generator == 'true'
     runs-on: ubuntu-latest
@@ -105,7 +106,7 @@ jobs:
         run: .github/scripts/smoke-test.sh ocean
 
   package:
-    name: Packager
+    name: Validate package config
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

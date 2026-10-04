@@ -36,6 +36,6 @@ invoked by a single `run:` line.
   the script's own directory.
 - Keep comments explaining *why* in the script next to the code, not in the YAML.
 - Add a script to a workflow's `paths:` filter when changing it should trigger
-  that workflow (see the generator filter in `ci.yml`).
+  that workflow (see the generator filter in `validate-changes.yml`).
 - Check scripts before pushing: `bash -n .github/scripts/<name>.sh` for shell,
   and run Python scripts directly where they do not need CI-only variables.
