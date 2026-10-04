@@ -1,0 +1,25 @@
+{
+  "folders": [
+    {
+      "name": "HighFidelityWorldMap",
+      "path": "."
+    },
+    {
+      "name": "addon/client",
+      "path": "src/addon/client"
+    },
+    {
+      "name": "addon/mapdata",
+      "path": "src/addon/mapdata"
+    },
+    {
+      "name": "mapdata/generator",
+      "path": "src/generator"
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "src/*": true
+    }
+  }
+}

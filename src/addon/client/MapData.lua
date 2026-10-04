@@ -23,6 +23,8 @@ local P       = ns.P
 
 local DATA_ADDON = "HighFidelityWorldMap_MapData_Forever"
 local BUILD_KEY  = "X-HFWM-Data-Build"
+local BRIDGE_KEY = "HFWMF_MAPDATA_BRIDGE"
+local BRIDGE_API = 1
 
 MapData.ADDON_NAME = DATA_ADDON
 
@@ -50,6 +52,23 @@ function MapData:IsLoaded()
     return IsAddOnLoaded_(DATA_ADDON)
 end
 
+--- Runtime handshake table exported by the data addon when it is loaded.
+---@return table|nil
+function MapData:GetBridge()
+    local bridge = _G and _G[BRIDGE_KEY]
+    if type(bridge) ~= "table" then return nil end
+    if bridge.api ~= BRIDGE_API then return nil end
+    if bridge.addon ~= DATA_ADDON then return nil end
+    return bridge
+end
+
+--- Whether mapdata is usable right now for bundled texture replacement.
+--- Requires the addon to be loaded (enabled), plus a matching bridge.
+---@return boolean
+function MapData:IsRuntimeReady()
+    return self:IsLoaded() and self:GetBridge() ~= nil
+end
+
 --- The generator build the installed data addon was made from, or nil when
 --- it is not installed or carries no stamp (a dev build).
 function MapData:GetBuild()
@@ -72,7 +91,15 @@ function MapData:Describe()
         return "NOT INSTALLED (" .. DATA_ADDON .. ")"
     end
     local have, want = self:GetBuild(), self:GetExpectedBuild()
-    local state = self:IsLoaded() and "loaded" or "installed, not loaded"
+    local bridge = self:GetBridge()
+    local state
+    if not self:IsLoaded() then
+        state = "installed, not loaded"
+    elseif not bridge then
+        state = "loaded, bridge missing"
+    else
+        state = "loaded, bridge ok"
+    end
     local match
     if not have or not want then
         match = "build not stamped (dev build), check skipped"
@@ -91,6 +118,19 @@ function MapData:Check()
     if not self:IsInstalled() then
         P("|cffff8800Map Data addon not found.|r The world map will show "
             .. "missing textures until " .. DATA_ADDON .. " is installed.")
+        return false
+    end
+
+    if not self:IsLoaded() then
+        P("|cffff8800Map Data addon is installed but disabled.|r Enable "
+            .. DATA_ADDON .. " to use High Fidelity World Map textures.")
+        return false
+    end
+
+    if not self:GetBridge() then
+        P("|cffff8800Map Data runtime bridge missing.|r "
+            .. DATA_ADDON .. " is loaded but did not export " .. BRIDGE_KEY
+            .. "; bundled textures are disabled.")
         return false
     end
 

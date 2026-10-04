@@ -1,6 +1,6 @@
-name: "Create Release: Addon"
+name: "Create Release: Client"
 
-# Creates an official tagged release of the core addon (Lua only, small): the
+# Creates an official tagged release of the core client addon (Lua only, small): the
 # version tag, the package and the GitHub Release with the zip attached. The
 # package step itself uploads nowhere else; the last job then starts "Publish
 # Release to all Marketplaces" with the new tag. If that fails, re-run it on its
@@ -66,7 +66,7 @@ permissions:
 
 # Never run two addon releases at once. Independent of the MapData release.
 concurrency:
-  group: release-addon
+  group: release-addon-client
   cancel-in-progress: false
 
 jobs:

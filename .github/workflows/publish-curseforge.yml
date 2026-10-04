@@ -115,13 +115,13 @@ jobs:
           save: "true"
           tables-only: ${{ steps.project.outputs.tables_only }}
 
-      # See release-addon.yml: keeps the packager shipping the regenerated
+      # See release-addon-client.yml: keeps the packager shipping the regenerated
       # tables without writing blobs into .git.
       - name: Stage generated tables
         if: steps.project.outputs.project == 'core'
         run: git add -fN src/addon/client/FDIDMap.lua src/addon/client/CaveData.lua
 
-      # See release-mapdata.yml: takes the gitignored art off the packager's
+      # See release-addon-mapdata.yml: takes the gitignored art off the packager's
       # exclude list without writing GBs of blobs into .git. The TOC at the tag
       # is unstamped; the release workflow stamped its own copy, so this one
       # needs the same stamp.

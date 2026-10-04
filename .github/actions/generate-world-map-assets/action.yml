@@ -26,7 +26,7 @@ description: >-
 # GitHub scopes caches by ref: a run on a tag can read caches saved from the
 # default branch but not from any other tag. So the copy that *later* releases
 # restore has to be saved from main (see
-# .github/workflows/generate-world-map-assets.yml and release-mapdata.yml). A
+# .github/workflows/generate-world-map-assets.yml and release-addon-mapdata.yml). A
 # copy saved from a tag still serves its own run, it just costs ~2-3 GB of the
 # repo's 10 GB cache quota and is invisible to every other tag.
 

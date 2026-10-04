@@ -5,6 +5,7 @@
 local addonName, ns = ...
 local Renderer    = ns.Renderer
 local Config      = ns.Config
+local MapData     = ns.MapData
 local Pool        = ns.Pool
 local MaskPool    = ns.MaskPool
 local BaseArt     = ns.BaseArt
@@ -831,6 +832,12 @@ local function DoRefresh(force)
     end
     if not mapID then
         if trace then P("  BAIL: no mapID") end
+        return
+    end
+
+    if not MapData:IsRuntimeReady() then
+        if trace then P("  BAIL: mapdata runtime not ready") end
+        RestoreDefaults()
         return
     end
 

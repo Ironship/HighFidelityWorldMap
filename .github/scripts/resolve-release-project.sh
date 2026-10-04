@@ -22,7 +22,7 @@ if [[ "$RELEASE_TAG" =~ ^mapdata-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; 
     echo "series=mapdata-v"
     echo "require=all"
     echo "tables_only=false"
-    # Same arguments as release-mapdata.yml.
+    # Same arguments as release-addon-mapdata.yml.
     echo "packager_args=-m .pkgmeta-mapdata -n {package-name}-{project-version}:{project-version}"
   } >> "$GITHUB_OUTPUT"
 elif [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then

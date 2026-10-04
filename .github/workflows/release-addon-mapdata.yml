@@ -68,7 +68,7 @@ permissions:
 # only the newest pending run, so the latest push wins and a release in progress
 # is never cut off halfway through an upload.
 concurrency:
-  group: release-mapdata
+  group: release-addon-mapdata
   cancel-in-progress: false
 
 jobs:

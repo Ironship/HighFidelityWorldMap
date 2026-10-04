@@ -1,5 +1,5 @@
 ## Interface: 16001
-## Title: High Fidelity World Map - Map Data
+## Title: High Fidelity World Map - Forever Map Data
 ## Notes: Required map art for High Fidelity World Map: Forever. Contains the stitched high-resolution world map, cave and dungeon textures. No settings or UI of its own; install High Fidelity World Map to use it.
 ## Author: HighFidelityWorldMap
 ## Version: @project-version@
@@ -13,3 +13,7 @@
 # (.github/scripts/stamp-mapdata-toc.sh) with the generator hash the art was
 # built from; the core addon compares it with its own FDIDMap.lua. Left empty
 # in the repository, which the core addon treats as a dev build.
+
+# Runtime bridge for HighFidelityWorldMap: if this addon is disabled, this
+# file never loads, and the core addon can suppress bundled textures.
+Bridge.lua
