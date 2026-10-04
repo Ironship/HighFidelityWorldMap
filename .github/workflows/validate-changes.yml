@@ -1,16 +1,15 @@
 name: Validate Changes
 
-# Cheap checks on every push and PR. Deliberately does *not* generate the map
-# art — that is a multi-GB job and belongs only in Generate World Map Assets
-# and Create Release.
+# Cheap checks on PRs into main and on manual dispatch. Deliberately does not
+# run on pushes to main: anything that reached main already passed as a PR.
+# Also does *not* generate the map art — that is a multi-GB job and belongs
+# only in Generate World Map Assets and Create Release.
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -66,7 +65,8 @@ jobs:
   python:
     name: Test map generator
     needs: changes
-    if: needs.changes.outputs.generator == 'true'
+    # A manual run has no meaningful diff to filter on, so always test.
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.generator == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
