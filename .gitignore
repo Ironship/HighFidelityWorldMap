@@ -4,6 +4,10 @@ src/addon/WorldMap*
 # Build-stamped pipeline cache (DB2 CSVs, WDTs, minimap BLPs)
 .cache-*/
 
+# Auto-generated project README; rebuilt from docs/ and intentionally not kept in
+# local git state so branch updates do not cause divergence for contributors.
+README.md
+
 # CI's one-zone smoke builds
 smoke/
 smoke-ocean/

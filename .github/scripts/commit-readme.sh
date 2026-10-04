@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
-# Commits and pushes the regenerated README.md, if it changed.
+# README.md is generated from docs/ and intentionally not kept in the local git
+# state. This script exits without touching branch history so contributors do not
+# end up with a divergent README commit after a CI regeneration.
 set -euo pipefail
 
-git config user.name "github-actions[bot]"
-git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-git add README.md
-if git diff --cached --quiet; then
-  echo "No README changes generated."
-  exit 0
-fi
-git commit -m "Generate README from docs"
-git push
+echo "README.md is generated from docs/ and should not be committed to local git state."
+echo "Regenerate it with: python .github/scripts/generate_readme.py"
