@@ -202,6 +202,11 @@ jobs:
       # sets CF_API_TOKEN. -n names the zip and the upload label by version only
       # (the default would append the game flavour). Keep the arguments in
       # sync with publish-mapdata-release-curseforge.yml.
+      #
+      # On a push to main the packager bails out ("Found future tag ... not
+      # packaging") when HEAD carries a tag, assuming a tag-triggered run will
+      # package it. Here the tag was created by this workflow and nothing else
+      # will, so present the run to the packager as the tag run it stands in for.
       - name: Package and create GitHub release
         uses: BigWigsMods/packager@v2
         with:
@@ -210,6 +215,8 @@ jobs:
           pandoc: "false"
         env:
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REF: refs/tags/${{ needs.tag.outputs.tag }}
+          GITHUB_REF_NAME: ${{ needs.tag.outputs.tag }}
 
       # The packager marks the Release as Latest. That belongs to the addon,
       # which is what people download from the Releases page.
