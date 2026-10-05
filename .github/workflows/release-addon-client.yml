@@ -112,19 +112,25 @@ jobs:
       - name: Isolate the v* tag series
         run: .github/scripts/isolate-tag-series.sh v
 
-      # The packager only uploads to a destination whose token is set. Only
-      # GITHUB_OAUTH is passed here, so this creates the GitHub Release and
-      # skips CurseForge; publish-client-release-curseforge.yml is the one that
-      # sets CF_API_TOKEN.
-      - name: Package and create GitHub release
+      # -d: build the zip, upload nothing. The packager's own GitHub upload adds
+      # release.json and names the zip after the project, so the Release is made
+      # by create-github-release.sh below. CurseForge is
+      # publish-client-release-curseforge.yml's job.
+      - name: Package
         uses: BigWigsMods/packager@v2
         with:
+          args: -d
           # Nothing goes to WoWInterface, so skip the pandoc install.
           pandoc: "false"
-        env:
-          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
 
-      # The packager creates the Release and may mark it Latest, but a Map Data
+      # The Release carries one asset: the addon zip, hfwm-forever-client-v1.2.3.zip.
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_GLOB: "v[0-9]*"
+        run: .github/scripts/create-github-release.sh "hfwm-forever-client-${RELEASE_TAG}.zip"
+
+      # Creating the Release may mark it Latest, but a Map Data
       # release published afterwards would take that over. The addon is what
       # people download from the Releases page. GitHub does not allow a
       # pre-release to be Latest, so only stable tags.
@@ -144,6 +150,8 @@ jobs:
           path: .release/*.zip
           if-no-files-found: warn
           retention-days: 7
+          # .release is a dot-directory, which the action skips by default.
+          include-hidden-files: true
 
   publish:
     name: Publish to all marketplaces

@@ -196,29 +196,33 @@ jobs:
       - name: Isolate the mapdata-v* tag series
         run: .github/scripts/isolate-tag-series.sh mapdata-v
 
-      # The packager only uploads to a destination whose token is set. Only
-      # GITHUB_OAUTH is passed here, so this creates the GitHub Release and
-      # skips CurseForge; publish-mapdata-release-curseforge.yml is the one that
-      # sets CF_API_TOKEN. -n names the zip and the upload label by version only
-      # (the default would append the game flavour). Keep the arguments in
-      # sync with publish-mapdata-release-curseforge.yml.
+      # -d: build the zip, upload nothing. The packager's own GitHub upload adds
+      # release.json and dies on this zip (curl runs out of memory), so the
+      # Release is made by create-github-release.sh below. CurseForge is
+      # publish-mapdata-release-curseforge.yml's job; keep -m in sync with it.
       #
       # On a push to main the packager bails out ("Found future tag ... not
       # packaging") when HEAD carries a tag, assuming a tag-triggered run will
       # package it. Here the tag was created by this workflow and nothing else
       # will, so present the run to the packager as the tag run it stands in for.
-      - name: Package and create GitHub release
+      - name: Package
         uses: BigWigsMods/packager@v2
         with:
-          args: -m .pkgmeta-mapdata -n {package-name}-{project-version}:{project-version}
+          args: -d -m .pkgmeta-mapdata
           # Nothing goes to WoWInterface, so skip the pandoc install.
           pandoc: "false"
         env:
-          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REF: refs/tags/${{ needs.tag.outputs.tag }}
           GITHUB_REF_NAME: ${{ needs.tag.outputs.tag }}
 
-      # The packager marks the Release as Latest. That belongs to the addon,
+      # The Release carries one asset: the addon zip, hfwm-forever-mapdata-v1.2.3.zip.
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_GLOB: "mapdata-v[0-9]*"
+        run: .github/scripts/create-github-release.sh "hfwm-forever-mapdata-${RELEASE_TAG#mapdata-}.zip"
+
+      # A new Release defaults to Latest. That belongs to the addon,
       # which is what people download from the Releases page.
       - name: Keep the addon as latest release
         env:
