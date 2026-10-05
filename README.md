@@ -137,7 +137,7 @@ The generated map data is not tracked in Git and is rebuilt from source data.
 python src/generator/generateHFWM.py
 ```
 
-Tiles are written to `src/addon/mapdata/WorldMap/`; `src/addon/client/FDIDMap.lua` and
+Tiles are written to `src/addon/mapdata/WorldMap/`; `src/addon/mapdata/FDIDMap.lua` and
 `src/addon/client/CaveData.lua` are written into the core addon. Downloads are cached
 under `src/generator/.cache-*/`.
 
@@ -204,5 +204,5 @@ The generated art and tables are cached under a hash of the generator sources: `
 ## Notes
 
 - The generated `src/addon/mapdata/WorldMap/` directory is a build artifact and is not normally committed.
-- `src/addon/client/FDIDMap.lua` and `src/addon/client/CaveData.lua` are part of the repo and are produced by the generator.
+- `src/addon/mapdata/FDIDMap.lua` and `src/addon/client/CaveData.lua` are part of the repo and are produced by the generator.
 - `src/addon/client/Libs/` is fetched during local dev and CI; none of its contents are committed.
