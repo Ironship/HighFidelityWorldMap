@@ -203,8 +203,8 @@ The two addons are released by two separate workflows with separate tags. They d
 
 When ready to publish:
 
-- run **Create Release: Addon** (or push a `v*` tag to `main`) to package the addon, create the GitHub release and then start **Publish Client Release to CurseForge** with the new tag. It refuses to package when the generator changed and the Map Data addon has not been released from that build yet: wait for **Create Release: MapData** (or run it), then re-run the failed jobs.
-- run **Create Release: MapData** to regenerate (or restore) the art, tag `mapdata-v*`, package `HighFidelityWorldMap_MapData_Forever`, create the GitHub release and publish it. It also runs by itself on a push to `main` that changes the generator and alters the art: those releases are stable and go straight to CurseForge, so release the addon right after. Manual runs take a bump and an optional prerelease suffix (for example `beta.1`).
+- run **Create Release: Addon** (or push a `v*` tag to `main`) to package the addon, create the GitHub release (one asset, `hfwm-forever-client-v1.2.3.zip`) and then start **Publish Client Release to CurseForge** with the new tag. It refuses to package when the generator changed and the Map Data addon has not been released from that build yet: wait for **Create Release: MapData** (or run it), then re-run the failed jobs.
+- run **Create Release: MapData** to regenerate (or restore) the art, tag `mapdata-v*`, package `HighFidelityWorldMap_MapData_Forever`, create the GitHub release (one asset, `hfwm-forever-mapdata-v1.2.3.zip`) and publish it. It also runs by itself on a push to `main` that changes the generator and alters the art: those releases are stable and go straight to CurseForge, so release the addon right after. Manual runs take a bump and an optional prerelease suffix (for example `beta.1`).
 - run **Publish Client Release to CurseForge** (`v*` tag) or **Publish MapData Release to CurseForge** (`mapdata-v*` tag) yourself with a release's tag to retry or redo that upload to CurseForge
 - the client publish ships the checked-in Lua only; map generation happens only in the MapData release and publish
 
