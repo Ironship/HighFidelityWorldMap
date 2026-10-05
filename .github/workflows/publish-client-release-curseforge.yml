@@ -43,8 +43,10 @@ jobs:
   verify:
     name: Verify release
     # The workflow file and CF_API_TOKEN are only trusted from main. In a called
-    # workflow github.ref is the caller's ref, so this covers both entry points.
-    if: github.ref == 'refs/heads/main'
+    # workflow github.ref is the caller's ref: main for a manual release, or the
+    # pushed release tag itself, whose commit "Verify tag is on main" below
+    # requires to be on main.
+    if: github.ref == 'refs/heads/main' || github.ref == format('refs/tags/{0}', inputs.tag)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

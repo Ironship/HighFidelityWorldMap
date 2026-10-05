@@ -4,7 +4,7 @@
 ## Author: HighFidelityWorldMap
 ## Version: @project-version@
 ## IconTexture: Interface\Icons\INV_Misc_Map02
-## X-Curse-Project-ID: TODO_MAPDATA_PROJECT_ID
+## X-Curse-Project-ID: 1727004
 ## X-HFWM-Data-Build:
 
 # The tiles under WorldMap\ are read by High Fidelity World Map through their
