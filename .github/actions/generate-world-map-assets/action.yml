@@ -80,10 +80,10 @@ runs:
     # The art tree is ~7 GB. The packager then copies it into .release/ and zips
     # that, so a stock runner's ~14 GB runs out partway through the zip.
     # Everything removed here is preinstalled tooling this job never touches.
-    # A tables-only run does not need the room unless it falls back to
-    # generating; see the second free-space step below.
+    # A tables-only or lookup-only run does not need the room unless it falls
+    # back to generating; see the second free-space step below.
     - name: Free disk space
-      if: inputs.tables-only != 'true'
+      if: inputs.tables-only != 'true' && inputs.lookup-only != 'true'
       shell: bash
       run: .github/scripts/free-disk-space.sh
 
@@ -128,7 +128,7 @@ runs:
       run: .github/scripts/decide-world-map-assets.sh >> "$GITHUB_OUTPUT"
 
     - name: Free disk space for generation
-      if: inputs.tables-only == 'true' && steps.decide.outputs.generate == 'true'
+      if: (inputs.tables-only == 'true' || inputs.lookup-only == 'true') && steps.decide.outputs.generate == 'true'
       shell: bash
       run: .github/scripts/free-disk-space.sh
 
