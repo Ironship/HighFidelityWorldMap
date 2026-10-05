@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stamps the generator hash into src/addon/client/FDIDMap.lua as
+# Stamps the generator hash into src/addon/mapdata/FDIDMap.lua as
 # HFWMF_DATA_BUILD. The core addon compares it with the X-HFWM-Data-Build line
 # in the Map Data addon's TOC (stamp-mapdata-toc.sh writes the same hash there)
 # and warns the player when the two differ. See src/addon/client/MapData.lua.
@@ -18,7 +18,7 @@ if [[ ! "$hash" =~ ^[0-9a-f]+$ ]]; then
   exit 1
 fi
 
-file="$(cd "$(dirname "$0")/../.." && pwd)/src/addon/client/FDIDMap.lua"
+file="$(cd "$(dirname "$0")/../.." && pwd)/src/addon/mapdata/FDIDMap.lua"
 test -s "$file"
 
 tmp="$(mktemp)"

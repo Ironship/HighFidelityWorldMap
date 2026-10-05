@@ -5,7 +5,8 @@
 #
 # The generated output lands in two addons, which is why there are two checks:
 #   art     src/addon/mapdata/WorldMap/           (Map Data addon, multi-GB)
-#   tables  src/addon/client/FDIDMap.lua, CaveData.lua (core addon, small)
+#   tables  src/addon/mapdata/FDIDMap.lua (Map Data addon, small),
+#           src/addon/client/CaveData.lua (core addon, small)
 #
 # Usage: verify-world-map-assets.sh [tables|art|all]    (default: all)
 set -euo pipefail
@@ -56,10 +57,13 @@ verify_art() {
 }
 
 verify_tables() {
-  cd "$repo/src/addon"
+  # FDIDMap.lua ships in the Map Data addon, CaveData.lua in the core addon.
+  local fdid="$repo/src/addon/mapdata/FDIDMap.lua"
+  local cave="$repo/src/addon/client/CaveData.lua"
 
-  test -s FDIDMap.lua || { echo "::error::FDIDMap.lua is missing or empty"; status=1; return; }
-  test -s CaveData.lua || { echo "::error::CaveData.lua is missing or empty"; status=1; }
+  test -s "$fdid" || { echo "::error::FDIDMap.lua is missing or empty"; status=1; return; }
+  test -s "$cave" || { echo "::error::CaveData.lua is missing or empty"; status=1; }
+  cd "$repo/src/addon/mapdata"
   # Both tables have to be populated, or the addon silently drops a
   # background that the TOC and the options panel still advertise.
   grep -q '^HFWMF_FDID_MAP_ORIGINAL = {$' FDIDMap.lua || {
@@ -74,7 +78,7 @@ verify_tables() {
     echo "::error::FDIDMap.lua has no HFWMF_DATA_BUILD stamp"
     status=1
   }
-  echo "Tables OK: FDIDMap.lua $(du -h FDIDMap.lua | cut -f1), CaveData.lua $(du -h CaveData.lua 2>/dev/null | cut -f1)."
+  echo "Tables OK: FDIDMap.lua $(du -h "$fdid" | cut -f1), CaveData.lua $(du -h "$cave" 2>/dev/null | cut -f1)."
 }
 
 case "$mode" in

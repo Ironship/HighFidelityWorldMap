@@ -6,16 +6,17 @@
 -- or settings update does not mean re-downloading gigabytes of tiles, and the
 -- art can be released on its own schedule.
 --
--- Two things can go wrong with a split like that, and neither would be
--- visible on its own: the data addon is missing (every tile is a green
--- placeholder), or it is a different generator build than this addon's
--- FDIDMap.lua (tiles renamed or moved, so some are missing). This module
--- turns both into one chat line at login.
+-- The tile lookup tables (FDIDMap.lua: the HFWMF_FDID_MAP* and
+-- HFWMF_NATIVE_ZONES* globals that Config.lua reads) ship in the data addon
+-- too, so tables and tiles always come from the same build. What can still go
+-- wrong is the data addon being missing (every tile is a green placeholder),
+-- disabled, or not exporting its runtime bridge. This module turns those into
+-- one chat line at login.
 --
--- The data addon's build is the `X-HFWM-Data-Build` line in its TOC. This
--- addon's is HFWMF_DATA_BUILD in FDIDMap.lua. CI stamps both with the same
--- generator hash. Either one missing means a local/dev build, where there is
--- nothing meaningful to compare, so that check is skipped.
+-- The data addon's build is the `X-HFWM-Data-Build` line in its TOC, and
+-- HFWMF_DATA_BUILD in its FDIDMap.lua is stamped with the same generator
+-- hash. Either one missing means a local/dev build, where there is nothing
+-- meaningful to compare, so that check is skipped.
 -------------------------------------------------------------------------------
 local addonName, ns = ...
 local MapData = ns.MapData
@@ -77,8 +78,8 @@ function MapData:GetBuild()
     return build
 end
 
---- The generator build this addon's FDIDMap.lua was made from, or nil for a
---- dev build.
+--- The generator build the loaded FDIDMap.lua (from the data addon) was made
+--- from, or nil for a dev build.
 function MapData:GetExpectedBuild()
     local build = HFWMF_DATA_BUILD
     if build == nil or build == "" then return nil end

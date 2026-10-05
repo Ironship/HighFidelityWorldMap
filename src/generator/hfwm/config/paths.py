@@ -51,7 +51,7 @@ PROVENANCE_FILE = CACHE_ROOT / "provenance.json"
 # ---------------------------------------------------------------------------
 # Generated addon content (addon-side)
 # ---------------------------------------------------------------------------
-FDID_MAP_FILE = ADDON_DIR / "FDIDMap.lua"
+FDID_MAP_FILE = MAPDATA_DIR / "FDIDMap.lua"
 CAVE_DATA_FILE = ADDON_DIR / "CaveData.lua"
 WORLDMAP_DIR = MAPDATA_DIR / "WorldMap"
 

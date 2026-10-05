@@ -14,9 +14,10 @@
 # backslashed subdirectories, still finds it.
 embeds.xml
 
-# Generated data tables. Plain globals with no dependency on the addon
-# namespace, so they load first and Namespace.lua can fold them in.
-FDIDMap.lua
+# Generated data table. Plain globals with no dependency on the addon
+# namespace, so it loads first and Namespace.lua can fold it in. The tile
+# lookup tables (FDIDMap.lua) live in the Map Data addon, which this addon
+# requires, so they are already defined by the time this file loads.
 CaveData.lua
 Namespace.lua
 Config.lua

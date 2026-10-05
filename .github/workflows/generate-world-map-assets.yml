@@ -1,7 +1,7 @@
 name: Generate World Map Assets
 
 # Runs the Python pipeline (src/generator/generateHFWM.py) that builds the world
-# map art (src/addon/mapdata/WorldMap/), src/addon/client/FDIDMap.lua and
+# map art (src/addon/mapdata/WorldMap/), src/addon/mapdata/FDIDMap.lua and
 # src/addon/client/CaveData.lua, and saves the result to the Actions cache *from
 # main*. That is the only scope a tag-triggered release can read, so every
 # release (Create Release: Addon / MapData, and the publish workflows) can reuse
@@ -67,7 +67,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: |
-          src/addon/client/FDIDMap.lua
+          src/addon/mapdata/FDIDMap.lua
           src/addon/client/CaveData.lua
         id: art
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.bypass-asset-cache }}

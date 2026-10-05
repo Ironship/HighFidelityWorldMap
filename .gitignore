@@ -25,3 +25,4 @@ __pycache__/
 src/addon/Libs/*
 .act.hfwm-app-private-key.pem
 .act.secrets
+src/addon/client/FDIDMap.lua
