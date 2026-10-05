@@ -82,10 +82,13 @@ runs:
     # Everything removed here is preinstalled tooling this job never touches.
     # A tables-only or lookup-only run does not need the room unless it falls
     # back to generating; see the second free-space step below.
+    # Started in the background: the deletion (~2 min) overlaps the cache
+    # download, and the art fits in the ~14 GB a stock runner starts with. The
+    # "Wait for disk cleanup" step below blocks before anything needs the room.
     - name: Free disk space
       if: inputs.tables-only != 'true' && inputs.lookup-only != 'true'
       shell: bash
-      run: .github/scripts/free-disk-space.sh
+      run: .github/scripts/free-disk-space.sh start
 
     - name: Delete world map assets caches
       if: inputs.bypass-cache == 'true'
@@ -115,6 +118,11 @@ runs:
         lookup-only: ${{ inputs.lookup-only == 'true' || inputs.tables-only == 'true' }}
         path: src/addon/mapdata/WorldMap
         key: ${{ steps.key.outputs.art-key }}
+
+    - name: Wait for disk cleanup
+      if: inputs.tables-only != 'true' && inputs.lookup-only != 'true'
+      shell: bash
+      run: .github/scripts/free-disk-space.sh wait
 
     - name: Decide what to generate
       id: decide

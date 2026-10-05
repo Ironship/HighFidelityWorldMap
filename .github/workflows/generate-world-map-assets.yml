@@ -79,11 +79,16 @@ jobs:
             src/addon/client/CaveData.lua
           key: ${{ steps.key.outputs.tables-key }}
 
+      # Only the weekly run downloads the multi-GB art, to reset the eviction
+      # clock. Otherwise (a release calling this, a manual warm-up) this only
+      # has to know the entry exists; the job that uses the art restores it
+      # itself, so downloading it here too just doubles the ~1.5 minutes.
       - name: Restore world map art cache
         id: art
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.bypass-asset-cache }}
         uses: actions/cache/restore@v5
         with:
+          lookup-only: ${{ github.event_name != 'schedule' }}
           path: src/addon/mapdata/WorldMap
           key: ${{ steps.key.outputs.art-key }}
 
