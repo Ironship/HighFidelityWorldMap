@@ -191,10 +191,6 @@ jobs:
           ART_KEY: ${{ steps.assets.outputs.art-key }}
         run: .github/scripts/stamp-mapdata-toc.sh
 
-      # BLPs are already compressed; storing the zip skips a long deflate pass.
-      - name: Store, don't deflate, the zip
-        run: .github/scripts/store-zip.sh
-
       # The packager has no tag-prefix option: its changelog uses "the previous
       # tag" among all tags. Hide the core addon's series from it.
       - name: Isolate the mapdata-v* tag series

@@ -2,7 +2,11 @@
 
 # High-Fidelity World Map (HFWM)
 
-[![CurseForge Downloads](https://img.shields.io/curseforge/dt/1701034?color=orange&logo=curseforge&style=flat-square)](https://www.curseforge.com/projects/1701034)
+Client: [![CurseForge Downloads](https://img.shields.io/curseforge/dt/1701034?color=orange&logo=curseforge&style=flat-square)](https://www.curseforge.com/projects/1701034)
+
+MapArt: 
+[![CurseForge Downloads](https://img.shields.io/curseforge/dt/1727004?color=orange&logo=curseforge&style=flat-square)](https://www.curseforge.com/projects/1727004)
+
 
 Adds a "HD/SD" toggle to view the world map pane with a detailed, high-resolution map constructed by stitching together minimap satellite imagery across entire zones. The result is a seamless, richly detailed world map that shows all the finer details of the world of Azeroth with far greater clarity than the game's default map ever could.
 
@@ -43,6 +47,11 @@ A slider on the side can be adjusted to change the slice of cave depth you are c
 ![Cave 2](https://i.postimg.cc/Mn7Z1DDc/cave-2.jpg)
 
 ## FAQ:
+
+### Who is the artist?
+My sister designed the logo :3 Go pay her to draw your cat. We LOVE cats here.
+
+The generator uses in-game assets to build the stitched world map used in the "HD" mode. 
 
 ### Why do some parts of the map look wrong / glitched?
 
