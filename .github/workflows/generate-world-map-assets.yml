@@ -34,6 +34,14 @@ on:
         required: false
         type: boolean
         default: false
+  # Called by publish-mapdata-release-curseforge.yml so the build is jobs of that run.
+  workflow_call:
+    inputs:
+      bypass-asset-cache:
+        description: "Bypass the asset cache and regenerate from scratch."
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -67,8 +75,11 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: |
-          src/addon/mapdata/FDIDMap.lua
-          src/addon/client/CaveData.lua
+            src/addon/mapdata/FDIDMap.lua
+            src/addon/client/CaveData.lua
+          key: ${{ steps.key.outputs.tables-key }}
+
+      - name: Restore world map art cache
         id: art
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.bypass-asset-cache }}
         uses: actions/cache/restore@v5

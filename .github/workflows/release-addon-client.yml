@@ -26,7 +26,7 @@ name: "Create Release: Client"
 #   tag      (manual runs only) bumps the version and pushes the tag
 #   release  packages and creates the GitHub Release from the checked-in client
 #            source only
-#   publish  starts "Publish Client Release to CurseForge" and waits for it
+#   publish  calls "Publish Client Release to CurseForge" as a reusable workflow
 #
 # If release or publish fails (GitHub outage, ...), fix it and use "Re-run
 # failed jobs": the jobs before it are not repeated, and a re-run does not bump
@@ -150,22 +150,13 @@ jobs:
     needs: [tag, release]
     # Only once the GitHub Release exists, which publish-client-release-curseforge.yml checks for.
     if: ${{ !cancelled() && needs.release.result == 'success' }}
-    runs-on: ubuntu-latest
-    # actions: write lets it start publish-client-release-curseforge.yml.
+    # Called, so its jobs are jobs of this run. The tag is the one just created
+    # by a manual run, or the pushed tag itself.
     permissions:
       contents: read
-      actions: write
-    timeout-minutes: 360
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      # Dispatched rather than called, so it is a run of its own workflow and
-      # can be re-run from there. The tag is the one just created by a manual
-      # run, or the pushed tag itself.
-      - name: Publish to all marketplaces
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.tag.outputs.tag || github.ref_name }}
-        run: .github/scripts/dispatch-workflow-and-wait.sh publish-client-release-curseforge.yml -f "tag=${RELEASE_TAG}"
+      checks: write
+    uses: ./.github/workflows/publish-client-release-curseforge.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag || github.ref_name }}
+    secrets:
+      CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}

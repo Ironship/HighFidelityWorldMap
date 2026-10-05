@@ -76,14 +76,23 @@ jobs:
                   RELEASE_TAG: ${{ inputs.tag }}
               run: .github/scripts/verify-tag-on-main.sh
 
-    publish:
-        name: Package and upload to CurseForge
+    assets:
+        name: World map assets
         needs: verify
-        runs-on: ubuntu-latest
-        # actions: write lets it start generate-world-map-assets.yml.
+        # Called, not dispatched, so the build shows up as jobs of this run. It runs
+        # on the caller's ref, which the verify job guarantees is main: the only
+        # scope a tag-triggered release can read the cache from.
         permissions:
             contents: read
             actions: write
+        uses: ./.github/workflows/generate-world-map-assets.yml
+
+    publish:
+        name: Package and upload to CurseForge
+        needs: [verify, assets]
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
             checks: write
         timeout-minutes: 300
 
@@ -95,19 +104,11 @@ jobs:
                   # release.sh walks back through tags to build the changelog.
                   fetch-depth: 0
 
-            # If main's cache is missing the tables or art this release ships, run the
-            # Generate World Map Assets workflow on main (so the build is visible
-            # there) and wait for it.
-            - name: Generate World Map Assets?
-              env:
-                  GH_TOKEN: ${{ github.token }}
-                  ART_KEY: mapart-v2-${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}
-                  REQUIRE: all
-              run: .github/scripts/ensure-world-map-assets-cache.sh
-
-            # A hit when the generator has not changed since main last built it (see
-            # generate-world-map-assets.yml). A miss rebuilds, and saving means a
-            # re-run of a failed upload does not rebuild it again.
+            # The assets job above guarantees main's cache holds the tables and art
+            # (a hit when the generator has not changed, see
+            # generate-world-map-assets.yml). Restoring them here is what puts them
+            # in this workspace; a miss would rebuild, and saving means a re-run of
+            # a failed upload does not rebuild it again.
             - name: Generate world map assets
               id: assets
               uses: ./.github/actions/generate-world-map-assets

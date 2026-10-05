@@ -6,7 +6,7 @@
 #
 # Inputs (environment): HASH, the hashFiles() of the generator sources. The
 # workflow computes it because hashFiles() is only available in expressions.
-# Bump the "v2" in all places (this file, ensure-world-map-assets-cache.sh,
+# Bump the "v2" in all places (this file,
 # stamp-data-build.sh, stamp-mapdata-toc.sh, delete-world-map-assets-cache.sh)
 # to invalidate every cache entry at once.
 set -euo pipefail
