@@ -16,7 +16,7 @@ changelog-title: High Fidelity World Map - Forever Map Data
 
 # Hoist the addon out of src/addon/mapdata/ so the TOC ends up at the package root.
 move-folders:
-  HighFidelityWorldMap/src/addon/mapdata: HighFidelityWorldMap_MapData_Forever
+  HighFidelityWorldMap_MapData_Forever/src/addon/mapdata: HighFidelityWorldMap_MapData_Forever
 
 # Everything outside src/addon/mapdata/ belongs to the core addon or is build
 # machinery. Dotfiles (.github, .git, .gitignore, .pkgmeta, .release,
