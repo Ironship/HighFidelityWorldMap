@@ -27,6 +27,7 @@ ignore:
   - CONTRIBUTING.md
   - CurseForgeDescription.md
   - README.md
+  - HighFidelityWorldMap.code-workspace
   - assets
   - docs
   - src/addon/client

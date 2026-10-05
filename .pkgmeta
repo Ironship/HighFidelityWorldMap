@@ -30,8 +30,10 @@ ignore:
   - CONTRIBUTING.md
   - CurseForgeDescription.md
   - README.md
+  - HighFidelityWorldMap.code-workspace
   - assets
   - docs
+  - src/addon/client/dev
   - src/addon/mapdata
   - src/generator
 
