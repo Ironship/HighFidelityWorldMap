@@ -18,6 +18,7 @@
 # addon treats as a dev build.
 FDIDMap.lua
 MinimapTiles.lua
+CaveTiles.lua
 
 # Runtime bridge for HighFidelityWorldMap: if this addon is disabled, this
 # file never loads, and the core addon can suppress bundled textures.

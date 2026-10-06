@@ -336,6 +336,51 @@ local function PoolReleaseAll()
     end
 end
 
+--- Draw a baked cave canvas from the client's own WMO group minimap tiles
+--- (HFWMF_CAVE_TILES, see scripts/emit_cave_tiles.py) instead of one shipped
+--- BLP. Each leaf is a region of a game texture, centred at (cx, cy) in the
+--- rotated canvas. The quad is the bounding box of that region once rotated
+--- by comp.a, and the eight-value SetTexCoord maps each quad corner back to
+--- the point of the source it shows; with CLAMPTOBLACKADDITIVE everything
+--- sampled outside the texture is transparent, so the corners vanish.
+---@param comp table  { w, h, a, l = { {fdid, srcW, srcH, x0, y0, w, h, cx, cy}, ... } }
+---@param scaleX number  canvasScale px per canvas px
+---@param scaleY number
+---@param offX number  where the canvas's top-left sits in canvasScale
+---@param offY number
+---@param sublevel number|nil
+---@param group table|nil  also collects the textures, as PoolAcquire does
+---@return table textures  everything drawn, in paint order
+local function DrawComposite(comp, scaleX, scaleY, offX, offY, sublevel, group)
+    local rad = math.rad(comp.a)
+    local c, s = math.cos(rad), math.sin(rad)
+    local ac, as = math.abs(c), math.abs(s)
+    local drawn = {}
+    for _, leaf in ipairs(comp.l) do
+        local fdid, sw, sh, x0, y0, w, h, cx, cy = unpack(leaf)
+        local hx, hy = (w * ac + h * as) / 2, (w * as + h * ac) / 2
+        local mx, my = x0 + w / 2, y0 + h / 2
+        -- Quad corner at offset (dx, dy) from the leaf centre -> source UV.
+        local function uv(dx, dy)
+            return (mx + dx * c - dy * s) / sw, (my + dx * s + dy * c) / sh
+        end
+        local ulx, uly = uv(-hx, -hy)
+        local llx, lly = uv(-hx,  hy)
+        local urx, ury = uv( hx, -hy)
+        local lrx, lry = uv( hx,  hy)
+
+        local tex = PoolAcquire(group)
+        tex:SetDrawLayer("ARTWORK", sublevel or 3)
+        tex:SetSize(2 * hx * scaleX, 2 * hy * scaleY)
+        tex:SetPoint("TOPLEFT", canvasScale, "TOPLEFT",
+            offX + (cx - hx) * scaleX, -(offY + (cy - hy) * scaleY))
+        tex:SetTexCoord(ulx, uly, llx, lly, urx, ury, lrx, lry)
+        tex:SetTexture(fdid, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        drawn[#drawn + 1] = tex
+    end
+    return drawn
+end
+
 -------------------------------------------------------------------------------
 -- Small widget helpers
 -------------------------------------------------------------------------------
@@ -1189,7 +1234,7 @@ function CaveRenderer:UpdatePieceWindowAlphas()
     for _, grp in ipairs(continuousPieceGroups) do
         local alpha = PieceWindowAlpha(grp.zMin, grp.zMax, windowBottomZ, windowTopZ)
         grp.alpha = alpha
-        grp.texture:SetAlpha(alpha)
+        for _, tex in ipairs(grp.textures) do tex:SetAlpha(alpha) end
     end
 end
 
@@ -2185,23 +2230,33 @@ function CaveRenderer:RenderTiles(floorMapID, sublevel, group)
             local fdid = fdids[tileIdx]
             if not fdid then break end
 
-            local rel = FDID_MAP[fdid]
-            local src = rel and (FDID_BASE .. rel) or fdid
+            local comp = Config:GetCaveComposite(fdid)
+            if comp then
+                lastRenderInfo.tiles[tileIdx] = {
+                    fdid = fdid, bundled = false, src = "client composite",
+                }
+                DrawComposite(comp, scaleX, scaleY,
+                    col * tilePxW * scaleX, row * tilePxH * scaleY,
+                    sublevel, group)
+            else
+                local rel = FDID_MAP[fdid]
+                local src = rel and (FDID_BASE .. rel) or fdid
 
-            lastRenderInfo.tiles[tileIdx] = {
-                fdid = fdid, bundled = (rel ~= nil), rel = rel, src = src,
-            }
+                lastRenderInfo.tiles[tileIdx] = {
+                    fdid = fdid, bundled = (rel ~= nil), rel = rel, src = src,
+                }
 
-            local artTileW = math.min(tilePxW, layerW - col * tilePxW)
-            local artTileH = math.min(tilePxH, layerH - row * tilePxH)
+                local artTileW = math.min(tilePxW, layerW - col * tilePxW)
+                local artTileH = math.min(tilePxH, layerH - row * tilePxH)
 
-            local tex = PoolAcquire(group)
-            tex:SetDrawLayer("ARTWORK", sublevel or 3)
-            tex:SetSize(artTileW * scaleX, artTileH * scaleY)
-            tex:SetPoint("TOPLEFT", canvasScale, "TOPLEFT",
-                col * tilePxW * scaleX, -(row * tilePxH * scaleY))
-            tex:SetTexCoord(0, artTileW / tilePxW, 0, artTileH / tilePxH)
-            tex:SetTexture(src)
+                local tex = PoolAcquire(group)
+                tex:SetDrawLayer("ARTWORK", sublevel or 3)
+                tex:SetSize(artTileW * scaleX, artTileH * scaleY)
+                tex:SetPoint("TOPLEFT", canvasScale, "TOPLEFT",
+                    col * tilePxW * scaleX, -(row * tilePxH * scaleY))
+                tex:SetTexCoord(0, artTileW / tilePxW, 0, artTileH / tilePxH)
+                tex:SetTexture(src, "CLAMP", "CLAMP")
+            end
             tileIdx = tileIdx + 1
         end
     end
@@ -2363,8 +2418,7 @@ function CaveRenderer:RenderContinuousPieces(pieces, pieceCanvasW, pieceCanvasH)
     local anyDrew = false
 
     for order, piece in ipairs(pieces) do
-        local rel = FDID_MAP[piece.fdid]
-        local src = rel and (FDID_BASE .. rel) or piece.fdid
+        local comp = Config:GetCaveComposite(piece.fdid)
 
         -- Paint order: a piece with a higher ceiling paints over one with a
         -- lower ceiling for as long as both are partially visible, spread
@@ -2377,14 +2431,22 @@ function CaveRenderer:RenderContinuousPieces(pieces, pieceCanvasW, pieceCanvasH)
             sublevel = math.max(-8, math.min(7, sublevel))
         end
 
-        local tex = PoolAcquire()
-        tex:SetDrawLayer("ARTWORK", sublevel)
-        tex:SetSize(canvasW, canvasH)
-        tex:SetPoint("TOPLEFT", canvasScale, "TOPLEFT", 0, 0)
-        tex:SetTexture(src)
+        local textures
+        if comp then
+            textures = DrawComposite(
+                comp, canvasW / comp.w, canvasH / comp.h, 0, 0, sublevel)
+        else
+            local rel = FDID_MAP[piece.fdid]
+            local tex = PoolAcquire()
+            tex:SetDrawLayer("ARTWORK", sublevel)
+            tex:SetSize(canvasW, canvasH)
+            tex:SetPoint("TOPLEFT", canvasScale, "TOPLEFT", 0, 0)
+            tex:SetTexture(rel and (FDID_BASE .. rel) or piece.fdid, "CLAMP", "CLAMP")
+            textures = { tex }
+        end
 
         continuousPieceGroups[order] = {
-            texture = tex, zMin = piece.zMin, zMax = piece.zMax, alpha = 1,
+            textures = textures, zMin = piece.zMin, zMax = piece.zMax, alpha = 1,
         }
         anyDrew = true
 

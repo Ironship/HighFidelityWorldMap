@@ -423,6 +423,17 @@ function Config:GetClientZone(mapID)
     return self.db and self.db.clientTiles and self.MINIMAP_ZONES[mapID] or nil
 end
 
+-- Experiment: baked cave floors/pieces as placements of the client's own
+-- WMO minimap tiles (CaveTiles.lua in the Map Data addon), keyed by the same
+-- synthetic FDIDs CaveData.lua uses for the shipped BLPs.
+Config.CAVE_TILES = HFWMF_CAVE_TILES or {}
+
+---@param fdid number
+---@return table|nil
+function Config:GetCaveComposite(fdid)
+    return self.db and self.db.clientTiles and self.CAVE_TILES[fdid] or nil
+end
+
 --- Higher-resolution geometry for *mapID* under the given background, or
 --- nil if this map has no such art, the specific dump the background
 --- wants wasn't built, or (for the three capped continent maps) "Increase
