@@ -898,7 +898,10 @@ local function DoRefresh(force)
     -- what Activate() is about to draw with, so that -- not the Zone Map
     -- setting elsewhere -- has to be what gates overriding it back to
     -- Blizzard's art.
+    -- Fog of War reveals through Blizzard's tile grid; client-tile zones
+    -- have no such grid yet, so they draw the full map.
     local fogOfWar = Config:FogOfWarEnabled() and background.key == "hybrid"
+        and not Config:GetClientZone(mapID)
 
     local tileSource = {}
     local useBundled = false
@@ -913,8 +916,12 @@ local function DoRefresh(force)
     -- pipeline's own output instead of C_Map.GetMapArtLayers, and the
     -- tile source is built straight from a path prefix rather than
     -- looked up per Blizzard FileDataID.
-    local nativeZone = Config:GetNativeZone(mapID, background)
-    if nativeZone then
+    local clientZone = Config:GetClientZone(mapID)
+    local nativeZone = not clientZone and Config:GetNativeZone(mapID, background)
+    if clientZone then
+        layerW, layerH = clientZone.layerW, clientZone.layerH
+        useBundled, useNative = true, true
+    elseif nativeZone then
         layerW, layerH = nativeZone.layerW, nativeZone.layerH
         tilePxW, tilePxH = nativeZone.tileW, nativeZone.tileH
         cols, rows = nativeZone.cols, nativeZone.rows
@@ -1197,6 +1204,32 @@ local function DoRefresh(force)
         -- rectangle into an organic outline. Left in place, unused, in
         -- case a future data source calls for it.
         -- SoftenFogEdges(cols, rows, filled, pieceTex, trace)
+    elseif clientZone then
+        -- Experiment: this zone's tiles are the client's own minimap files,
+        -- placed in art-layer pixels (see MinimapTiles.lua). Tiles that
+        -- overhang the layer are clipped with SetTexCoord.
+        for _, reg in ipairs(clientZone.regions) do
+            local f, tw, th = reg.f, reg.tw, reg.th
+            local i = 0
+            for row = 0, reg.rows - 1 do
+                local y0 = reg.oy + row * th
+                local cy0, cy1 = math.max(y0, 0), math.min(y0 + th, layerH)
+                for col = 0, reg.cols - 1 do
+                    i = i + 1
+                    local x0 = reg.ox + col * tw
+                    local cx0, cx1 = math.max(x0, 0), math.min(x0 + tw, layerW)
+                    if f[i] ~= 0 and cx1 > cx0 and cy1 > cy0 then
+                        local tex = Pool:Acquire()
+                        tex:SetSize((cx1 - cx0) * scaleX, (cy1 - cy0) * scaleY)
+                        tex:SetPoint("TOPLEFT", Config.overlayFrame, "TOPLEFT",
+                            cx0 * scaleX, -cy0 * scaleY)
+                        tex:SetTexCoord((cx0 - x0) / tw, (cx1 - x0) / tw,
+                            (cy0 - y0) / th, (cy1 - y0) / th)
+                        tex:SetTexture(f[i])
+                    end
+                end
+            end
+        end
     else
         local tileIdx = 1
         for row = 0, rows - 1 do

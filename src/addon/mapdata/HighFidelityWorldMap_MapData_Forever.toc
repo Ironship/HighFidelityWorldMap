@@ -17,6 +17,7 @@
 # FDIDMap.lua as HFWMF_DATA_BUILD. Left empty in the repository, which the core
 # addon treats as a dev build.
 FDIDMap.lua
+MinimapTiles.lua
 
 # Runtime bridge for HighFidelityWorldMap: if this addon is disabled, this
 # file never loads, and the core addon can suppress bundled textures.

@@ -69,6 +69,10 @@ Config.DEFAULTS = {
     -- See HFWMF_NATIVE_ZONES' `continent` flag and GetNativeZone below.
     worldMapClarity = false,
 
+    -- Experiment: draw zone maps from the client's own minimap tiles
+    -- instead of the shipped BLPs. /hfwm clienttiles toggles it.
+    clientTiles = true,
+
     -- Restores the original grayscale-until-explored look instead of this
     -- addon's usual full hi-res coverage. Off by default since it works
     -- against the addon's whole point. With it on, ground stays grayscale
@@ -408,6 +412,16 @@ Config.FDID_BASE    = "Interface\\AddOns\\HighFidelityWorldMap_MapData_Forever\\
 -- directly instead of C_Map.GetMapArtLayers/GetMapArtLayerTextures.
 Config.NATIVE_ZONES          = HFWMF_NATIVE_ZONES          or {}
 Config.NATIVE_ZONES_ORIGINAL = HFWMF_NATIVE_ZONES_ORIGINAL or {}
+
+-- Experiment: zones drawn from the client's own minimap tiles rather than
+-- shipped BLPs (MinimapTiles.lua in the Map Data addon).
+Config.MINIMAP_ZONES = HFWMF_MINIMAP_ZONES or {}
+
+---@param mapID number
+---@return table|nil
+function Config:GetClientZone(mapID)
+    return self.db and self.db.clientTiles and self.MINIMAP_ZONES[mapID] or nil
+end
 
 --- Higher-resolution geometry for *mapID* under the given background, or
 --- nil if this map has no such art, the specific dump the background
