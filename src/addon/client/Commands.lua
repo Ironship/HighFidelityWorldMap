@@ -187,19 +187,6 @@ function Commands:Handle(msg)
             end
         end)
         return
-    elseif cmd == "clienttiles" then
-        local want = args[2]
-        if want == "on" then
-            db.clientTiles = true
-        elseif want == "off" then
-            db.clientTiles = false
-        else
-            db.clientTiles = not db.clientTiles
-        end
-        ns.Renderer:ForceRefresh()
-        P(("Client minimap tiles: %s"):format(
-            db.clientTiles and "|cff00ff00on|r" or "|cffff4444off|r"))
-        return
     elseif cmd == "fog" or cmd == "fogofwar" then
         local want = args[2]
         if want == "on" then

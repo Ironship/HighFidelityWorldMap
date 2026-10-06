@@ -1,17 +1,19 @@
 -------------------------------------------------------------------------------
 -- HFWM-Forever MapData
 --
--- The map art is not part of this addon. It ships as the separate
--- HighFidelityWorldMap_MapData_Forever addon (see Config.FDID_BASE), so a UI
--- or settings update does not mean re-downloading gigabytes of tiles, and the
--- art can be released on its own schedule.
+-- The continent and world map art is not part of this addon. It ships as the
+-- separate HighFidelityWorldMap_MapData_Forever addon (see Config.FDID_BASE),
+-- so a UI or settings update does not mean re-downloading gigabytes of tiles,
+-- and the art can be released on its own schedule. Zone and cave maps are not
+-- shipped as art at all: the data addon only says where the client's own
+-- minimap tiles go (MinimapTiles.lua, CaveTiles.lua).
 --
--- The tile lookup tables (FDIDMap.lua: the HFWMF_FDID_MAP* and
--- HFWMF_NATIVE_ZONES* globals that Config.lua reads) ship in the data addon
--- too, so tables and tiles always come from the same build. What can still go
--- wrong is the data addon being missing (every tile is a green placeholder),
--- disabled, or not exporting its runtime bridge. This module turns those into
--- one chat line at login.
+-- The lookup tables (FDIDMap.lua: the HFWMF_FDID_MAP* and HFWMF_NATIVE_ZONES*
+-- globals that Config.lua reads, plus the two placement files above) ship in
+-- the data addon too, so tables and tiles always come from the same build.
+-- What can still go wrong is the data addon being missing (continent maps show
+-- a green placeholder, zones nothing), disabled, or not exporting its runtime
+-- bridge. This module turns those into one chat line at login.
 --
 -- The data addon's build is the `X-HFWM-Data-Build` line in its TOC, and
 -- HFWMF_DATA_BUILD in its FDIDMap.lua is stamped with the same generator
