@@ -357,12 +357,17 @@ local function DrawComposite(comp, scaleX, scaleY, offX, offY, sublevel, group)
     local ac, as = math.abs(c), math.abs(s)
     local drawn = {}
     for _, leaf in ipairs(comp.l) do
-        local fdid, sw, sh, x0, y0, w, h, cx, cy = unpack(leaf)
-        local hx, hy = (w * ac + h * as) / 2, (w * as + h * ac) / 2
+        local fdid, sw, sh, x0, y0, w, h, cx, cy, dw, dh = unpack(leaf)
+        -- The quad is the bounding box of the dw x dh rect once rotated; the
+        -- region w x h is stretched over it (kx, ky), so a room can grow to
+        -- meet its neighbour.
+        local kx, ky = w / dw, h / dh
+        local hx, hy = (dw * ac + dh * as) / 2, (dw * as + dh * ac) / 2
         local mx, my = x0 + w / 2, y0 + h / 2
         -- Quad corner at offset (dx, dy) from the leaf centre -> source UV.
         local function uv(dx, dy)
-            return (mx + dx * c - dy * s) / sw, (my + dx * s + dy * c) / sh
+            return (mx + (dx * c - dy * s) * kx) / sw,
+                   (my + (dx * s + dy * c) * ky) / sh
         end
         local ulx, uly = uv(-hx, -hy)
         local llx, lly = uv(-hx,  hy)

@@ -7,17 +7,22 @@ whole canvas rotated by (placement yaw - 90) with expand=True.  Every one of
 those tiles is a real game file, so instead of shipping the composite, record
 where each tile lands and let CaveRenderer.lua draw the client's own copies.
 
-The geometry is the bake's own (bake.py / compose.py / fetch.py), so the
-result lines up with the shipped BLPs.  Keys are the synthetic FDIDs
-CaveData.lua already uses for those BLPs; nothing there changes.
+The placement is the bake's (bake.py / compose.py / fetch.py) with two
+corrections that remove the seams the baked art has between rooms: a room's
+opaque crop is placed where it really sits inside its bounding-box corner
+region (the bake slid it to the corner), and every room is then stretched
+outward by GROW px, and by half the gap toward any neighbour within MAX_GAP,
+so touching rooms overlap.  Keys are the synthetic FDIDs CaveData.lua already
+uses for the BLPs; nothing there changes.
 
     python3 scripts/emit_cave_tiles.py              # every discovered mine
     python3 scripts/emit_cave_tiles.py fargodeep    # just those MINES keys
 
-Each entry: { w, h, a, l = { {fdid, srcW, srcH, x0, y0, w, h, cx, cy}, ... } }
+Each entry: { w, h, a, l = { {fdid, srcW, srcH, x0, y0, w, h, cx, cy, dw, dh}, ... } }
   w,h  final (rotated) canvas size       a   rotation applied, degrees (PIL CCW)
-  l    leaves in paint order: draw region (x0,y0,w,h) of the srcW x srcH
-       texture, centred at (cx,cy) in the final canvas, rotated by a.
+  l    leaves in paint order: take region (x0,y0,w,h) of the srcW x srcH
+       texture, stretch it to dw x dh, centre it at (cx,cy) in the final
+       canvas and rotate it by a.
 """
 
 import math
@@ -45,23 +50,37 @@ from hfwm.caves.mines import MINES  # noqa: E402
 from hfwm.config.paths import WMO_TILE_CACHE_DIR  # noqa: E402
 
 OUT = ROOT.parent / "addon" / "mapdata" / "CaveTiles.lua"
+MAX_GAP = 6      # px between neighbouring rooms' tiles that still count as one cave
+MIN_SHARED = 4   # px of shared edge needed for two rooms to count as neighbours
+GROW = 1.5      # px every single-tile room is grown on each side, at least
 
 
-def group_leaves(tile_fdid):
-    """Source rectangles making up one WMO group's (cropped) tile.
+def group_leaves(tile_fdid, extent_px=None):
+    """Source rectangles making up one WMO group's tile.
 
-    Mirrors fetch_tile / fetch_stitched_tile: the room is cropped to the
-    bounding box of its opaque pixels.  Returns ``(w, h, leaves)`` with
-    ``w x h`` the cropped size and each leaf
+    Returns ``(w, h, leaves)`` with ``w x h`` the tile size and each leaf
     ``(fdid, srcW, srcH, x0, y0, w, h, offX, offY)`` -- a region of one
-    texture and where its top-left sits inside the cropped tile.
+    texture and where its top-left sits inside the tile.
+
+    A plain tile is a power-of-two texture with the room packed into its
+    bottom-left corner, ``ceil(bbox extent * scale)`` pixels across.  The
+    bake cropped it to its opaque pixels and then placed the crop at the
+    corner, which moves the room whenever its walls leave a transparent edge
+    (171 of 245 groups) and opens a gap beside it.  Given ``extent_px`` the
+    leaf is still the opaque crop, but its offset is where the crop really
+    sits inside that corner region, so the room lands where it belongs.
     """
     if not isinstance(tile_fdid, dict):
         img = Image.open(_cached_path(tile_fdid, WMO_TILE_CACHE_DIR)).convert("RGBA")
         bbox = img.split()[-1].getbbox() or (0, 0) + img.size
+        ox = oy = 0
+        if extent_px is not None:
+            # Origin of the corner region, widened to include any opaque
+            # pixel just outside it.
+            oy = bbox[1] - max(0, min(img.height - math.ceil(round(extent_px[1], 6)), bbox[1]))
         return (bbox[2] - bbox[0], bbox[3] - bbox[1],
                 [(tile_fdid, img.width, img.height, bbox[0], bbox[1],
-                  bbox[2] - bbox[0], bbox[3] - bbox[1], 0, 0)])
+                  bbox[2] - bbox[0], bbox[3] - bbox[1], bbox[0] if extent_px else 0, oy)])
 
     px = WMO_SUBTILE_PX
     rows = max(r for r, _ in tile_fdid) + 1
@@ -99,17 +118,54 @@ def mine_entries(spec):
     w1, h1 = Image.new("RGBA", (w0, h0)).rotate(angle, expand=True).size
     cos, sin = math.cos(math.radians(angle)), math.sin(math.radians(angle))
 
+    def extent_px(g):
+        return ((g.bbox[3] - g.bbox[0]) * scale, (g.bbox[4] - g.bbox[1]) * scale)
+
+    def corner(g):
+        return round((g.bbox[0] - minx) * scale), round((maxy - g.bbox[4]) * scale)
+
+    # Where two rooms' tiles sit within MAX_GAP px of each other with a real
+    # stretch of shared edge, each is grown toward the other by half the gap
+    # (rounded up) so they meet; the room's own edge pixels are stretched,
+    # nothing is invented.  ext[idx] = (left, top, right, bottom) growth.
+    rect = {}
+    for i in tiled:
+        w, h, lv = group_leaves(by_index[i].tile_fdid, extent_px(by_index[i]))
+        gx, gy = corner(by_index[i])
+        rect[i] = (gx + min(l[7] for l in lv), gy + min(l[8] for l in lv), w, h)
+    ext = {i: [0, 0, 0, 0] for i in tiled}
+    for a in tiled:
+        for b in tiled:
+            if a >= b:
+                continue
+            ax, ay, aw, ah = rect[a]
+            bx, by_, bw, bh = rect[b]
+            if min(ay + ah, by_ + bh) - max(ay, by_) >= MIN_SHARED:
+                gap = max(bx - (ax + aw), ax - (bx + bw))
+                if 0 < gap <= MAX_GAP:
+                    lo, hi = (a, b) if ax < bx else (b, a)
+                    ext[lo][2] = max(ext[lo][2], -(-gap // 2))
+                    ext[hi][0] = max(ext[hi][0], -(-gap // 2))
+            if min(ax + aw, bx + bw) - max(ax, bx) >= MIN_SHARED:
+                gap = max(by_ - (ay + ah), ay - (by_ + bh))
+                if 0 < gap <= MAX_GAP:
+                    lo, hi = (a, b) if ay < by_ else (b, a)
+                    ext[lo][3] = max(ext[lo][3], -(-gap // 2))
+                    ext[hi][1] = max(ext[hi][1], -(-gap // 2))
+
     def placed(idx):
         g = by_index[idx]
-        x1, _, _, _, y2, _ = g.bbox
-        gx, gy = round((x1 - minx) * scale), round((maxy - y2) * scale)
-        _, _, leaves = group_leaves(g.tile_fdid)
+        gx, gy = corner(g)
+        _, _, leaves = group_leaves(g.tile_fdid, extent_px(g))
+        grow = [max(e, GROW) for e in ext[idx]] if len(leaves) == 1 else [0, 0, 0, 0]
         out = []
         for f, sw, sh, x0, y0, w, h, ox, oy in leaves:
-            dx, dy = gx + ox + w / 2 - w0 / 2, gy + oy + h / 2 - h0 / 2
+            dw, dh = w + grow[0] + grow[2], h + grow[1] + grow[3]
+            dx = gx + ox - grow[0] + dw / 2 - w0 / 2
+            dy = gy + oy - grow[1] + dh / 2 - h0 / 2
             out.append([f, sw, sh, x0, y0, w, h,
                         round(w1 / 2 + dx * cos + dy * sin, 2),
-                        round(h1 / 2 - dx * sin + dy * cos, 2)])
+                        round(h1 / 2 - dx * sin + dy * cos, 2), dw, dh])
         return out
 
     if spec.single_floor:
