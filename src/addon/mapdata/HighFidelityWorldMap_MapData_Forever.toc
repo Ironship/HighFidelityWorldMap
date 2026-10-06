@@ -1,22 +1,28 @@
 ## Interface: 16001
 ## Title: High Fidelity World Map - Forever Map Data
-## Notes: Required map art for High Fidelity World Map: Forever. Contains the stitched high-resolution world map, cave and dungeon textures. No settings or UI of its own; install High Fidelity World Map to use it.
+## Notes: Required map art for High Fidelity World Map: Forever. Contains the stitched high-resolution world and continent maps, plus the tile placement data for zone and cave maps. No settings or UI of its own; install High Fidelity World Map to use it.
 ## Author: HighFidelityWorldMap
 ## Version: @project-version@
 ## IconTexture: Interface\Icons\INV_Misc_Map02
 ## X-Curse-Project-ID: 1727004
 ## X-HFWM-Data-Build:
 
-# The tiles under WorldMap\ are read by High Fidelity World Map through their
-# file paths, so they are not listed here. What is loaded is the lookup data
-# that describes them: FDIDMap.lua (generated; FileDataID -> tile path, plus
-# the HD zone layouts) defines plain HFWMF_* globals that the core addon reads
-# at load time, after this addon (it RequiredDeps on it). The X-HFWM-Data-Build
+# The tiles under WorldMap\ (the world and continent maps, nothing else) are
+# read by High Fidelity World Map through their file paths, so they are not
+# listed here. What is loaded is the lookup data that describes them and the
+# placement data for everything drawn from the game's own minimap tiles.
+# FDIDMap.lua (generated; FileDataID -> tile path, plus the HD continent
+# layouts) defines plain HFWMF_* globals that the core addon reads at load
+# time, after this addon (it RequiredDeps on it). The X-HFWM-Data-Build
 # line is stamped by CI (.github/scripts/stamp-mapdata-toc.sh) with the
 # generator hash the art was built from; the same hash is stamped into
 # FDIDMap.lua as HFWMF_DATA_BUILD. Left empty in the repository, which the core
 # addon treats as a dev build.
+# MinimapTiles.lua: where each of the client's minimap tiles sits on a zone
+# map. CaveTiles.lua: the same for cave and mine floors.
 FDIDMap.lua
+MinimapTiles.lua
+CaveTiles.lua
 
 # Runtime bridge for HighFidelityWorldMap: if this addon is disabled, this
 # file never loads, and the core addon can suppress bundled textures.

@@ -164,6 +164,7 @@ end
 local function DrawExploredPiece(
     blizTex, frameLeft, frameTop,
     layerW, layerH, tilePxW, tilePxH, cols, rows, tileSource, scaleX, scaleY,
+    gridX, gridY,
     filled, pieceTex, trace)
 
     -- isShownByMouseOver pieces (Blizzard's own RefreshOverlays) start
@@ -224,10 +225,10 @@ local function DrawExploredPiece(
             chunkX0, chunkY0, chunkX1, chunkY1, chunkW, chunkH))
     end
 
-    local colStart = math.max(0, math.floor(chunkX0 / tilePxW))
-    local colEnd   = math.min(cols - 1, math.ceil(chunkX1 / tilePxW) - 1)
-    local rowStart = math.max(0, math.floor(chunkY0 / tilePxH))
-    local rowEnd   = math.min(rows - 1, math.ceil(chunkY1 / tilePxH) - 1)
+    local colStart = math.max(0, math.floor((chunkX0 - gridX) / tilePxW))
+    local colEnd   = math.min(cols - 1, math.ceil((chunkX1 - gridX) / tilePxW) - 1)
+    local rowStart = math.max(0, math.floor((chunkY0 - gridY) / tilePxH))
+    local rowEnd   = math.min(rows - 1, math.ceil((chunkY1 - gridY) / tilePxH) - 1)
 
     if trace then
         P(("    tiles touched: cols=%d rows=%d tilePx=%dx%d  colStart=%d "
@@ -277,8 +278,8 @@ local function DrawExploredPiece(
             local src = tileSource[row * cols + col + 1]
             if not src then nilSrcSkipped = nilSrcSkipped + 1 end
             if src then
-                local tileX0 = col * tilePxW
-                local tileY0 = row * tilePxH
+                local tileX0 = gridX + col * tilePxW
+                local tileY0 = gridY + row * tilePxH
                 local tileX1 = tileX0 + math.min(tilePxW, layerW - tileX0)
                 local tileY1 = tileY0 + math.min(tilePxH, layerH - tileY0)
 
@@ -437,6 +438,7 @@ end
 local function DrawFillPiece(
     offsetX, offsetY, rectW, rectH, blizzardLayerW, blizzardLayerH,
     layerW, layerH, tilePxW, tilePxH, cols, rows, tileSource, scaleX, scaleY,
+    gridX, gridY,
     filled, pieceTex, trace)
 
     if blizzardLayerW <= 0 or blizzardLayerH <= 0 then return 0 end
@@ -455,10 +457,10 @@ local function DrawFillPiece(
     local chunkH = chunkY1 - chunkY0
     if chunkW <= 0 or chunkH <= 0 then return 0 end
 
-    local colStart = math.max(0, math.floor(chunkX0 / tilePxW))
-    local colEnd   = math.min(cols - 1, math.ceil(chunkX1 / tilePxW) - 1)
-    local rowStart = math.max(0, math.floor(chunkY0 / tilePxH))
-    local rowEnd   = math.min(rows - 1, math.ceil(chunkY1 / tilePxH) - 1)
+    local colStart = math.max(0, math.floor((chunkX0 - gridX) / tilePxW))
+    local colEnd   = math.min(cols - 1, math.ceil((chunkX1 - gridX) / tilePxW) - 1)
+    local rowStart = math.max(0, math.floor((chunkY0 - gridY) / tilePxH))
+    local rowEnd   = math.min(rows - 1, math.ceil((chunkY1 - gridY) / tilePxH) - 1)
 
     -- A hard-edged rectangle is what "very square" meant the first time
     -- this addon tried plain rects, before any masking existed. There is
@@ -492,8 +494,8 @@ local function DrawFillPiece(
             if not filled[idx] then
                 local src = tileSource[idx + 1]
                 if src then
-                    local tileX0 = col * tilePxW
-                    local tileY0 = row * tilePxH
+                    local tileX0 = gridX + col * tilePxW
+                    local tileY0 = gridY + row * tilePxH
                     local tileX1 = tileX0 + math.min(tilePxW, layerW - tileX0)
                     local tileY1 = tileY0 + math.min(tilePxH, layerH - tileY0)
 
@@ -610,7 +612,7 @@ end
 ---@param trace boolean|nil
 ---@return number piecesDrawn
 local function CloseFogGaps(cols, rows, tileSource, filled, pieceTex,
-    layerW, layerH, tilePxW, tilePxH, scaleX, scaleY, trace)
+    layerW, layerH, tilePxW, tilePxH, scaleX, scaleY, gridX, gridY, trace)
 
     -- Collected first, rather than filled in place as they're found: this
     -- pass is only meant to close holes the two passes above left behind,
@@ -640,14 +642,17 @@ local function CloseFogGaps(cols, rows, tileSource, filled, pieceTex,
         local col = idx % cols
         local src = tileSource[idx + 1]
 
-        local artTileW = math.min(tilePxW, layerW - col * tilePxW)
-        local artTileH = math.min(tilePxH, layerH - row * tilePxH)
+        local x0 = gridX + col * tilePxW
+        local y0 = gridY + row * tilePxH
+        local cx0, cx1 = math.max(x0, 0), math.min(x0 + tilePxW, layerW)
+        local cy0, cy1 = math.max(y0, 0), math.min(y0 + tilePxH, layerH)
 
         local tex = Pool:Acquire()
-        tex:SetSize(artTileW * scaleX, artTileH * scaleY)
+        tex:SetSize((cx1 - cx0) * scaleX, (cy1 - cy0) * scaleY)
         tex:SetPoint("TOPLEFT", Config.overlayFrame, "TOPLEFT",
-            col * tilePxW * scaleX, -(row * tilePxH * scaleY))
-        tex:SetTexCoord(0, artTileW / tilePxW, 0, artTileH / tilePxH)
+            cx0 * scaleX, -(cy0 * scaleY))
+        tex:SetTexCoord((cx0 - x0) / tilePxW, (cx1 - x0) / tilePxW,
+            (cy0 - y0) / tilePxH, (cy1 - y0) / tilePxH)
         tex:SetTexture(src)
 
         filled[idx] = true
@@ -898,6 +903,8 @@ local function DoRefresh(force)
     -- what Activate() is about to draw with, so that -- not the Zone Map
     -- setting elsewhere -- has to be what gates overriding it back to
     -- Blizzard's art.
+    local clientZone = Config:GetClientZone(mapID)
+    local gridX, gridY = 0, 0
     local fogOfWar = Config:FogOfWarEnabled() and background.key == "hybrid"
 
     local tileSource = {}
@@ -913,8 +920,21 @@ local function DoRefresh(force)
     -- pipeline's own output instead of C_Map.GetMapArtLayers, and the
     -- tile source is built straight from a path prefix rather than
     -- looked up per Blizzard FileDataID.
-    local nativeZone = Config:GetNativeZone(mapID, background)
-    if nativeZone then
+    -- clientZone's tiles are the client's own minimap files, laid on a grid
+    -- that starts at (gridX, gridY) in layer pixels (negative: the first
+    -- tile overhangs the map). Native zones and the legacy path start at 0,0.
+    local nativeZone = not clientZone and Config:GetNativeZone(mapID, background)
+    if clientZone then
+        local reg = clientZone.regions[1]
+        layerW, layerH = clientZone.layerW, clientZone.layerH
+        tilePxW, tilePxH = reg.tw, reg.th
+        cols, rows = reg.cols, reg.rows
+        gridX, gridY = reg.ox, reg.oy
+        for i, fdid in ipairs(reg.f) do
+            if fdid ~= 0 then tileSource[i] = fdid end
+        end
+        useBundled, useNative = true, true
+    elseif nativeZone then
         layerW, layerH = nativeZone.layerW, nativeZone.layerH
         tilePxW, tilePxH = nativeZone.tileW, nativeZone.tileH
         cols, rows = nativeZone.cols, nativeZone.rows
@@ -1107,7 +1127,7 @@ local function DoRefresh(force)
                 + DrawExploredPiece(
                     blizTex, frameLeft, frameTop,
                     layerW, layerH, tilePxW, tilePxH, cols, rows, tileSource,
-                    scaleX, scaleY, filled, pieceTex, trace)
+                    scaleX, scaleY, gridX, gridY, filled, pieceTex, trace)
         end
 
         -- GetLeft/Top/Right/Bottom on a region only resolve once it has
@@ -1172,7 +1192,7 @@ local function DoRefresh(force)
                     rect.textureWidth, rect.textureHeight,
                     blizzardLayerW, blizzardLayerH,
                     layerW, layerH, tilePxW, tilePxH, cols, rows, tileSource,
-                    scaleX, scaleY, filled, pieceTex, trace)
+                    scaleX, scaleY, gridX, gridY, filled, pieceTex, trace)
             end
             fogPiecesDrawn = fogPiecesDrawn + fillPieces
             if trace then
@@ -1185,7 +1205,7 @@ local function DoRefresh(force)
         -- left sitting inside otherwise-solid ground (see CloseFogGaps).
         fogPiecesDrawn = fogPiecesDrawn + CloseFogGaps(
             cols, rows, tileSource, filled, pieceTex, layerW, layerH,
-            tilePxW, tilePxH, scaleX, scaleY, trace)
+            tilePxW, tilePxH, scaleX, scaleY, gridX, gridY, trace)
 
         -- SoftenFogEdges is deliberately NOT called here. Blizzard's own
         -- client (MapExplorationPinMixin:RefreshOverlays) draws these
@@ -1197,6 +1217,32 @@ local function DoRefresh(force)
         -- rectangle into an organic outline. Left in place, unused, in
         -- case a future data source calls for it.
         -- SoftenFogEdges(cols, rows, filled, pieceTex, trace)
+    elseif clientZone then
+        -- Experiment: this zone's tiles are the client's own minimap files,
+        -- placed in art-layer pixels (see MinimapTiles.lua). Tiles that
+        -- overhang the layer are clipped with SetTexCoord.
+        for _, reg in ipairs(clientZone.regions) do
+            local f, tw, th = reg.f, reg.tw, reg.th
+            local i = 0
+            for row = 0, reg.rows - 1 do
+                local y0 = reg.oy + row * th
+                local cy0, cy1 = math.max(y0, 0), math.min(y0 + th, layerH)
+                for col = 0, reg.cols - 1 do
+                    i = i + 1
+                    local x0 = reg.ox + col * tw
+                    local cx0, cx1 = math.max(x0, 0), math.min(x0 + tw, layerW)
+                    if f[i] ~= 0 and cx1 > cx0 and cy1 > cy0 then
+                        local tex = Pool:Acquire()
+                        tex:SetSize((cx1 - cx0) * scaleX, (cy1 - cy0) * scaleY)
+                        tex:SetPoint("TOPLEFT", Config.overlayFrame, "TOPLEFT",
+                            cx0 * scaleX, -cy0 * scaleY)
+                        tex:SetTexCoord((cx0 - x0) / tw, (cx1 - x0) / tw,
+                            (cy0 - y0) / th, (cy1 - y0) / th)
+                        tex:SetTexture(f[i])
+                    end
+                end
+            end
+        end
     else
         local tileIdx = 1
         for row = 0, rows - 1 do

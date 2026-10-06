@@ -144,6 +144,49 @@ function Commands:Handle(msg)
                 or ""))
         ns.Options:Refresh()
         return
+    elseif cmd == "cavetitle" then
+        local d = ns.CaveRenderer:DebugTitle()
+        if not d then
+            P("No cave window yet: open a cave first.")
+            return
+        end
+        local function s(v) return v == nil and "nil" or tostring(v) end
+        local function list(t) if not t then return "nil" end local o = {} for i = 1, 5 do o[i] = s(t[i]) end return table.concat(o, ", ") end
+        P(("title text=%q shown=%s visible=%s alpha=%s eff=%s"):format(
+            s(d.text), s(d.shown), s(d.visible), s(d.alpha), s(d.effAlpha)))
+        P("  font=" .. s(d.font) .. " size=" .. s(d.size) .. " flags=" .. s(d.flags)
+            .. " color=" .. list(d.color))
+        P("  point=" .. list(d.point) .. "  rect=" .. list(d.rect))
+        P("  window=" .. list(d.windowRect) .. "  levels title/window=" .. list(d.levels))
+        P("  header=" .. (d.header and (s(d.header.shown) .. " " .. s(d.header.w) .. "x" .. s(d.header.h)) or "none"))
+        return
+    elseif cmd == "cavefocus" then
+        -- Hover the cave map art after running this: three seconds later it
+        -- reports what is under the cursor and the pan/zoom state.
+        P("Hover the cave map art; reporting in 3 seconds...")
+        C_Timer.After(3, function()
+            local d = ns.CaveRenderer:DebugPan()
+            if not d then P("No cave window yet: open a cave first.") return end
+            local function s(v) return v == nil and "nil" or tostring(v) end
+            P(("pan: zoom=%s pan=%s,%s content=%sx%s dragging=%s"):format(
+                s(d.zoom), s(d.panX), s(d.panY), s(d.contentW), s(d.contentH), s(d.dragging)))
+            P(("content: mouse=%s wheel=%s onMouseDown=%s onUpdate=%s shown=%s visible=%s level=%s window=%s strata=%s"):format(
+                s(d.mouse), s(d.wheel), s(d.hasDown), s(d.hasUpdate), s(d.shown),
+                s(d.visible), s(d.level), s(d.windowLevel), s(d.strata)))
+            local f = (GetMouseFoci and GetMouseFoci()[1]) or (GetMouseFocus and GetMouseFocus())
+            if not f then P("under cursor: nothing") return end
+            local depth = 0
+            while f and depth < 8 do
+                local name = f.GetName and f:GetName() or "?"
+                local lvl = f.GetFrameLevel and f:GetFrameLevel() or "-"
+                P(("  [%d] %s <%s> level=%s%s"):format(depth, s(name),
+                    f.GetObjectType and f:GetObjectType() or "?", s(lvl),
+                    f == Config.caveContentFrame and "  <-- cave content" or ""))
+                f = f.GetParent and f:GetParent() or nil
+                depth = depth + 1
+            end
+        end)
+        return
     elseif cmd == "fog" or cmd == "fogofwar" then
         local want = args[2]
         if want == "on" then

@@ -42,16 +42,17 @@ verify_art() {
   done
   echo "Generated $main BLPs + $orig raw, $(du -sh WorldMap | cut -f1) total."
 
-  # A full build is ~687 tiles per tree. Anything far below that means
-  # zones failed and the package would ship with holes in it.
-  if (( main < 650 )); then
-    echo "::error::only $main BLPs in WorldMap/, expected ~687 — refusing to publish an incomplete map"
+  # A full build is 2150 tiles per tree (Azeroth, Kalimdor and Eastern
+  # Kingdoms at both grids, plus the two Continent duplicates). Anything far
+  # below that means maps failed and the package would ship with holes in it.
+  if (( main < 2000 )); then
+    echo "::error::only $main BLPs in WorldMap/, expected ~2150 — refusing to publish an incomplete map"
     status=1
   fi
   # Generated with --original on, so an empty Original/ is a failure
   # too: FDIDMap.lua would ship the background with no textures.
-  if (( orig < 650 )); then
-    echo "::error::only $orig BLPs in WorldMap/Original/, expected ~687 — the in-game Original background would have no art"
+  if (( orig < 2000 )); then
+    echo "::error::only $orig BLPs in WorldMap/Original/, expected ~2150 — the in-game Original background would have no art"
     status=1
   fi
 }

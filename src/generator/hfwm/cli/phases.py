@@ -12,6 +12,7 @@ from ..config.paths import (
     CAVE_DATA_FILE,
     MINIMAP_TILE_CACHE,
 )
+from ..config.tiles import UI_MAP_TYPE_CONTINENT, UI_MAP_TYPE_WORLD
 from ..gamedata.db2 import fetch_zone_db
 from ..gamedata.microdungeon import build_cave_table
 from ..imaging.effects import stamp
@@ -55,6 +56,26 @@ def load_zone_db(
             print("  ERROR: no zones matched --zones.", file=sys.stderr)
             sys.exit(1)
     return zone_db
+
+
+def art_zones(zone_db: dict[str, dict]) -> dict[str, dict]:
+    """The maps whose stitched art the Map Data addon ships.
+
+    Only the World and Continent views are stitched offline. Zone and cave
+    maps are drawn from the client's own minimap tiles, placed by
+    ``MinimapTiles.lua`` / ``CaveTiles.lua`` (``scripts/emit_*_tiles.py``),
+    so they stay in the zone DB, and their source tiles stay downloaded,
+    but get no BLPs and no FDIDMap.lua entries.
+    """
+    art = {
+        k: v for k, v in zone_db.items()
+        if v["ui_map_type"] in (UI_MAP_TYPE_WORLD, UI_MAP_TYPE_CONTINENT)
+    }
+    if not art:
+        print("  ERROR: no World or Continent map selected (--zones); zone "
+              "maps ship no art.", file=sys.stderr)
+        sys.exit(1)
+    return art
 
 
 def _grid(z: dict) -> str:

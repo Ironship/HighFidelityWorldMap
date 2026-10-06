@@ -336,6 +336,56 @@ local function PoolReleaseAll()
     end
 end
 
+--- Draw a baked cave canvas from the client's own WMO group minimap tiles
+--- (HFWMF_CAVE_TILES, see scripts/emit_cave_tiles.py) instead of one shipped
+--- BLP. Each leaf is a region of a game texture, centred at (cx, cy) in the
+--- rotated canvas. The quad is the bounding box of that region once rotated
+--- by comp.a, and the eight-value SetTexCoord maps each quad corner back to
+--- the point of the source it shows; with CLAMPTOBLACKADDITIVE everything
+--- sampled outside the texture is transparent, so the corners vanish.
+---@param comp table  { w, h, a, l = { {fdid, srcW, srcH, x0, y0, w, h, cx, cy}, ... } }
+---@param scaleX number  canvasScale px per canvas px
+---@param scaleY number
+---@param offX number  where the canvas's top-left sits in canvasScale
+---@param offY number
+---@param sublevel number|nil
+---@param group table|nil  also collects the textures, as PoolAcquire does
+---@return table textures  everything drawn, in paint order
+local function DrawComposite(comp, scaleX, scaleY, offX, offY, sublevel, group)
+    local rad = math.rad(comp.a)
+    local c, s = math.cos(rad), math.sin(rad)
+    local ac, as = math.abs(c), math.abs(s)
+    local drawn = {}
+    for _, leaf in ipairs(comp.l) do
+        local fdid, sw, sh, x0, y0, w, h, cx, cy, dw, dh = unpack(leaf)
+        -- The quad is the bounding box of the dw x dh rect once rotated; the
+        -- region w x h is stretched over it (kx, ky), so a room can grow to
+        -- meet its neighbour.
+        local kx, ky = w / dw, h / dh
+        local hx, hy = (dw * ac + dh * as) / 2, (dw * as + dh * ac) / 2
+        local mx, my = x0 + w / 2, y0 + h / 2
+        -- Quad corner at offset (dx, dy) from the leaf centre -> source UV.
+        local function uv(dx, dy)
+            return (mx + (dx * c - dy * s) * kx) / sw,
+                   (my + (dx * s + dy * c) * ky) / sh
+        end
+        local ulx, uly = uv(-hx, -hy)
+        local llx, lly = uv(-hx,  hy)
+        local urx, ury = uv( hx, -hy)
+        local lrx, lry = uv( hx,  hy)
+
+        local tex = PoolAcquire(group)
+        tex:SetDrawLayer("ARTWORK", sublevel or 3)
+        tex:SetSize(2 * hx * scaleX, 2 * hy * scaleY)
+        tex:SetPoint("TOPLEFT", canvasScale, "TOPLEFT",
+            offX + (cx - hx) * scaleX, -(offY + (cy - hy) * scaleY))
+        tex:SetTexCoord(ulx, uly, llx, lly, urx, ury, lrx, lry)
+        tex:SetTexture(fdid, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        drawn[#drawn + 1] = tex
+    end
+    return drawn
+end
+
 -------------------------------------------------------------------------------
 -- Small widget helpers
 -------------------------------------------------------------------------------
@@ -707,37 +757,67 @@ local function ApplyGameMenuChrome()
             end
         end
 
-        local anchored = false
-        if headerTextSrc and headerTextSrc.GetPoint then
-            local p, relTo, rp, x, y = headerTextSrc:GetPoint(1)
-            if p then
-                aceWindow.titletext:ClearAllPoints()
-                if relTo == menu then
-                    aceWindow.titletext:SetPoint(p, window, rp, x or 0, y or 0)
-                    anchored = true
-                elseif relTo == headerSrc and caveHeaderTex then
-                    aceWindow.titletext:SetPoint(p, caveHeaderTex, rp, x or 0, y or 0)
-                    anchored = true
-                elseif caveHeaderTex then
-                    aceWindow.titletext:SetPoint(p, caveHeaderTex, rp, x or 0, y or 0)
-                    anchored = true
-                end
-            end
-        end
-
-        if not anchored then
-            aceWindow.titletext:ClearAllPoints()
-            aceWindow.titletext:SetPoint("TOP", caveHeaderTex or window, "TOP", 0, -14)
+        -- Anchored to the header art itself rather than copying the game
+        -- menu title's own offsets, which are relative to a frame this
+        -- window is not.
+        aceWindow.titletext:ClearAllPoints()
+        if caveHeaderTex and caveHeaderTex:IsShown() then
+            aceWindow.titletext:SetPoint("CENTER", caveHeaderTex, "CENTER", 0, 0)
+        else
+            aceWindow.titletext:SetPoint("TOP", window, "TOP", 0, -2)
         end
 
         if headerTextSrc and headerTextSrc.GetTextColor
            and aceWindow.titletext.SetTextColor then
-            local r, g, b, a = headerTextSrc:GetTextColor()
-            if r then aceWindow.titletext:SetTextColor(r, g, b, a or 1) end
+            local r, g, b = headerTextSrc:GetTextColor()
+            if r then aceWindow.titletext:SetTextColor(r, g, b, 1) end
         end
         aceWindow.titletext:SetAlpha(1)
         aceWindow.titletext:Show()
+        -- The title lives on a child frame of the window; keep that frame
+        -- above the cave art and chrome pieces so nothing paints over it.
+        local titleFrame = aceWindow.titletext:GetParent()
+        if titleFrame and titleFrame ~= window then
+            titleFrame:SetFrameLevel(window:GetFrameLevel() + 50)
+        end
     end
+end
+
+--- What the title FontString is actually doing, for /hfwm cavetitle.
+function CaveRenderer:DebugTitle()
+    local t = aceWindow and aceWindow.titletext
+    if not t then return nil end
+    local p, relTo, rp, x, y = t:GetPoint(1)
+    local f1, f2, f3 = t:GetFont()
+    local r, g, b, a = t:GetTextColor()
+    local parent = t:GetParent()
+    return {
+        text = t:GetText(), shown = t:IsShown(), visible = t:IsVisible(),
+        alpha = t:GetAlpha(), effAlpha = t:GetEffectiveAlpha(),
+        font = f1, size = f2, flags = f3, color = { r, g, b, a },
+        point = { p, relTo and (relTo.GetName and relTo:GetName() or relTo:GetObjectType()), rp, x, y },
+        rect = { t:GetLeft(), t:GetBottom(), t:GetWidth(), t:GetHeight() },
+        windowRect = window and { window:GetLeft(), window:GetBottom(), window:GetWidth(), window:GetHeight() },
+        levels = { parent and parent:GetFrameLevel(), window and window:GetFrameLevel() },
+        header = caveHeaderTex and { shown = caveHeaderTex:IsShown(), w = caveHeaderTex:GetWidth(), h = caveHeaderTex:GetHeight() },
+    }
+end
+
+--- Zoom/pan state and where content sits in the frame stack, for
+--- /hfwm cavefocus.
+function CaveRenderer:DebugPan()
+    if not content then return nil end
+    return {
+        zoom = zoomScale, panX = panX, panY = panY,
+        contentW = contentW, contentH = contentH,
+        dragging = contentDrag ~= nil,
+        mouse = content:IsMouseEnabled(), wheel = content:IsMouseWheelEnabled(),
+        hasDown = content:GetScript("OnMouseDown") ~= nil,
+        hasUpdate = content:GetScript("OnUpdate") ~= nil,
+        level = content:GetFrameLevel(), strata = content:GetFrameStrata(),
+        windowLevel = window and window:GetFrameLevel(),
+        shown = content:IsShown(), visible = content:IsVisible(),
+    }
 end
 
 -- Exposed so other modules (currently ToggleButton) can give their own
@@ -1189,7 +1269,7 @@ function CaveRenderer:UpdatePieceWindowAlphas()
     for _, grp in ipairs(continuousPieceGroups) do
         local alpha = PieceWindowAlpha(grp.zMin, grp.zMax, windowBottomZ, windowTopZ)
         grp.alpha = alpha
-        grp.texture:SetAlpha(alpha)
+        for _, tex in ipairs(grp.textures) do tex:SetAlpha(alpha) end
     end
 end
 
@@ -2185,23 +2265,33 @@ function CaveRenderer:RenderTiles(floorMapID, sublevel, group)
             local fdid = fdids[tileIdx]
             if not fdid then break end
 
-            local rel = FDID_MAP[fdid]
-            local src = rel and (FDID_BASE .. rel) or fdid
+            local comp = Config:GetCaveComposite(fdid)
+            if comp then
+                lastRenderInfo.tiles[tileIdx] = {
+                    fdid = fdid, bundled = false, src = "client composite",
+                }
+                DrawComposite(comp, scaleX, scaleY,
+                    col * tilePxW * scaleX, row * tilePxH * scaleY,
+                    sublevel, group)
+            else
+                local rel = FDID_MAP[fdid]
+                local src = rel and (FDID_BASE .. rel) or fdid
 
-            lastRenderInfo.tiles[tileIdx] = {
-                fdid = fdid, bundled = (rel ~= nil), rel = rel, src = src,
-            }
+                lastRenderInfo.tiles[tileIdx] = {
+                    fdid = fdid, bundled = (rel ~= nil), rel = rel, src = src,
+                }
 
-            local artTileW = math.min(tilePxW, layerW - col * tilePxW)
-            local artTileH = math.min(tilePxH, layerH - row * tilePxH)
+                local artTileW = math.min(tilePxW, layerW - col * tilePxW)
+                local artTileH = math.min(tilePxH, layerH - row * tilePxH)
 
-            local tex = PoolAcquire(group)
-            tex:SetDrawLayer("ARTWORK", sublevel or 3)
-            tex:SetSize(artTileW * scaleX, artTileH * scaleY)
-            tex:SetPoint("TOPLEFT", canvasScale, "TOPLEFT",
-                col * tilePxW * scaleX, -(row * tilePxH * scaleY))
-            tex:SetTexCoord(0, artTileW / tilePxW, 0, artTileH / tilePxH)
-            tex:SetTexture(src)
+                local tex = PoolAcquire(group)
+                tex:SetDrawLayer("ARTWORK", sublevel or 3)
+                tex:SetSize(artTileW * scaleX, artTileH * scaleY)
+                tex:SetPoint("TOPLEFT", canvasScale, "TOPLEFT",
+                    col * tilePxW * scaleX, -(row * tilePxH * scaleY))
+                tex:SetTexCoord(0, artTileW / tilePxW, 0, artTileH / tilePxH)
+                tex:SetTexture(src, "CLAMP", "CLAMP")
+            end
             tileIdx = tileIdx + 1
         end
     end
@@ -2363,8 +2453,7 @@ function CaveRenderer:RenderContinuousPieces(pieces, pieceCanvasW, pieceCanvasH)
     local anyDrew = false
 
     for order, piece in ipairs(pieces) do
-        local rel = FDID_MAP[piece.fdid]
-        local src = rel and (FDID_BASE .. rel) or piece.fdid
+        local comp = Config:GetCaveComposite(piece.fdid)
 
         -- Paint order: a piece with a higher ceiling paints over one with a
         -- lower ceiling for as long as both are partially visible, spread
@@ -2377,14 +2466,22 @@ function CaveRenderer:RenderContinuousPieces(pieces, pieceCanvasW, pieceCanvasH)
             sublevel = math.max(-8, math.min(7, sublevel))
         end
 
-        local tex = PoolAcquire()
-        tex:SetDrawLayer("ARTWORK", sublevel)
-        tex:SetSize(canvasW, canvasH)
-        tex:SetPoint("TOPLEFT", canvasScale, "TOPLEFT", 0, 0)
-        tex:SetTexture(src)
+        local textures
+        if comp then
+            textures = DrawComposite(
+                comp, canvasW / comp.w, canvasH / comp.h, 0, 0, sublevel)
+        else
+            local rel = FDID_MAP[piece.fdid]
+            local tex = PoolAcquire()
+            tex:SetDrawLayer("ARTWORK", sublevel)
+            tex:SetSize(canvasW, canvasH)
+            tex:SetPoint("TOPLEFT", canvasScale, "TOPLEFT", 0, 0)
+            tex:SetTexture(rel and (FDID_BASE .. rel) or piece.fdid, "CLAMP", "CLAMP")
+            textures = { tex }
+        end
 
         continuousPieceGroups[order] = {
-            texture = tex, zMin = piece.zMin, zMax = piece.zMax, alpha = 1,
+            textures = textures, zMin = piece.zMin, zMax = piece.zMax, alpha = 1,
         }
         anyDrew = true
 

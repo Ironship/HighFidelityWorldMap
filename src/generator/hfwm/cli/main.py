@@ -4,7 +4,8 @@ Five phases:
 
   1. Zone database  — build-pinned DB2 exports + WDT MAID chunks
   2. Tile download  — every unique minimap tile FDID, cached on disk
-  3. Zone processing — stitch, crop, fit the art layer, encode BLP2
+  3. Zone processing — stitch, crop, fit the art layer, encode BLP2, for the
+     World and Continent maps only (:func:`hfwm.cli.phases.art_zones`)
      3b. the same again with every art pass off, into ``Original/``
   4. FDIDMap.lua    — FileDataID -> bundled texture path
   5. CaveData.lua   — the interior map table this build's UiMap lacks
@@ -45,6 +46,7 @@ from ..config.paths import CAVE_DATA_FILE, FDID_MAP_FILE, ORIGINAL_SUBDIR
 from ..imaging.effects import ART_PASSES, banner_lines, resolve
 from .parser import build_parser, print_art_passes
 from .phases import (
+    art_zones,
     download_source_tiles,
     load_zone_db,
     print_dry_run,
@@ -152,13 +154,16 @@ def main() -> None:
         print(f"FDIDMap:   {FDID_MAP_FILE}", flush=True)
         print(f"CaveData:  {CAVE_DATA_FILE}", flush=True)
         print(flush=True)
-        zone_db = load_zone_db(args.refresh, args.maid_field, args.zones)
+        passes, _ = _resolve_art_passes(args)
+        zone_db = art_zones(
+            load_zone_db(args.refresh, args.maid_field, args.zones))
         if not args.skip_fdid_map:
             run_fdid_map_phase(
                 os.path.abspath(args.output_dir),
                 zone_db,
-                {},
-                include_original=False,
+                passes,
+                # Same rule as phase 3b: no art passes means no raw dump.
+                include_original=bool(args.original and passes),
                 total_out_tiles=0,
                 metadata_only=True,
             )
@@ -174,11 +179,15 @@ def main() -> None:
     _print_banner(args, output_dir, passes, pass_notes)
 
     zone_db = load_zone_db(args.refresh, args.maid_field, args.zones)
+    # Every zone's source tiles are downloaded (the client-tile placement
+    # scripts read them from the cache), but only the World and Continent
+    # maps are stitched.
     needed_fdids = source_fdids(zone_db)
-    print_plan(zone_db, needed_fdids)
+    art_db = art_zones(zone_db)
+    print_plan(art_db, needed_fdids)
 
     if args.dry_run:
-        print_dry_run(zone_db, args.caves)
+        print_dry_run(art_db, args.caves)
         return
 
     tile_cache, base_art_cache = download_source_tiles(
@@ -189,17 +198,17 @@ def main() -> None:
     print(f"\n--- Phase 3: Processing zones ({args.threads} workers) ---",
           flush=True)
     stats = process_zones(
-        zone_db, tile_cache, base_art_cache, output_dir, passes,
+        art_db, tile_cache, base_art_cache, output_dir, passes,
         args.threads, ocean_rgb=ocean_rgb,
     )
 
     wrote_original = _run_original_phase(
-        args, zone_db, tile_cache, output_dir, passes,
+        args, art_db, tile_cache, output_dir, passes,
     )
 
     if not args.skip_fdid_map:
         run_fdid_map_phase(
-            output_dir, zone_db, passes,
+            output_dir, art_db, passes,
             # Scan the raw tree whenever one is on disk, not only when this
             # run wrote it: a rebuild with --no-original should not silently
             # strip a background whose art is still installed.

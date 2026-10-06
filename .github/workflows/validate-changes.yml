@@ -89,18 +89,18 @@ jobs:
 
       # The dry run stops before a single pixel is touched, so it never
       # imports what the processing phase needs — a missing numpy got all the
-      # way to a release before anything noticed. One interior zone is four
-      # source tiles and about a second, and it runs the whole path: download,
+      # way to a release before anything noticed. One continent (Kalimdor)
+      # takes a minute or two, and it runs the whole path: download,
       # stitch, the sea erase, the resample, BLP2 encode.
       #
       # --skip-fdid-map because phase 4 writes src/addon/mapdata/FDIDMap.lua rather than
-      # into the output dir, and a one-zone map would overwrite the committed
+      # into the output dir, and a one-map run would overwrite the committed
       # one.
       - name: Smoke test
         run: .github/scripts/smoke-test.sh
 
-      # ThunderBluff is landlocked, so the run above never reaches the ocean
-      # pass's cell classification. Same zone, other code path.
+      # The run above uses the default alpha-sea pass. Same map, the
+      # ocean-fill code path.
       - name: Smoke test (ocean pass)
         run: .github/scripts/smoke-test.sh ocean
 
