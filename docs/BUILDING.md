@@ -5,10 +5,11 @@ This project is split into three parts:
 - `src/addon/client/` — the Lua addon that hooks into the in-game world map
   (`HighFidelityWorldMap`). Small, and released on its own.
 - `src/addon/mapdata/` — the Map Data addon (`HighFidelityWorldMap_MapData_Forever`):
-  the generated map art and nothing else, a TOC and the `WorldMap/` tile tree.
-  It is large (several GB), changes rarely, and has its own CurseForge project,
-  tags and version, so a UI or settings update does not mean re-downloading the
-  art. The core addon reads the tiles from it by file path.
+  the stitched World and Continent map art (the `WorldMap/` tile tree) and the
+  lookup/placement tables that map the client's own minimap tiles onto zone and
+  cave maps. It is large (several GB), changes rarely, and has its own CurseForge
+  project, tags and version, so a UI or settings update does not mean
+  re-downloading the art. The core addon reads the tiles from it by file path.
 - `src/generator/` — the Python pipeline that generates the map tiles and FDID
   map tables. It writes the tiles into `src/addon/mapdata/WorldMap/` and the Lua
   tables (`FDIDMap.lua`, `CaveData.lua`) into `src/addon/client/`.
@@ -80,12 +81,19 @@ python src/generator/generateHFWM.py
 ```
 
 Tiles are written to `src/addon/mapdata/WorldMap/`; `src/addon/mapdata/FDIDMap.lua` and
-`src/addon/client/CaveData.lua` are written into the core addon. Downloads are cached
+`src/addon/client/CaveData.lua` are written into the two addons. Downloads are cached
 under `src/generator/.cache-*/`.
+
+Only the World and Continent views are stitched into art. Zone and cave maps are
+drawn from the client's own minimap tiles, so the Map Data addon only carries their
+placement data (`MinimapTiles.lua`, `CaveTiles.lua`), which is not part of the main
+run: regenerate it from the cached zone DB with
+`python src/generator/scripts/emit_minimap_tiles.py` and
+`python src/generator/scripts/emit_cave_tiles.py`.
 
 Useful flags include:
 
-- `--zones` to process only selected zones
+- `--zones` to process only selected maps (only the World and Continent maps produce art)
 - `--dry-run` to test the pipeline without writing output
 - `--refresh` to re-download cached inputs
 - `--threads` to parallelize generation
@@ -97,10 +105,10 @@ Useful flags include:
 You can run a quick validation pass without a full world build:
 
 ```sh
-python src/generator/generateHFWM.py ./smoke --zones ThunderBluff --skip-fdid-map
+python src/generator/generateHFWM.py ./smoke --zones Kalimdor --skip-fdid-map --no-caves
 ```
 
-This runs a small zone through the generation pipeline and checks the output is created correctly.
+This runs one continent through the generation pipeline and checks the output is created correctly.
 
 ## 6) Lua syntax validation
 

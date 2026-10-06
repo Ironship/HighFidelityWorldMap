@@ -101,7 +101,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--zones",
         default=None,
-        help="Comma-separated zone folder names to include (default: all)",
+        help=(
+            "Comma-separated map folder names to include (default: all). "
+            "Only the World and Continent maps produce art."
+        ),
     )
     parser.add_argument(
         "--dry-run",
