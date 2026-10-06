@@ -757,37 +757,67 @@ local function ApplyGameMenuChrome()
             end
         end
 
-        local anchored = false
-        if headerTextSrc and headerTextSrc.GetPoint then
-            local p, relTo, rp, x, y = headerTextSrc:GetPoint(1)
-            if p then
-                aceWindow.titletext:ClearAllPoints()
-                if relTo == menu then
-                    aceWindow.titletext:SetPoint(p, window, rp, x or 0, y or 0)
-                    anchored = true
-                elseif relTo == headerSrc and caveHeaderTex then
-                    aceWindow.titletext:SetPoint(p, caveHeaderTex, rp, x or 0, y or 0)
-                    anchored = true
-                elseif caveHeaderTex then
-                    aceWindow.titletext:SetPoint(p, caveHeaderTex, rp, x or 0, y or 0)
-                    anchored = true
-                end
-            end
-        end
-
-        if not anchored then
-            aceWindow.titletext:ClearAllPoints()
-            aceWindow.titletext:SetPoint("TOP", caveHeaderTex or window, "TOP", 0, -14)
+        -- Anchored to the header art itself rather than copying the game
+        -- menu title's own offsets, which are relative to a frame this
+        -- window is not.
+        aceWindow.titletext:ClearAllPoints()
+        if caveHeaderTex and caveHeaderTex:IsShown() then
+            aceWindow.titletext:SetPoint("CENTER", caveHeaderTex, "CENTER", 0, 0)
+        else
+            aceWindow.titletext:SetPoint("TOP", window, "TOP", 0, -2)
         end
 
         if headerTextSrc and headerTextSrc.GetTextColor
            and aceWindow.titletext.SetTextColor then
-            local r, g, b, a = headerTextSrc:GetTextColor()
-            if r then aceWindow.titletext:SetTextColor(r, g, b, a or 1) end
+            local r, g, b = headerTextSrc:GetTextColor()
+            if r then aceWindow.titletext:SetTextColor(r, g, b, 1) end
         end
         aceWindow.titletext:SetAlpha(1)
         aceWindow.titletext:Show()
+        -- The title lives on a child frame of the window; keep that frame
+        -- above the cave art and chrome pieces so nothing paints over it.
+        local titleFrame = aceWindow.titletext:GetParent()
+        if titleFrame and titleFrame ~= window then
+            titleFrame:SetFrameLevel(window:GetFrameLevel() + 50)
+        end
     end
+end
+
+--- What the title FontString is actually doing, for /hfwm cavetitle.
+function CaveRenderer:DebugTitle()
+    local t = aceWindow and aceWindow.titletext
+    if not t then return nil end
+    local p, relTo, rp, x, y = t:GetPoint(1)
+    local f1, f2, f3 = t:GetFont()
+    local r, g, b, a = t:GetTextColor()
+    local parent = t:GetParent()
+    return {
+        text = t:GetText(), shown = t:IsShown(), visible = t:IsVisible(),
+        alpha = t:GetAlpha(), effAlpha = t:GetEffectiveAlpha(),
+        font = f1, size = f2, flags = f3, color = { r, g, b, a },
+        point = { p, relTo and (relTo.GetName and relTo:GetName() or relTo:GetObjectType()), rp, x, y },
+        rect = { t:GetLeft(), t:GetBottom(), t:GetWidth(), t:GetHeight() },
+        windowRect = window and { window:GetLeft(), window:GetBottom(), window:GetWidth(), window:GetHeight() },
+        levels = { parent and parent:GetFrameLevel(), window and window:GetFrameLevel() },
+        header = caveHeaderTex and { shown = caveHeaderTex:IsShown(), w = caveHeaderTex:GetWidth(), h = caveHeaderTex:GetHeight() },
+    }
+end
+
+--- Zoom/pan state and where content sits in the frame stack, for
+--- /hfwm cavefocus.
+function CaveRenderer:DebugPan()
+    if not content then return nil end
+    return {
+        zoom = zoomScale, panX = panX, panY = panY,
+        contentW = contentW, contentH = contentH,
+        dragging = contentDrag ~= nil,
+        mouse = content:IsMouseEnabled(), wheel = content:IsMouseWheelEnabled(),
+        hasDown = content:GetScript("OnMouseDown") ~= nil,
+        hasUpdate = content:GetScript("OnUpdate") ~= nil,
+        level = content:GetFrameLevel(), strata = content:GetFrameStrata(),
+        windowLevel = window and window:GetFrameLevel(),
+        shown = content:IsShown(), visible = content:IsVisible(),
+    }
 end
 
 -- Exposed so other modules (currently ToggleButton) can give their own
