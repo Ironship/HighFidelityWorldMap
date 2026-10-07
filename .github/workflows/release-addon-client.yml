@@ -33,7 +33,9 @@ name: "Create Release: Client"
 # the version a second time.
 
 on:
-  create:
+  # Not `create`: that event takes no tag filter, so it fired on every new
+  # branch too and tried to release the branch name.
+  push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
       - "v[0-9]+.[0-9]+.[0-9]+-*"
