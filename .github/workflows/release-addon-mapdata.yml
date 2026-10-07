@@ -201,19 +201,12 @@ jobs:
       # Release is made by create-github-release.sh below. CurseForge is
       # publish-mapdata-release-curseforge.yml's job; keep -m in sync with it.
       #
-      # On a push to main the packager bails out ("Found future tag ... not
-      # packaging") when HEAD carries a tag, assuming a tag-triggered run will
-      # package it. Here the tag was created by this workflow and nothing else
-      # will, so present the run to the packager as the tag run it stands in for.
+      # run-packager.sh instead of the BigWigsMods/packager action: on a push
+      # to main the packager bails out ("Found future tag ... not packaging")
+      # when HEAD carries a tag, and this workflow creates that tag itself, so
+      # nothing else will package it. The script explains the workaround.
       - name: Package
-        uses: BigWigsMods/packager@v2
-        with:
-          args: -d -m .pkgmeta-mapdata
-          # Nothing goes to WoWInterface, so skip the pandoc install.
-          pandoc: "false"
-        env:
-          GITHUB_REF: refs/tags/${{ needs.tag.outputs.tag }}
-          GITHUB_REF_NAME: ${{ needs.tag.outputs.tag }}
+        run: .github/scripts/run-packager.sh -d -m .pkgmeta-mapdata
 
       # The Release carries one asset: the addon zip, hfwm-forever-mapdata-v1.2.3.zip.
       - name: Create GitHub release
