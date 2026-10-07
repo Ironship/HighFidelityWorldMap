@@ -61,9 +61,10 @@ enable-nolib-creation: no
 # split.
 enable-toc-creation: no
 
-# The map art is its own CurseForge project (built from .pkgmeta-mapdata).
-# The client project does not declare it as a relation on upload: CurseForge
-# rejects relations to projects that are not approved and public. Add the
-# relation in the CurseForge project settings (Relations) instead. The TOC says
-# OptionalDeps rather than Dependencies so a missing data addon produces a chat
-# warning (MapData.lua) instead of this addon silently failing to load.
+# The map art is its own CurseForge project (built from .pkgmeta-mapdata,
+# https://www.curseforge.com/wow/addons/hfwm-art). The packager declares it as
+# a required relation on every CurseForge upload, matching the TOC's
+# RequiredDeps. CurseForge rejects relations to projects that are not approved
+# and public, so the upload fails if that project ever stops being so.
+required-dependencies:
+  - hfwm-art
