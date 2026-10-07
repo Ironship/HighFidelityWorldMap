@@ -397,9 +397,8 @@ Config.FDID_MAP_SUB      = HFWMF_FDID_MAP_SUB      or {}
 -- The raw second dump, written only when the pipeline ran with --original.
 -- Its paths carry their own "Original\\" prefix, so FDID_BASE serves both.
 Config.FDID_MAP_ORIGINAL = HFWMF_FDID_MAP_ORIGINAL or {}
--- The art lives in the separate HighFidelityWorldMap_MapData_Forever addon;
--- see MapData.lua for the check that it is installed and matches this build.
-Config.FDID_BASE    = "Interface\\AddOns\\HighFidelityWorldMap_MapData_Forever\\WorldMap\\"
+-- The art ships in this addon's own WorldMap folder.
+Config.FDID_BASE    = "Interface\\AddOns\\HighFidelityWorldMap\\WorldMap\\"
 
 -- Higher-resolution continent/world maps (see hfwm/gamedata/db2.py's
 -- _hires_geometry and hfwm/lua/fdid_map.py): Kalimdor/Eastern Kingdoms/the
@@ -410,7 +409,7 @@ Config.NATIVE_ZONES          = HFWMF_NATIVE_ZONES          or {}
 Config.NATIVE_ZONES_ORIGINAL = HFWMF_NATIVE_ZONES_ORIGINAL or {}
 
 -- Zone maps are not shipped as art: they are placements of the client's own
--- minimap tiles (MinimapTiles.lua in the Map Data addon), keyed by UiMapID.
+-- minimap tiles (MinimapTiles.lua), keyed by UiMapID.
 Config.MINIMAP_ZONES = HFWMF_MINIMAP_ZONES or {}
 
 ---@param mapID number
@@ -420,8 +419,7 @@ function Config:GetClientZone(mapID)
 end
 
 -- Baked cave floors/pieces as placements of the client's own WMO minimap
--- tiles (CaveTiles.lua in the Map Data addon), keyed by the synthetic FDIDs
--- CaveData.lua uses.
+-- tiles (CaveTiles.lua), keyed by the synthetic FDIDs CaveData.lua uses.
 Config.CAVE_TILES = HFWMF_CAVE_TILES or {}
 
 ---@param fdid number

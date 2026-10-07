@@ -91,7 +91,6 @@ function addon:OnEnable()
     -- After Commands, so a Lua error while probing the client's options
     -- APIs still leaves the slash commands working.
     Options:Init()
-    ns.MapData:Check()
     P("Loaded. /hfwm to toggle, /hfwm options for settings.")
 end
 

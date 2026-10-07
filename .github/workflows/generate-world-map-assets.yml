@@ -1,16 +1,16 @@
 name: Generate World Map Assets
 
 # Runs the Python pipeline (src/generator/generateHFWM.py) that builds the world
-# map art (src/addon/mapdata/WorldMap/), src/addon/mapdata/FDIDMap.lua and
+# map art (src/addon/client/WorldMap/), src/addon/client/FDIDMap.lua and
 # src/addon/client/CaveData.lua, and saves the result to the Actions cache *from
 # main*. That is the only scope a tag-triggered release can read, so every
-# release (Create Release: Addon / MapData, and the publish workflows) can reuse
-# it instead of repeating the ~40 minute generation. See
+# release (Create Release: Client and Publish Client Release to CurseForge)
+# can reuse it instead of repeating the ~40 minute generation. See
 # .github/actions/generate-world-map-assets.
 #
-# Two cache entries share one key hash: the art (mapart-v2-<hash>, multi-GB,
-# read only by the Map Data release) and the Lua tables (maptables-v2-<hash>,
-# small, read by the core addon release). The hash covers the generator only
+# Two cache entries share one key hash: the art (mapart-v2-<hash>, multi-GB)
+# and the Lua tables (maptables-v2-<hash>, small). Both ship in the addon
+# package. The hash covers the generator only
 # (src/generator/generateHFWM.py, src/generator/hfwm/**,
 # src/generator/requirements.txt). A change that leaves those alone, such as an
 # addon Lua fix, docs or a workflow tweak, resolves to the same keys, so a new
@@ -20,9 +20,8 @@ name: Generate World Map Assets
 #     resets that clock. A miss here (evicted, or never built) regenerates it.
 #   - manual: warm it on demand.
 #
-# A push to main that changes the generator is NOT handled here any more: it
-# starts "Create Release: MapData", which regenerates (and caches) the art as
-# its first step when the art key changed.
+# A manual "Create Release: Client" run is on main, so it also saves what it
+# generates to the cache scope later releases read.
 
 on:
   schedule:
@@ -34,7 +33,7 @@ on:
         required: false
         type: boolean
         default: false
-  # Called by publish-mapdata-release-curseforge.yml so the build is jobs of that run.
+  # Called by publish-client-release-curseforge.yml so the build is jobs of that run.
   workflow_call:
     inputs:
       bypass-asset-cache:
@@ -75,7 +74,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: |
-            src/addon/mapdata/FDIDMap.lua
+            src/addon/client/FDIDMap.lua
             src/addon/client/CaveData.lua
           key: ${{ steps.key.outputs.tables-key }}
 
@@ -89,7 +88,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           lookup-only: ${{ github.event_name != 'schedule' }}
-          path: src/addon/mapdata/WorldMap
+          path: src/addon/client/WorldMap
           key: ${{ steps.key.outputs.art-key }}
 
   build:

@@ -3,22 +3,14 @@
 #
 # Inputs (environment):
 #   BUMP        patch|minor|major
-#   PRERELEASE  optional suffix, e.g. "beta.1" -> <prefix>1.0.1-beta.1
-#   TAG_PREFIX  which tag series this is. Default "v" (the core addon, v1.2.3).
-#               The Map Data addon uses "mapdata-v".
-#   TAG_NOTE    optional text for the annotated tag's body. The Map Data
-#               release records "art-key: mapart-v2-<hash>" here, which is how
-#               plan-mapdata-release.sh and verify-mapdata-current.sh later tell
-#               what art a tag was built from.
+#   PRERELEASE  optional suffix, e.g. "beta.1" -> v1.0.1-beta.1
 # Writes "tag=<new tag>" to $GITHUB_OUTPUT.
 set -euo pipefail
 
-prefix="${TAG_PREFIX:-v}"
+prefix="v"
 prerelease="${PRERELEASE:-}"
-note="${TAG_NOTE:-}"
 
-# Only this series: "v[0-9]*" does not match "mapdata-v1.0.0", and the other
-# way round, so the two version lines never see each other.
+# "v[0-9]*" does not match the retired "mapdata-v1.0.0" tags.
 latest="$(git tag -l "${prefix}[0-9]*" --sort=-v:refname | head -n1)"
 if [[ -z "$latest" ]]; then
   base="0.1.0"
@@ -52,10 +44,6 @@ echo "### Releasing \`$next\` (previous: \`${latest:-none}\`)" >> "$GITHUB_STEP_
 git config user.name  "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 # Annotated: release.sh only recognises annotated tags as versions.
-if [[ -n "$note" ]]; then
-  git tag -a "$next" -m "$next" -m "$note"
-else
-  git tag -a "$next" -m "$next"
-fi
+git tag -a "$next" -m "$next"
 git push origin "refs/tags/$next"
 echo "tag=$next" >> "$GITHUB_OUTPUT"
