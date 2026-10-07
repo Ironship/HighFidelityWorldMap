@@ -59,7 +59,7 @@ def load_zone_db(
 
 
 def art_zones(zone_db: dict[str, dict]) -> dict[str, dict]:
-    """The maps whose stitched art the Map Data addon ships.
+    """The maps whose stitched art the addon ships.
 
     Only the World and Continent views are stitched offline. Zone and cave
     maps are drawn from the client's own minimap tiles, placed by

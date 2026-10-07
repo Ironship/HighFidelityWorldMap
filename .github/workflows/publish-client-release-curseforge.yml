@@ -1,8 +1,7 @@
 name: Publish Client Release to CurseForge
 
-# Uploads an existing client release (v1.2.3) to CurseForge. It never creates
-# tags or GitHub Releases; run "Create Release: Client" first. The Map Data
-# addon has its own workflow: "Publish MapData Release to CurseForge".
+# Uploads an existing release (v1.2.3) to CurseForge. It never creates tags or
+# GitHub Releases; run "Create Release: Client" first.
 #
 # Run it on its own from the Actions tab, or let "Create Release: Client" call
 # it.
@@ -10,20 +9,21 @@ name: Publish Client Release to CurseForge
 # The package is rebuilt from the release tag rather than downloaded from the
 # GitHub Release: the packager is what turns the TOC and tag into CurseForge
 # game versions and a release channel (release/beta/alpha), and it cannot
-# upload a zip it did not build. The client addon is Lua only, so the checked-in
-# source at the tag is all that is needed; no map assets are generated.
+# upload a zip it did not build. The generated art and tables are a pure
+# function of the generator code at that tag, so the result matches what the
+# Create Release workflow shipped.
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Client release tag to publish, as shown on the Releases page, e.g. v1.0.1"
+        description: "Release tag to publish, as shown on the Releases page, e.g. v1.0.1"
         type: string
         required: true
   workflow_call:
     inputs:
       tag:
-        description: "Client release tag to publish, e.g. v1.0.1"
+        description: "Release tag to publish, e.g. v1.0.1"
         type: string
         required: true
     secrets:
@@ -34,7 +34,7 @@ permissions:
   contents: read
   checks: write
 
-# Never run two client publishes at once. Independent of the MapData publish.
+# A publish can upload a multi-GB zip to CurseForge; never run two at once.
 concurrency:
   group: publish-client-release-curseforge
   cancel-in-progress: false
@@ -56,12 +56,12 @@ jobs:
           fetch-depth: 0
 
       # The value is not echoed back: it is free text from a workflow input.
-      - name: Verify tag is a client tag
+      - name: Verify tag is a release tag
         env:
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
           if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::The client release tag must look like v1.2.3 or v1.2.3-beta.1 (MapData releases use their own publish workflow)"
+            echo "::error::The release tag must look like v1.2.3 or v1.2.3-beta.1"
             exit 1
           fi
 
@@ -76,14 +76,25 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
         run: .github/scripts/verify-tag-on-main.sh
 
+  assets:
+    name: World map assets
+    needs: verify
+    # Called, not dispatched, so the build shows up as jobs of this run. It runs
+    # on the caller's ref. On main that is the only scope a tag-triggered
+    # release can read the cache from.
+    permissions:
+      contents: read
+      actions: write
+    uses: ./.github/workflows/generate-world-map-assets.yml
+
   publish:
     name: Package and upload to CurseForge
-    needs: verify
+    needs: [verify, assets]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       checks: write
-    timeout-minutes: 30
+    timeout-minutes: 300
 
     steps:
       - name: Checkout release tag
@@ -93,10 +104,25 @@ jobs:
           # release.sh walks back through tags to build the changelog.
           fetch-depth: 0
 
+      # The assets job above guarantees the cache holds the tables and art (a
+      # hit when the generator has not changed, see
+      # generate-world-map-assets.yml). Restoring them here is what puts them
+      # in this workspace; a miss would rebuild, and saving means a re-run of
+      # a failed upload does not rebuild it again.
+      - name: Generate world map assets
+        uses: ./.github/actions/generate-world-map-assets
+        with:
+          save: "true"
+
+      # See release-addon-client.yml: takes the gitignored art off the packager's
+      # exclude list without writing GBs of blobs into .git.
+      - name: Stage generated art
+        run: git add -fN src/addon/client/WorldMap
+
       # The packager has no tag-prefix option: its changelog uses "the previous
-      # tag" among all tags. Hide the MapData series from it.
+      # tag" among all tags. Hide the retired mapdata-v* series from it.
       - name: Isolate the v* tag series
-        run: .github/scripts/isolate-tag-series.sh v
+        run: .github/scripts/isolate-tag-series.sh
 
       # Only CF_API_TOKEN is passed, so the packager uploads to CurseForge and
       # does not touch the GitHub Release. Nothing goes to WoWInterface, so skip

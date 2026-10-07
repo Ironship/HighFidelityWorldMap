@@ -4,7 +4,6 @@
 ## Author: HighFidelityWorldMap
 ## Version: @project-version@
 ## SavedVariables: HighFidelityWorldMapDB
-## RequiredDeps: HighFidelityWorldMap_MapData_Forever
 ## IconTexture: Interface\Icons\INV_Misc_Map02
 ## X-Curse-Project-ID: 1701034
 
@@ -14,14 +13,20 @@
 # backslashed subdirectories, still finds it.
 embeds.xml
 
-# Generated data table. Plain globals with no dependency on the addon
-# namespace, so it loads first and Namespace.lua can fold it in. The tile
-# lookup tables (FDIDMap.lua) live in the Map Data addon, which this addon
-# requires, so they are already defined by the time this file loads.
+# Generated data tables (src/generator writes them). Plain globals with no
+# dependency on the addon namespace, so they load first and Config.lua /
+# Namespace.lua can fold them in. The map art itself (WorldMap\*.blp, the world
+# and continent maps) is not listed: it is read through its file path, see
+# Config.FDID_BASE.
+# FDIDMap.lua: FileDataID -> tile path, plus the HD continent layouts.
+# MinimapTiles.lua: where each of the client's minimap tiles sits on a zone
+# map. CaveTiles.lua: the same for cave and mine floors.
+FDIDMap.lua
+MinimapTiles.lua
+CaveTiles.lua
 CaveData.lua
 Namespace.lua
 Config.lua
-MapData.lua
 TexturePool.lua
 BaseArt.lua
 MapFrameBg.lua

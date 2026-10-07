@@ -3,10 +3,9 @@
 # published or cached. Resolves its paths from the repo layout, so it works from
 # any working directory.
 #
-# The generated output lands in two addons, which is why there are two checks:
-#   art     src/addon/mapdata/WorldMap/           (Map Data addon, multi-GB)
-#   tables  src/addon/mapdata/FDIDMap.lua (Map Data addon, small),
-#           src/addon/client/CaveData.lua (core addon, small)
+# Two checks, because the tables are small and the art is multi-GB:
+#   art     src/addon/client/WorldMap/
+#   tables  src/addon/client/FDIDMap.lua and CaveData.lua
 #
 # Usage: verify-world-map-assets.sh [tables|art|all]    (default: all)
 set -euo pipefail
@@ -16,7 +15,7 @@ repo="$(cd "$(dirname "$0")/../.." && pwd)"
 status=0
 
 verify_art() {
-  cd "$repo/src/addon/mapdata"
+  cd "$repo/src/addon/client"
 
   # Count the two trees separately. A single total lets one of them
   # cover for the other: when every zone in phase 3 died and only the
@@ -58,25 +57,16 @@ verify_art() {
 }
 
 verify_tables() {
-  # FDIDMap.lua ships in the Map Data addon, CaveData.lua in the core addon.
-  local fdid="$repo/src/addon/mapdata/FDIDMap.lua"
+  local fdid="$repo/src/addon/client/FDIDMap.lua"
   local cave="$repo/src/addon/client/CaveData.lua"
 
   test -s "$fdid" || { echo "::error::FDIDMap.lua is missing or empty"; status=1; return; }
   test -s "$cave" || { echo "::error::CaveData.lua is missing or empty"; status=1; }
-  cd "$repo/src/addon/mapdata"
+  cd "$repo/src/addon/client"
   # Both tables have to be populated, or the addon silently drops a
   # background that the TOC and the options panel still advertise.
   grep -q '^HFWMF_FDID_MAP_ORIGINAL = {$' FDIDMap.lua || {
     echo "::error::FDIDMap.lua has no populated HFWMF_FDID_MAP_ORIGINAL table"
-    status=1
-  }
-  # The build stamp is what the addon compares with the Map Data addon's TOC.
-  # CI stamps right after generating (stamp-data-build.sh), so an unstamped
-  # table here means that step was skipped and every user would get a
-  # "data does not match" warning, or none at all.
-  grep -q '^HFWMF_DATA_BUILD = "[0-9a-f]\+"$' FDIDMap.lua || {
-    echo "::error::FDIDMap.lua has no HFWMF_DATA_BUILD stamp"
     status=1
   }
   echo "Tables OK: FDIDMap.lua $(du -h "$fdid" | cut -f1), CaveData.lua $(du -h "$cave" 2>/dev/null | cut -f1)."

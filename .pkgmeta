@@ -6,10 +6,10 @@
 # whole checkout into the package folder and `move-folders` below hoists
 # src/addon/client/ to the top.
 #
-# The zip is dominated by src/addon/mapdata/WorldMap/, which is generated (and
-# .gitignored), not committed. CI regenerates it and then `git add -fN`s it so
-# the packager stops treating it as an untracked file and copies it into the
-# package. See .github/workflows/release.yml.
+# The zip is dominated by src/addon/client/WorldMap/ (the map art), which is
+# generated (and .gitignored), not committed. CI regenerates it and then
+# `git add -fN`s it so the packager stops treating it as an untracked file and
+# copies it into the package. See .github/workflows/release-addon-client.yml.
 
 package-as: HighFidelityWorldMap
 
@@ -34,7 +34,6 @@ ignore:
   - assets
   - docs
   - src/addon/client/dev
-  - src/addon/mapdata
   - src/generator
 
 # Ace3: fetched here rather than committed, from the canonical WowAce svn
@@ -60,11 +59,3 @@ enable-nolib-creation: no
 # Single `## Interface:` line, single game flavour (Forever, 16xxx), nothing to
 # split.
 enable-toc-creation: no
-
-# The map art is its own CurseForge project (built from .pkgmeta-mapdata,
-# https://www.curseforge.com/wow/addons/hfwm-art). The packager declares it as
-# a required relation on every CurseForge upload, matching the TOC's
-# RequiredDeps. CurseForge rejects relations to projects that are not approved
-# and public, so the upload fails if that project ever stops being so.
-required-dependencies:
-  - hfwm-art

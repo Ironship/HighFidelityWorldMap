@@ -3,36 +3,21 @@
 # the caches. Prints step outputs (redirect into $GITHUB_OUTPUT):
 #   generate     true when the generator has to run
 #   cache-hit    true when everything needed came from the cache
-#   verify-mode  what verify-world-map-assets.sh should check (tables|all)
 #
 # Inputs (environment): TABLES_HIT and ART_HIT (the restore steps' cache-hit,
-# empty when the step did not run), TABLES_ONLY, LOOKUP_ONLY, BYPASS.
+# empty when the step did not run), BYPASS.
 set -euo pipefail
 
 tables_hit="${TABLES_HIT:-}"
 art_hit="${ART_HIT:-}"
-tables_only="${TABLES_ONLY:-false}"
-lookup_only="${LOOKUP_ONLY:-false}"
 bypass="${BYPASS:-false}"
 
+# Both entries are needed: the tables and the art ship in the same package.
 generate=true
-if [[ "$bypass" != "true" && "$tables_hit" == "true" ]]; then
-  # The tables are there; the art is needed too unless the caller only ships
-  # the tables.
-  if [[ "$tables_only" == "true" || "$art_hit" == "true" ]]; then
-    generate=false
-  fi
-fi
-
-# The tables-only path never builds src/addon/mapdata/WorldMap. It must
-# verify only the Lua tables, even when generation is required for that fast
-# metadata-only path.
-verify=all
-if [[ "$tables_only" == "true" || ( "$generate" == "false" && "$lookup_only" == "true" ) ]]; then
-  verify=tables
+if [[ "$bypass" != "true" && "$tables_hit" == "true" && "$art_hit" == "true" ]]; then
+  generate=false
 fi
 
 echo "generate=${generate}"
 echo "cache-hit=$([[ "$generate" == "false" ]] && echo true || echo false)"
-echo "verify-mode=${verify}"
-echo "Decision: generate=${generate} (tables hit='${tables_hit}', art hit='${art_hit}', tables-only=${tables_only}, lookup-only=${lookup_only}, bypass=${bypass})" >&2
+echo "Decision: generate=${generate} (tables hit='${tables_hit}', art hit='${art_hit}', bypass=${bypass})" >&2

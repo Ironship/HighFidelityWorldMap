@@ -9,11 +9,7 @@
       "path": "src/addon/client"
     },
     {
-      "name": "addon/mapdata",
-      "path": "src/addon/mapdata"
-    },
-    {
-      "name": "mapdata/generator",
+      "name": "generator",
       "path": "src/generator"
     }
   ],

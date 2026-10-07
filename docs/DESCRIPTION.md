@@ -2,19 +2,11 @@
 
 # High-Fidelity World Map (HFWM)
 
-Client: [![CurseForge Downloads](https://img.shields.io/curseforge/dt/1701034?color=orange&logo=curseforge&style=flat-square)](https://www.curseforge.com/projects/1701034)
-
-MapArt: 
-[![CurseForge Downloads](https://img.shields.io/curseforge/dt/1727004?color=orange&logo=curseforge&style=flat-square)](https://www.curseforge.com/projects/1727004)
-
+[![CurseForge Downloads](https://img.shields.io/curseforge/dt/1701034?color=orange&logo=curseforge&style=flat-square)](https://www.curseforge.com/projects/1701034)
 
 Adds a "HD/SD" toggle to view the world map pane with a detailed, high-resolution map constructed by stitching together minimap satellite imagery across entire zones. The result is a seamless, richly detailed world map that shows all the finer details of the world of Azeroth with far greater clarity than the game's default map ever could.
 
 ![HD/SD Toggle](https://i.postimg.cc/3kXr2BBY/hd-sd-toggle.jpg)
-
-## Requires Map Data
-
-The map art ships as a separate addon, [High Fidelity World Map Art](https://www.curseforge.com/wow/addons/hfwm-art) (`HighFidelityWorldMap_MapData_Forever`), because it is large and rarely changes. CurseForge and most addon managers install it automatically as a dependency. If you install by hand, install both. HFWM prints a warning in chat when the Map Data addon is missing or out of date.
 
 ## Fog of War support:
 
