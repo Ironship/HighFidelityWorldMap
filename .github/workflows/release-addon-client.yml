@@ -1,12 +1,12 @@
 name: "Create Release: Client"
 
 # Creates an official tagged release of the addon: the version tag, the package
-# and the GitHub Release with the zip attached. The package is one bundle with
-# everything the addon needs: the Lua code and the generated map art, tile
-# tables and cave data (src/addon/client/WorldMap/ is 7 GB or so). The package
-# step itself uploads nowhere else; the last job then starts "Publish Client
-# Release to CurseForge" with the new tag. If that fails, re-run it on its own
-# and give it the tag.
+# and the GitHub Release with the zip attached. The package is the Lua code and
+# the generated tile tables and cave data. It does not include the map art
+# (src/addon/client/WorldMap/) or a CHANGELOG. The package step itself uploads
+# nowhere else; the last job then starts "Publish Client Release to
+# CurseForge" with the new tag. If that fails, re-run it on its own and give it
+# the tag.
 #
 # Two ways in:
 #
@@ -14,10 +14,7 @@ name: "Create Release: Client"
 #   2. Actions -> Create Release: Client -> Run workflow, pick patch/minor/major
 #      and the tag is created for you.
 #
-# Prefer option 2. GitHub only lets a tag-triggered run read caches saved from
-# main, and option 2 runs on main, so the ~40 minute art generation is a cache
-# hit whenever the generator has not changed. A pushed tag on a cold cache
-# generates the art itself.
+# Prefer option 2.
 #
 # Option 2 deliberately tags and packages inside this one workflow. A tag pushed
 # with GITHUB_TOKEN does not trigger other workflows, so chaining two workflows
@@ -26,8 +23,7 @@ name: "Create Release: Client"
 # Three jobs, so a failure late on does not redo an earlier part:
 #
 #   tag      (manual runs only) bumps the version and pushes the tag
-#   release  restores or generates the world map assets, packages and creates
-#            the GitHub Release
+#   release  packages and creates the GitHub Release
 #   publish  calls "Publish Client Release to CurseForge" as a reusable workflow
 #
 # If release or publish fails (GitHub outage, ...), fix it and use "Re-run
@@ -92,8 +88,7 @@ jobs:
     # tag is skipped on a pushed-tag release; that is fine. A failed tag job is not.
     if: ${{ !cancelled() && needs.tag.result != 'failure' }}
     runs-on: ubuntu-latest
-    # A cache miss means regenerating the art here, so keep the long limit.
-    timeout-minutes: 300
+    timeout-minutes: 30
     env:
       # Empty on a pushed-tag release, where the tag is the triggering ref.
       RELEASE_TAG: ${{ needs.tag.outputs.tag || github.ref_name }}
@@ -106,21 +101,14 @@ jobs:
           ref: ${{ needs.tag.outputs.tag }}
           fetch-depth: 0
 
-      # A cache hit when the generator has not changed since the assets were
-      # last built on main; otherwise this regenerates (and saves) them.
-      - name: Generate world map assets
-        uses: ./.github/actions/generate-world-map-assets
-        with:
-          save: "true"
-
-      # release.sh excludes anything `git ls-files --others` reports, which
-      # includes .gitignored paths, so the generated src/addon/client/WorldMap/
-      # would be dropped from the zip. Adding it to the index with
-      # --intent-to-add (-N) takes it off that list without writing GBs of
-      # blobs into .git. The index is thrown away with the runner; nothing is
-      # committed.
-      - name: Stage generated art
-        run: git add -fN src/addon/client/WorldMap
+      # The packager ships src/addon/client/ as it is checked out. The generated
+      # WorldMap/ art is .gitignored, so it is left out of the package.
+      #
+      # The packager would write a CHANGELOG.md into the package. A manual
+      # changelog (see .pkgmeta) is read from the checkout instead, so it is
+      # used for the upload but never ships.
+      - name: Write release notes
+        run: .github/scripts/release-notes.sh "$RELEASE_TAG" > .release-notes.md
 
       # The packager has no tag-prefix option: its changelog uses "the previous
       # tag" among all tags. Hide the retired mapdata-v* series from it.
@@ -157,7 +145,7 @@ jobs:
           retention-days: 7
           # .release is a dot-directory, which the action skips by default.
           include-hidden-files: true
-          # BLPs are already DXT-compressed; re-deflating them is wasted time.
+          # The zip is already deflated once; re-deflating it is wasted time.
           compression-level: 0
 
   publish:
@@ -166,11 +154,9 @@ jobs:
     # Only once the GitHub Release exists, which publish-client-release-curseforge.yml checks for.
     if: ${{ !cancelled() && needs.release.result == 'success' }}
     # Called, so its jobs are jobs of this run. The tag is the one just created
-    # by a manual run, or the pushed tag itself. actions: write is for the
-    # world map asset build it calls in turn.
+    # by a manual run, or the pushed tag itself.
     permissions:
       contents: read
-      actions: write
       checks: write
     uses: ./.github/workflows/publish-client-release-curseforge.yml
     with:

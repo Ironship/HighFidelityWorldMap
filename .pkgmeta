@@ -6,15 +6,19 @@
 # whole checkout into the package folder and `move-folders` below hoists
 # src/addon/client/ to the top.
 #
-# The zip is dominated by src/addon/client/WorldMap/ (the map art), which is
-# generated (and .gitignored), not committed. CI regenerates it and then
-# `git add -fN`s it so the packager stops treating it as an untracked file and
-# copies it into the package. See .github/workflows/release-addon-client.yml.
+# src/addon/client/WorldMap/ (the map art) is generated and .gitignored. The
+# packager skips untracked files, so it is not in the package and CI does not
+# stage it.
 
 package-as: HighFidelityWorldMap
 
-# No colon in the value: the packager's pkgmeta parser splits on the first one.
-changelog-title: High Fidelity World Map
+# The packager would write a CHANGELOG.md into the package. A manual changelog
+# is read from the checkout instead and only used for the upload, so none ships.
+# The workflows write it with .github/scripts/release-notes.sh; without that
+# file the packager falls back to generating CHANGELOG.md.
+manual-changelog:
+  filename: .release-notes.md
+  markup-type: markdown
 
 # Hoist the addon out of src/addon/client/ so the TOC ends up at the package root.
 move-folders:
