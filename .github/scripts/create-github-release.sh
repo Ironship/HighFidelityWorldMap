@@ -24,22 +24,8 @@ if [[ ${#zips[@]} -ne 1 ]]; then
 fi
 mv "${zips[0]}" ".release/${asset}"
 
-# Notes: commit subjects since the previous release.
-url="https://github.com/${GITHUB_REPOSITORY}"
 notes="$(mktemp)"
-prev="$(git tag -l 'v[0-9]*' --sort=-v:refname | grep -vxF "$RELEASE_TAG" | while read -r t; do
-  # The newest tag that is an ancestor of this one.
-  git merge-base --is-ancestor "$t" "$RELEASE_TAG" && { echo "$t"; break; }
-done || true)"
-{
-  if [[ -n "$prev" ]]; then
-    echo "[Full Changelog](${url}/compare/${prev}...${RELEASE_TAG})"
-    echo
-    git log "${prev}..${RELEASE_TAG}" --pretty='- %s'
-  else
-    git log "${RELEASE_TAG}" --pretty='- %s'
-  fi
-} > "$notes"
+"$(dirname "$0")/release-notes.sh" "$RELEASE_TAG" > "$notes"
 
 flags=()
 [[ "${RELEASE_TAG,,}" == *alpha* || "${RELEASE_TAG,,}" == *beta* ]] && flags+=(--prerelease)
