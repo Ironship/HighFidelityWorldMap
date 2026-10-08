@@ -16,7 +16,7 @@ Exploration is at the heart of WoW. To keep the spirit of mystery alive going in
 
 ## Offers optional replacements for *all* maps
 
-Not just individual zones, continents too! With full control and various customization options.
+Not just individual zones, continents too! With full control and various customization options. (req. High Fidelity World Map: Art companion addon)
 
 ![Continents](https://i.postimg.cc/ZW8Y6ccq/continents.jpg)
 
@@ -34,26 +34,26 @@ Overlays interior cave and dungeon layouts in a classic-style, movable frame to 
 
 ![Cave 1](https://i.postimg.cc/cvR1fmmC/cave-1.jpg)
 
-A slider on the side can be adjusted to change the slice of cave depth you are currently viewing. Super helpful for deep, winding caves!
+A slider on the side can be adjusted to change the slice of cave depth you are currently viewing. Super helpful for traversing deep, winding caves!
 
 ![Cave 2](https://i.postimg.cc/Mn7Z1DDc/cave-2.jpg)
 
 ## FAQ:
 
 ### Who is the artist?
-My sister designed the logo :3 Go pay her to draw your cat. We LOVE cats here.
+My lil' sis designed the logo :3 notice the kitties? She draws cats. Go pay her to draw your cat. We LOVE cats here.
 
-The generator uses in-game assets to build the stitched world map used in the "HD" mode. 
+The base hfwm visual assets are read from the game file data in real time and do not require any additional downloads, so, Blizzard?
 
 ### Why do some parts of the map look wrong / glitched?
 
 ![Glitch 1](https://i.postimg.cc/cvR1fmmt/glitch-1.png)
 
-That's just… how it actually looks on the minimap, I'm afraid.
+This kind of visual eyesore is just… how it actually looks on the minimap, I'm afraid.
 
 ![Glitch 2](https://i.postimg.cc/v4r85zz6/glitch-2.png)
 
-This happens a lot throughout the game, and so I do actually want to go through and fix each issue manually eventually. This will make its way into the mod as a secondary selectable map.
+This happens a lot throughout the game, and so I do actually want to go through and fix each issue by hand eventually. This will make its way into the companion "art" addon as a secondary selectable map.
 
 Cave map controller support coming soon.
 
