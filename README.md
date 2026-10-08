@@ -185,16 +185,16 @@ The repo includes a GitHub Actions workflow that runs linting and smoke-test gen
 
 Release packaging is handled by GitHub Actions workflows and the packager tool, not by a local manual compile step.
 
-There is a single package, `HighFidelityWorldMap`, with a single tag series (`v1.2.3`). It contains the Lua, the generated tables and the map art, so a release is one CurseForge file (several GB) with everything the addon needs.
+There is a single package, `HighFidelityWorldMap`, with a single tag series (`v1.2.3`). It contains the Lua and the committed tables (`FDIDMap.lua`, `CaveData.lua`). It does not contain the `WorldMap/` art or a `CHANGELOG.md`: the release notes are written to `.release-notes.md` by `.github/scripts/release-notes.sh` and given to the packager as a manual changelog (`.pkgmeta`), which uploads them without copying them into the package.
 
 When ready to publish:
 
-- run **Create Release: Client** (or push a `v*` tag to `main`) to restore or regenerate the world map assets, package the addon, create the GitHub release (one asset, `hfwm-forever-client-v1.2.3.zip`) and then start **Publish Client Release to CurseForge** with the new tag. Manual runs take a bump and an optional prerelease suffix (for example `beta.1`) and run on `main`, which lets them reuse the cached assets; a pushed tag on a cold cache has to regenerate them (~40 minutes).
+- run **Create Release: Client** (or push a `v*` tag to `main`) to package the addon, create the GitHub release (one asset, `hfwm-forever-client-v1.2.3.zip`) and then start **Publish Client Release to CurseForge** with the new tag. Manual runs take a bump and an optional prerelease suffix (for example `beta.1`) and run on `main`.
 - run **Publish Client Release to CurseForge** yourself with a release's tag to retry or redo that upload to CurseForge.
 
 The older `mapdata-v*` tags belong to the retired separate Map Data addon. The release scripts ignore them.
 
-The generated art and tables are cached under a hash of the generator sources: `mapart-v2-<hash>` for `src/addon/client/WorldMap/` and `maptables-v2-<hash>` for `FDIDMap.lua` and `CaveData.lua`.
+The `generate-world-map-assets` workflow still builds and caches the art and tables on `main` (`mapart-v2-<hash>` for `src/addon/client/WorldMap/`, `maptables-v2-<hash>` for `FDIDMap.lua` and `CaveData.lua`), but releases do not use it.
 
 ## Notes
 
