@@ -745,6 +745,12 @@ local function ApplyGameMenuChrome()
                 local hdr = headerSrc.GetTexture and headerSrc:GetTexture() or "nil"
                 P("Cave skin header source=" .. tostring(hdr))
             end
+        else
+            -- A fresh texture is shown by default, even with no art: left
+            -- that way it anchors the title text to a zero-size point 12px
+            -- above the window, outside the title bar. Hidden, the title
+            -- falls back to Ace's own header art and its default position.
+            caveHeaderTex:Hide()
         end
     end
 
