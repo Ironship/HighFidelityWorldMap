@@ -3,20 +3,20 @@
 This project is split into two parts:
 
 - `src/addon/client/` — the addon (`HighFidelityWorldMap`) that hooks into the
-  in-game world map. It is released as one package: the Lua code, the stitched
-  World and Continent map art (the generated `WorldMap/` tile tree), and the
-  generated lookup/placement tables that map the client's own minimap tiles
-  onto zone and cave maps.
-- `src/generator/` — the Python pipeline that generates the map tiles and FDID
-  map tables. It writes the tiles into `src/addon/client/WorldMap/` and the Lua
-  tables (`FDIDMap.lua`, `CaveData.lua`) into `src/addon/client/`.
+  in-game world map. It is assetless for client-provided views and uses the
+  game's own map textures. If custom stitched assets are needed, such as the
+  World or Continent views, those are generated and delivered via the companion
+  addon package.
+- `src/generator/` — the Python pipeline that generates cave tile data and any
+  custom stitched map assets. It writes generated output into `src/addon/client/`
+  and the companion asset tree when needed.
 
 Everything else (`docs/`, `assets/`, `.github/`) is repository machinery and is not packaged.
 
 The addon itself is not a traditional "build" in the sense of compiling a binary. The real work is:
 
 1. fetching Ace3 libraries for local dev
-2. generating the map data from minimap tiles and DB2/ADT metadata
+2. generating cave tile data and any required stitched assets
 3. packaging the addon for release
 
 ## Prerequisites
@@ -52,9 +52,9 @@ ADDONS="<WoW install>/_classic_beta_/Interface/AddOns"
 ln -s "$PWD/src/addon/client" "$ADDONS/HighFidelityWorldMap"
 ```
 
-The addon reads its tiles from `Interface\AddOns\HighFidelityWorldMap\WorldMap\`,
-which is where the generator writes them (step 4), so without them the map shows
-missing textures.
+The client uses the game's built-in assets for standard map views. If custom
+stitched assets are needed for the World or Continent views, the generator
+produces them for the companion addon package.
 
 ## 3) Install Python dependencies
 
@@ -63,33 +63,33 @@ python -m pip install --upgrade pip
 python -m pip install -r src/generator/requirements.txt
 ```
 
-## 4) Generate the map art
+## 4) Generate cave tile data and custom assets
 
-The generated map data is not tracked in Git and is rebuilt from source data.
+The generated data is not tracked in Git and is rebuilt from source data.
 
 ```sh
 python src/generator/generateHFWM.py
 ```
 
-Tiles are written to `src/addon/client/WorldMap/`, and `FDIDMap.lua` and
-`CaveData.lua` into `src/addon/client/`. Downloads are cached under
-`src/generator/.cache-*/`.
+The generator writes the supported outputs into `src/addon/client/`, including
+the cave tile data and any Lua tables used by the addon. If custom stitched
+assets are enabled, those are written for the companion addon package. Downloads
+are cached under `src/generator/.cache-*/`.
 
-Only the World and Continent views are stitched into art. Zone and cave maps are
-drawn from the client's own minimap tiles, so the addon only carries their
-placement data (`MinimapTiles.lua`, `CaveTiles.lua`), which is not part of the main
-run: regenerate it from the cached zone DB with
-`python src/generator/scripts/emit_minimap_tiles.py` and
-`python src/generator/scripts/emit_cave_tiles.py`.
+If you only need to refresh the cave tile data, you can run the relevant emit
+script directly from the cached zone DB:
+
+```sh
+python src/generator/scripts/emit_cave_tiles.py
+```
 
 Useful flags include:
 
-- `--zones` to process only selected maps (only the World and Continent maps produce art)
+- `--zones` to process only selected maps
 - `--dry-run` to test the pipeline without writing output
 - `--refresh` to re-download cached inputs
 - `--threads` to parallelize generation
-- `--ocean` / `--base-art` / `--alpha-sea` for setting the sea/background behavior
-- `--skip-fdid-map` for some focused local testing runs
+- `--skip-fdid-map` for focused local testing runs
 
 ## 5) Local smoke tests
 
@@ -120,25 +120,25 @@ done < <(grep -E '^[^#[:space:]].*\.(lua|xml)[[:space:]]*$' src/addon/client/Hig
 
 ## 7) CI checks
 
-The repo includes a GitHub Actions workflow that runs linting and smoke-test generation, and dry-runs the packager (`.pkgmeta`). This is the same rough validation path contributors should run locally before opening a PR.
+The repo includes a GitHub Actions workflow that runs linting and smoke-test generation, and dry-runs the packager (`.pkgmeta`). This is the same rough validation path contributors should run locally before sending changes.
 
 ## 8) Release packaging
 
 Release packaging is handled by GitHub Actions workflows and the packager tool, not by a local manual compile step.
 
-There is a single package, `HighFidelityWorldMap`, with a single tag series (`v1.2.3`). It contains the Lua and the committed tables (`FDIDMap.lua`, `CaveData.lua`). It does not contain the `WorldMap/` art or a `CHANGELOG.md`: the release notes are written to `.release-notes.md` by `.github/scripts/release-notes.sh` and given to the packager as a manual changelog (`.pkgmeta`), which uploads them without copying them into the package.
+There is a single package, `HighFidelityWorldMap`, with a single tag series (`v1.2.3`). It contains the Lua and the committed tables (`FDIDMap.lua`, `CaveData.lua`). It does not contain binary map data or a bundled `WorldMap/` tree in the client addon.
 
 When ready to publish:
 
-- run **Create Release: Client** (or push a `v*` tag to `main`) to package the addon, create the GitHub release (one asset, `hfwm-forever-client-v1.2.3.zip`) and then start **Publish Client Release to CurseForge** with the new tag. Manual runs take a bump and an optional prerelease suffix (for example `beta.1`) and run on `main`.
+- run **Create Release: Client** (or push a `v*` tag to `main`) to package the addon, create the GitHub release (one asset, `hfwm-forever-client-v1.2.3.zip`) and then start **Publish Client Release to CurseForge**.
 - run **Publish Client Release to CurseForge** yourself with a release's tag to retry or redo that upload to CurseForge.
 
 The older `mapdata-v*` tags belong to the retired separate Map Data addon. The release scripts ignore them.
 
-The `generate-world-map-assets` workflow still builds and caches the art and tables on `main` (`mapart-v2-<hash>` for `src/addon/client/WorldMap/`, `maptables-v2-<hash>` for `FDIDMap.lua` and `CaveData.lua`), but releases do not use it.
+The `generate-world-map-assets` workflow still builds and caches supporting data on `main` (`maptables-v2-<hash>` for the Lua tables and any optional stitched assets for the companion addon).
 
 ## Notes
 
-- The generated `src/addon/client/WorldMap/` directory is a build artifact and is not normally committed.
+- Generated cave tile data is a build artifact and is not normally committed.
 - `src/addon/client/FDIDMap.lua` and `src/addon/client/CaveData.lua` are part of the repo and are produced by the generator.
 - `src/addon/client/Libs/` is fetched during local dev and CI; none of its contents are committed.
