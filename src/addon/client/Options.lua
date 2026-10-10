@@ -79,8 +79,8 @@ local options = {
         enabled = {
             order = 10,
             type = "toggle",
-            name = "Enable the overlay",
-            desc = "Turns the satellite map overlay on or off.",
+            name = "Enable",
+            desc = "Enables High Fidelity World Map",
             get = function() return Config.db.enabled end,
             set = function(_, value)
                 Config.db.enabled = value
@@ -119,8 +119,8 @@ local options = {
             desc = "Adds a small button to the world map's top-right "
                 .. "corner for switching between the high-fidelity "
                 .. "overlay and Blizzard's own map, just for the current "
-                .. "map session -- it does not touch \"Enable the "
-                .. "overlay\" above, so the cave map and everything else "
+                .. "map session -- it does not touch \"Enable\" "
+                .. "above, so the cave map and everything else "
                 .. "stay on. Turn off for a cleaner map with one less "
                 .. "button.",
             get = function() return Config.db.toggleButtonEnabled end,
@@ -203,7 +203,7 @@ local options = {
                     name = "Open automatically",
                     desc = "Opens the cave map the instant you enter a "
                         .. "tracked cave.",
-                    disabled = function() return not Config.db.caveEnabled end,
+                    disabled = function() return not (Config.db.enabled and Config.db.caveEnabled) end,
                     get = function() return Config.db.caveAutoOpen end,
                     set = function(_, value) Config.db.caveAutoOpen = value end,
                 },
@@ -214,7 +214,7 @@ local options = {
                     desc = "Reopens the cave map only if it was open when "
                         .. "you last closed one. Takes over from Open "
                         .. "Automatically when the two disagree.",
-                    disabled = function() return not Config.db.caveEnabled end,
+                    disabled = function() return not (Config.db.enabled and Config.db.caveEnabled) end,
                     get = function() return Config.db.caveRememberState end,
                     set = function(_, value)
                         Config.db.caveRememberState = value
@@ -226,7 +226,7 @@ local options = {
                     name = "Cave map opacity",
                     desc = "Opacity of the cave map window.",
                     min = 0.2, max = 1, step = 0.05, isPercent = true,
-                    disabled = function() return not Config.db.caveEnabled end,
+                    disabled = function() return not (Config.db.enabled and Config.db.caveEnabled) end,
                     get = function() return Config:CaveAlpha() end,
                     set = function(_, value)
                         Config.db.caveAlpha = value
@@ -348,8 +348,30 @@ mapBackgroundArgs.fogFill = {
     relWidth = 0.3,
     hidden = function() return not ZoneIsHybrid() end,
 }
+-- Everything but the Enable toggle (and the intro text) greys out while the
+-- addon is off. `disabled` is inherited, but the deepest definition wins, so
+-- the cave children (which have their own) repeat the check above.
+-- Profiles is added later in Init, so it stays usable.
+for key, option in pairs(options.args) do
+    if key ~= "enabled" and key ~= "intro" then
+        option.disabled = function() return not Config.db.enabled end
+    end
+end
 
 Options.optionsTable = options
+
+local LOGO = "Interface\\AddOns\\" .. addonName .. "\\Assets\\logo_lowres.dxt5.blp"
+
+--- Replace the panel's title text with the logo (512x128 source, shown at 4:1).
+--- Title is hidden via alpha, not cleared: AceConfigDialog re-sets its text
+--- on every redraw.
+local function ShowLogo(frame)
+    frame.obj.label:SetAlpha(0)
+    local logo = frame:CreateTexture(nil, "OVERLAY")
+    logo:SetTexture(LOGO)
+    logo:SetSize(144, 36)
+    logo:SetPoint("TOPLEFT", 10, -4)
+end
 
 --- Register the options table and hook it into the client's own options
 --- UI. Safe to call more than once.
@@ -363,9 +385,11 @@ function Options:Init()
     LibStub("AceConfigRegistry-3.0"):RegisterOptionsTable(addonName, options)
 
     local AceConfigDialog = LibStub("AceConfigDialog-3.0")
-    self.clientRegistered = pcall(
+    local ok, blizFrame = pcall(
         AceConfigDialog.AddToBlizOptions, AceConfigDialog,
         addonName, PANEL_TITLE)
+    self.clientRegistered = ok
+    if ok and blizFrame then ShowLogo(blizFrame) end
 end
 
 --- Open the options, wherever they ended up living.
