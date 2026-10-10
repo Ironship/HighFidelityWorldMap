@@ -900,7 +900,13 @@ local function DoRefresh(force)
     -- Blizzard's art.
     local clientZone = Config:GetClientZone(mapID)
     local gridX, gridY = 0, 0
+    -- Fog of War is a Zone Map feature (Config:FogOfWarEnabled keys off the
+    -- Zone background). Without the map-type check, a Hybrid World/Continent
+    -- map with Fog of War on took the explored-only path and drew just the
+    -- subset of tiles under whatever exploration textures it found.
+    local mapType = Config:ClassifyMapID(mapID)
     local fogOfWar = Config:FogOfWarEnabled() and background.key == "hybrid"
+        and mapType ~= "world" and mapType ~= "continent"
 
     local tileSource = {}
     local useBundled = false
@@ -1032,17 +1038,9 @@ local function DoRefresh(force)
         local bg
         if useBundled then
             bg = ApplyBackground(background)
-            if fogActive then
-                -- Fog of War wants Blizzard's own detail-layer art
-                -- underneath this addon's tiles on THIS map. That
-                -- grayscale-until-explored art is only used when the map
-                -- actually has live explored data to honor; otherwise the
-                -- regular HD tiles must stay in front and the SD base layer
-                -- must not leak through.
-                BaseArt:SetVisible(true)
-            else
-                BaseArt:SetVisible(false)
-            end
+            -- ApplyBackground already chose BaseArt's visibility from the
+            -- background: shown for Hybrid (which Fog of War requires),
+            -- hidden for everything else. Don't second-guess it here.
         else
             if Config.backdropTexture then Config.backdropTexture:Hide() end
             BaseArt:SetVisible(false)
