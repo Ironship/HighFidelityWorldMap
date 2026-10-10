@@ -119,3 +119,9 @@ jobs:
         with:
           args: -d -z
           pandoc: "false"
+
+      - name: Validate package config (art)
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -d -z -m .pkgmeta-art
+          pandoc: "false"

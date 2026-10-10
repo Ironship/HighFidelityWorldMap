@@ -4,6 +4,7 @@
 ## Author: HighFidelityWorldMap
 ## Version: @project-version@
 ## SavedVariables: HighFidelityWorldMapDB
+## OptionalDeps: HighFidelityWorldMap_Art_Forever
 ## IconTexture: Interface\Icons\INV_Misc_Map02
 ## X-Curse-Project-ID: 1701034
 

@@ -1,0 +1,187 @@
+name: "Create Release: Art"
+
+# Creates an official tagged release of the Art addon
+# (HighFidelityWorldMap_Art_Forever, the hfwm-art CurseForge project): the
+# generated World, Eastern Kingdoms and Kalimdor maps, ~1 GB. Zone and cave maps
+# are drawn from the game's own files and are not part of it. It has its own
+# tags (art-v<semver>), its own version and its own CurseForge project, so
+# the client addon can ship UI and settings updates without anyone
+# re-downloading the art. "Create Release: Client" is the other half; the two
+# workflows are independent and do not trigger each other.
+#
+# Two ways in:
+#
+#   1. Push a tag yourself:  git tag -a art-v1.0.1 -m art-v1.0.1 && git push origin art-v1.0.1
+#   2. Actions -> Create Release: Art -> Run workflow, pick patch/minor/major
+#      and the tag is created for you.
+#
+# Prefer option 2. It deliberately tags and packages inside this one workflow:
+# a tag pushed with GITHUB_TOKEN does not trigger other workflows.
+#
+# Three jobs, so a failure late on does not redo an earlier part:
+#
+#   tag      (manual runs only) bumps the version and pushes the tag
+#   release  generates (or restores from the Actions cache) the art, packages
+#            it and creates the GitHub Release with the zip attached
+#   publish  calls "Publish Art Release to CurseForge" as a reusable workflow
+#
+# If release or publish fails (GitHub outage, ...), fix it and use "Re-run
+# failed jobs": the jobs before it are not repeated, and a re-run does not bump
+# the version a second time.
+
+on:
+  push:
+    tags:
+      - "art-v[0-9]+.[0-9]+.[0-9]+"
+      - "art-v[0-9]+.[0-9]+.[0-9]+-*"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Which part of the version to bump"
+        type: choice
+        required: true
+        default: minor
+        options:
+          - patch
+          - minor
+          - major
+      prerelease:
+        description: 'Optional suffix, e.g. "beta.1" -> art-v1.1.0-beta.1. A tag containing "beta" or "alpha" is marked as a pre-release, and is published to that CurseForge channel.'
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+# Never run two releases at once.
+concurrency:
+  group: release-addon-art
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Bump version and push tag
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.bump.outputs.tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Bump version and push tag
+        id: bump
+        env:
+          BUMP: ${{ inputs.bump }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          TAG_PREFIX: art-v
+        run: .github/scripts/bump-version.sh
+
+  release:
+    name: Package and create GitHub release
+    needs: tag
+    # tag is skipped on a pushed-tag release; that is fine. A failed tag job is not.
+    if: ${{ !cancelled() && needs.tag.result != 'failure' }}
+    runs-on: ubuntu-latest
+    # A cache miss regenerates the art (phase 3 runs twice: art + Original/),
+    # so give it plenty of room.
+    timeout-minutes: 300
+    env:
+      # Empty on a pushed-tag release, where the tag is the triggering ref.
+      RELEASE_TAG: ${{ needs.tag.outputs.tag || github.ref_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # Empty on a pushed-tag release, which means the triggering ref.
+          ref: ${{ needs.tag.outputs.tag }}
+          fetch-depth: 0
+
+      # Only the World, Eastern Kingdoms and Kalimdor maps are generated. A
+      # manual run is on main, so it saves to the cache scope that later runs
+      # (and the publish workflow) can read; a pushed-tag run only reads it.
+      - name: Generate world map assets
+        uses: ./.github/actions/generate-world-map-assets
+        with:
+          save: ${{ github.ref == 'refs/heads/main' && 'true' || 'false' }}
+
+      # The packager skips anything `git ls-files --others` reports, which
+      # includes .gitignored paths, so the generated src/addon/art/WorldMap/
+      # would be dropped from the zip. Adding it to the index with
+      # --intent-to-add (-N) takes it off that list without writing GBs of
+      # blobs into .git. The index is thrown away with the runner; nothing is
+      # committed.
+      - name: Stage generated art
+        run: git add -fN src/addon/art/WorldMap
+
+      # No CHANGELOG.md ships in the package: .pkgmeta-art points the packager
+      # at this manual changelog, which it uploads but does not copy in.
+      - name: Write release notes
+        run: .github/scripts/release-notes.sh "$RELEASE_TAG" > .release-notes.md
+
+      # The packager has no tag-prefix option: its changelog uses "the previous
+      # tag" among all tags. Hide the client's v* series and the retired mapdata-v* tags from it.
+      - name: Isolate the art-v* tag series
+        run: .github/scripts/isolate-tag-series.sh v mapdata-v
+
+      # -d: build the zip, upload nothing. The packager's own GitHub upload adds
+      # release.json and dies on a zip this size (curl runs out of memory), so
+      # the Release is made by create-github-release.sh below. CurseForge is
+      # publish-art-release-curseforge.yml's job; keep -m in sync with it.
+      - name: Package
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -d -m .pkgmeta-art
+          # Nothing goes to WoWInterface, so skip the pandoc install.
+          pandoc: "false"
+
+      # The Release carries one asset: the addon zip, hfwm-forever-art-v1.2.3.zip.
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/create-github-release.sh "hfwm-forever-art-${RELEASE_TAG#art-}.zip"
+
+      # A new Release defaults to Latest. That belongs to the client addon,
+      # which is what people download from the Releases page.
+      - name: Keep the client as latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$RELEASE_TAG" --latest=false
+
+      # Redundant once the GitHub Release exists, but it is the only copy of the
+      # zip if the Release upload is what failed.
+      - name: Upload package
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: package
+          path: .release/*.zip
+          if-no-files-found: warn
+          retention-days: 7
+          # .release is a dot-directory, which the action skips by default.
+          include-hidden-files: true
+          # BLPs are already DXT-compressed; re-deflating them is wasted time.
+          compression-level: 0
+
+  publish:
+    name: Publish to all marketplaces
+    needs: [tag, release]
+    # Only once the GitHub Release exists, which publish-art-release-curseforge.yml checks for.
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
+    # Called, so its jobs are jobs of this run. actions: write is for the
+    # world map asset build it calls in turn.
+    permissions:
+      contents: read
+      actions: write
+      checks: write
+    uses: ./.github/workflows/publish-art-release-curseforge.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag || github.ref_name }}
+    secrets:
+      CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}

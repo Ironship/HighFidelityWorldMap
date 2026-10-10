@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prints the release notes for a tag to stdout: a compare link plus the commit
-# subjects since the previous v* release.
+# subjects since the previous release of the same series (v* or art-v*).
 #
 # Used for the GitHub Release body and, as .release-notes.md, as the packager's
 # manual changelog. A manual changelog is read from the checkout instead of
@@ -13,7 +13,9 @@ tag="${1:?usage: $0 <tag>}"
 : "${GITHUB_REPOSITORY:?}"
 
 url="https://github.com/${GITHUB_REPOSITORY}"
-prev="$(git tag -l 'v[0-9]*' --sort=-v:refname | grep -vxF "$tag" | while read -r t; do
+# "v1.2.3" -> "v", "art-v1.2.3" -> "art-v": everything before the first digit.
+prefix="${tag%%[0-9]*}"
+prev="$(git tag -l "${prefix}[0-9]*" --sort=-v:refname | grep -vxF "$tag" | while read -r t; do
   # The newest tag that is an ancestor of this one.
   git merge-base --is-ancestor "$t" "$tag" && { echo "$t"; break; }
 done || true)"

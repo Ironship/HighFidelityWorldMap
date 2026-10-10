@@ -396,8 +396,21 @@ Config.FDID_MAP_SUB      = HFWMF_FDID_MAP_SUB      or {}
 -- The raw second dump, written only when the pipeline ran with --original.
 -- Its paths carry their own "Original\\" prefix, so FDID_BASE serves both.
 Config.FDID_MAP_ORIGINAL = HFWMF_FDID_MAP_ORIGINAL or {}
--- The art ships in this addon's own WorldMap folder.
-Config.FDID_BASE    = "Interface\\AddOns\\HighFidelityWorldMap\\WorldMap\\"
+-- The World and continent art (WorldMap\*.blp) ships in the separate, optional
+-- Art addon (src/addon/art) so a client update is not a 1 GB download. The
+-- lookup tables above stay here and describe it either way.
+Config.ART_ADDON = "HighFidelityWorldMap_Art_Forever"
+Config.FDID_BASE = "Interface\\AddOns\\" .. Config.ART_ADDON .. "\\WorldMap\\"
+
+--- Is the Art addon installed and enabled? Without it the World and
+--- continent maps are left to Blizzard (see Renderer.lua's DoRefresh) and
+--- their options are greyed out; zone and cave maps do not use it.
+--- OptionalDeps in the TOC makes it load first when present.
+---@return boolean
+function Config:IsArtInstalled()
+    local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
+    return isLoaded and isLoaded(self.ART_ADDON) and true or false
+end
 
 -- Higher-resolution continent/world maps (see hfwm/gamedata/db2.py's
 -- _hires_geometry and hfwm/lua/fdid_map.py): Kalimdor/Eastern Kingdoms/the

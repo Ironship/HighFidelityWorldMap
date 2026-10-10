@@ -9,6 +9,10 @@
       "path": "src/addon/client"
     },
     {
+      "name": "addon/art",
+      "path": "src/addon/art"
+    },
+    {
       "name": "generator",
       "path": "src/generator"
     }

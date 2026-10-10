@@ -1,12 +1,12 @@
 name: "Create Release: Client"
 
-# Creates an official tagged release of the addon: the version tag, the package
-# and the GitHub Release with the zip attached. The package is the Lua code and
-# the generated tile tables and cave data. It does not include the map art
-# (src/addon/client/WorldMap/) or a CHANGELOG. The package step itself uploads
-# nowhere else; the last job then starts "Publish Client Release to
-# CurseForge" with the new tag. If that fails, re-run it on its own and give it
-# the tag.
+# Creates an official tagged release of the client addon: the version tag, the
+# package and the GitHub Release with the zip attached. The package is the Lua
+# code and the generated tile tables and cave data. It does not include the map
+# art (the Art addon, "Create Release: Art") or a CHANGELOG. The package step
+# itself uploads nowhere else; the last job then starts "Publish Client
+# Release to CurseForge" with the new tag. If that fails, re-run it on its own
+# and give it the tag.
 #
 # Two ways in:
 #
@@ -101,8 +101,8 @@ jobs:
           ref: ${{ needs.tag.outputs.tag }}
           fetch-depth: 0
 
-      # The packager ships src/addon/client/ as it is checked out. The generated
-      # WorldMap/ art is .gitignored, so it is left out of the package.
+      # The packager ships src/addon/client/ as it is checked out. The Art
+      # addon (src/addon/art/) is its own package, see release-addon-art.yml.
       #
       # The packager would write a CHANGELOG.md into the package. A manual
       # changelog (see .pkgmeta) is read from the checkout instead, so it is
@@ -111,9 +111,9 @@ jobs:
         run: .github/scripts/release-notes.sh "$RELEASE_TAG" > .release-notes.md
 
       # The packager has no tag-prefix option: its changelog uses "the previous
-      # tag" among all tags. Hide the retired mapdata-v* series from it.
+      # tag" among all tags. Hide the Art addon's art-v* series and the retired mapdata-v* tags from it.
       - name: Isolate the v* tag series
-        run: .github/scripts/isolate-tag-series.sh
+        run: .github/scripts/isolate-tag-series.sh art-v mapdata-v
 
       # -d: build the zip, upload nothing. The packager's own GitHub upload adds
       # release.json, names the zip after the project and dies on a zip this

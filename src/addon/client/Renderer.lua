@@ -846,6 +846,18 @@ local function DoRefresh(force)
         return
     end
 
+    -- The World and continent art is in the optional Art addon. Without it
+    -- those maps are left exactly as Blizzard draws them; zones and caves
+    -- draw from the client's own tiles and do not need it.
+    if not Config:IsArtInstalled() then
+        local mapType = Config:ClassifyMapID(mapID)
+        if mapType == "world" or mapType == "continent" then
+            if trace then P("  BAIL: Art addon not installed") end
+            RestoreDefaults()
+            return
+        end
+    end
+
     local layer   = allLayers[layerIdx]
     local layerW  = layer.layerWidth
     local layerH  = layer.layerHeight

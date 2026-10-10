@@ -16,7 +16,7 @@ Exploration is at the heart of WoW. To keep the spirit of mystery alive going in
 
 ## Offers optional replacements for *all* maps
 
-Not just individual zones, continents too! With full control and various customization options. (req. High Fidelity World Map: Art companion addon)
+Not just individual zones, continents too! With full control and various customization options. (Continent and World maps need the optional High Fidelity World Map: Art companion addon; everything else works without it.)
 
 ![Continents](https://i.postimg.cc/ZW8Y6ccq/continents.jpg)
 

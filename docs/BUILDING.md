@@ -1,15 +1,16 @@
 # Building High Fidelity World Map: Forever
 
-This project is split into two parts:
+This project is split into three parts:
 
 - `src/addon/client/` — the addon (`HighFidelityWorldMap`) that hooks into the
-  in-game world map. It is assetless for client-provided views and uses the
-  game's own map textures. If custom stitched assets are needed, such as the
-  World or Continent views, those are generated and delivered via the companion
-  addon package.
-- `src/generator/` — the Python pipeline that generates cave tile data and any
-  custom stitched map assets. It writes generated output into `src/addon/client/`
-  and the companion asset tree when needed.
+  in-game world map. Zone and cave views are drawn from the game's own map
+  textures.
+- `src/addon/art/` — the optional Art addon (`HighFidelityWorldMap_Art_Forever`):
+  just the stitched World, Eastern Kingdoms and Kalimdor map tiles and a TOC,
+  kept separate so a client update is not a 1 GB download. The client
+  works without it.
+- `src/generator/` — the Python pipeline that generates the art and the Lua
+  tables. It writes into `src/addon/art/` and `src/addon/client/`.
 
 Everything else (`docs/`, `assets/`, `.github/`) is repository machinery and is not packaged.
 
@@ -52,9 +53,13 @@ ADDONS="<WoW install>/_classic_beta_/Interface/AddOns"
 ln -s "$PWD/src/addon/client" "$ADDONS/HighFidelityWorldMap"
 ```
 
-The client uses the game's built-in assets for standard map views. If custom
-stitched assets are needed for the World or Continent views, the generator
-produces them for the companion addon package.
+The client works on its own using the game's built-in assets. The World and
+continent maps need the optional Art addon: link it the same way, or install
+[hfwm-art](https://www.curseforge.com/wow/addons/hfwm-art) from CurseForge:
+
+```sh
+ln -s "$PWD/src/addon/art" "$ADDONS/HighFidelityWorldMap_Art_Forever"
+```
 
 ## 3) Install Python dependencies
 
@@ -71,10 +76,11 @@ The generated data is not tracked in Git and is rebuilt from source data.
 python src/generator/generateHFWM.py
 ```
 
-The generator writes the supported outputs into `src/addon/client/`, including
-the cave tile data and any Lua tables used by the addon. If custom stitched
-assets are enabled, those are written for the companion addon package. Downloads
-are cached under `src/generator/.cache-*/`.
+The generator writes the art (`WorldMap/`) into `src/addon/art/` and the Lua
+tables (`FDIDMap.lua`, cave tile data) into `src/addon/client/`. Only the World,
+Eastern Kingdoms and Kalimdor views are stitched; a full run takes about 40
+minutes. Downloads are cached under `src/generator/.cache-*/`. Pass `--no-caves`
+to skip `CaveData.lua` and `--skip-fdid-map` to skip `FDIDMap.lua`.
 
 If you only need to refresh the cave tile data, you can run the relevant emit
 script directly from the cached zone DB:
@@ -120,25 +126,30 @@ done < <(grep -E '^[^#[:space:]].*\.(lua|xml)[[:space:]]*$' src/addon/client/Hig
 
 ## 7) CI checks
 
-The repo includes a GitHub Actions workflow that runs linting and smoke-test generation, and dry-runs the packager (`.pkgmeta`). This is the same rough validation path contributors should run locally before sending changes.
+The repo includes a GitHub Actions workflow that runs linting and smoke-test generation, and dry-runs the packager for both addons (`.pkgmeta` and `.pkgmeta-art`). This is the same rough validation path contributors should run locally before sending changes.
 
 ## 8) Release packaging
 
 Release packaging is handled by GitHub Actions workflows and the packager tool, not by a local manual compile step.
 
-There is a single package, `HighFidelityWorldMap`, with a single tag series (`v1.2.3`). It contains the Lua and the committed tables (`FDIDMap.lua`, `CaveData.lua`). It does not contain binary map data or a bundled `WorldMap/` tree in the client addon.
+There are two packages, released separately so a UI or settings update does not mean re-downloading the art:
+
+- `HighFidelityWorldMap`, the client addon, tag series `v1.2.3`. It contains the Lua and the committed tables (`FDIDMap.lua`, `CaveData.lua`, `MinimapTiles.lua`, `CaveTiles.lua`), and no binary map data.
+- `HighFidelityWorldMap_Art_Forever`, the optional Art addon (the [hfwm-art](https://www.curseforge.com/wow/addons/hfwm-art) CurseForge project), tag series `art-v1.2.3`. It is only the stitched `WorldMap/` tiles for the **World**, **Eastern Kingdoms** and **Kalimdor** views and a TOC: no Lua. Zone and cave maps are drawn from the game's own files and ship no art. The client lists it under `OptionalDeps`; without it everything still works, but the World and continent maps are left to Blizzard and their options are greyed out.
+
+The Art addon used to be called `HighFidelityWorldMap_MapData_Forever` with `mapdata-v*` tags. Those tags are retired and hidden from the packager; a leftover `HighFidelityWorldMap_MapData_Forever` folder in an AddOns directory can be deleted.
 
 When ready to publish:
 
-- run **Create Release: Client** (or push a `v*` tag to `main`) to package the addon, create the GitHub release (one asset, `hfwm-forever-client-v1.2.3.zip`) and then start **Publish Client Release to CurseForge**.
-- run **Publish Client Release to CurseForge** yourself with a release's tag to retry or redo that upload to CurseForge.
+- run **Create Release: Client** (or push a `v*` tag to `main`) to package the client, create the GitHub release (one asset, `hfwm-forever-client-v1.2.3.zip`) and then start **Publish Client Release to CurseForge**.
+- run **Create Release: Art** (or push an `art-v*` tag to `main`) to generate the art, package `.pkgmeta-art`, create the GitHub release (one asset, `hfwm-forever-art-v1.2.3.zip`) and then start **Publish Art Release to CurseForge**.
+- run either **Publish ... Release to CurseForge** workflow yourself with a release's tag to retry or redo that upload.
 
-The older `mapdata-v*` tags belong to the retired separate Map Data addon. The release scripts ignore them.
-
-The `generate-world-map-assets` workflow still builds and caches supporting data on `main` (`maptables-v2-<hash>` for the Lua tables and any optional stitched assets for the companion addon).
+The `generate-world-map-assets` workflow builds and caches the art (`mapart-v2-<hash>`) on `main`, so an Art release only regenerates when the generator changed. Each release workflow's package step ignores the other series' tags.
 
 ## Notes
 
 - Generated cave tile data is a build artifact and is not normally committed.
 - `src/addon/client/FDIDMap.lua` and `src/addon/client/CaveData.lua` are part of the repo and are produced by the generator.
+- `src/addon/art/WorldMap/` (the art) is generated and gitignored; only the Art release workflows build it.
 - `src/addon/client/Libs/` is fetched during local dev and CI; none of its contents are committed.
