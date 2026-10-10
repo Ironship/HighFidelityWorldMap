@@ -499,6 +499,7 @@ function Commands:Handle(msg)
         P("|cffff4444Disabled|r")
     end
     ns.Renderer:ForceRefresh()
+    ns.ToggleButton:Refresh()
 end
 
 function Commands:Debug()

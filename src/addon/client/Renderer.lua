@@ -1114,7 +1114,7 @@ local function DoRefresh(force)
     -- while mixing it would cover the HD map completely wherever the player
     -- has explored. Tuck those pins just under the overlay instead.
     Exploration:ApplyLevels()
-    Config.overlayFrame:SetAlpha(Config.db.alpha)
+    Config.overlayFrame:SetAlpha(Config:GetAlpha())
 
     -- Tile layout
     local scaleX = canvasW / layerW

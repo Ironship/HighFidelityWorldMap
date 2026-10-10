@@ -94,6 +94,7 @@ local options = {
             set = function(_, value)
                 Config.db.enabled = value
                 ns.Renderer:ForceRefresh()
+                ns.ToggleButton:Refresh()
             end,
         },
         rememberMapZoomPan = {

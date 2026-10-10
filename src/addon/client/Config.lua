@@ -8,7 +8,8 @@ local Config = ns.Config
 -- Defaults (persisted per-profile in HighFidelityWorldMapDB)
 Config.DEFAULTS = {
     enabled       = true,
-    alpha         = 1.0,
+    -- HD/SD blend (ToggleButton's slider), remembered per map type.
+    alphas        = { zone = 1.0, continent = 1.0, world = 1.0 },
     mapBackground = "ocean",  -- see Config.BACKGROUNDS below
 
     -- Per-map-type overrides of mapBackground above (now labelled "Global
@@ -491,7 +492,21 @@ end
 --- threshold absorbs slider step rounding near the top.
 ---@return boolean
 function Config:IsMixing()
-    return self.db ~= nil and self.db.alpha < 0.995
+    return self.db ~= nil and self:GetAlpha() < 0.995
+end
+
+--- Blend of the map currently shown. Maps that aren't world/continent/zone
+--- (caves, dungeons) share the zone value.
+---@return number
+function Config:GetAlpha()
+    local mapType = self:ClassifyMapID(WorldMapFrame:GetMapID()) or "zone"
+    return self.db.alphas[mapType]
+end
+
+---@param value number
+function Config:SetAlpha(value)
+    local mapType = self:ClassifyMapID(WorldMapFrame:GetMapID()) or "zone"
+    self.db.alphas[mapType] = value
 end
 
 -- Vashj'ir UiMapIDs -- retail-only (Cataclysm). WoW Forever has no

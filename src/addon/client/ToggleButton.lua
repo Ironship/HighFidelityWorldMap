@@ -24,7 +24,8 @@
 -- The button itself is opt-out: Config.db.toggleButtonEnabled (Options'
 -- own "HD/SD map toggle button" checkbox) gates whether it's ever created
 -- at all, not just whether it's shown -- see Refresh below -- so turning
--- it off leaves nothing behind to get in the way of a plainer map.
+-- it off leaves nothing behind to get in the way of a plainer map. It is
+-- also hidden while the addon is disabled (Config.db.enabled off).
 -------------------------------------------------------------------------------
 local addonName, ns = ...
 local Config       = ns.Config
@@ -52,7 +53,7 @@ end
 --- not when the overlay is off. This one test drives both the label (which
 --- names what a click switches to) and the click's own direction.
 local function HDShowing()
-    return Config.db and Config.db.enabled and Config.db.alpha > 0.5
+    return Config.db and Config.db.enabled and Config:GetAlpha() > 0.5
 end
 
 local function UpdateLabel()
@@ -63,18 +64,18 @@ local function UpdateLabel()
     elseif button.Text then
         button.Text:SetText(text)
     end
-    local alpha = Config.db.alpha
+    local alpha = Config:GetAlpha()
     button.blendLine:SetShown(alpha > 0.005 and alpha < 0.995)
 end
 
-local syncPopup  -- set by CreatePopup: reload the slider from Config.db.alpha
+local syncPopup  -- set by CreatePopup: reload the slider from Config:GetAlpha()
 
 --- Set the HD overlay's opacity (the slider's value), live. A full Refresh
 --- only when crossing 100%, which changes what else must be visible
 --- (Blizzard's own map underneath).
 local function ApplyAlpha(value)
     local wasMixing = Config:IsMixing()
-    Config.db.alpha = value
+    Config:SetAlpha(value)
     if Config.overlayFrame then Config.overlayFrame:SetAlpha(value) end
     if Config:IsMixing() ~= wasMixing then Renderer:ForceRefresh() end
     UpdateLabel()
@@ -102,7 +103,7 @@ end
 --- plain HD overlay, 0% Blizzard's own map, and anything between is an
 --- exact mix of the two: the overlay draws at that alpha over Blizzard's
 --- map, which Config:IsMixing() makes Renderer leave visible. Stored in
---- Config.db.alpha (no Options entry or chat command) and applied live,
+--- Config.db.alphas (per map type; no Options entry or chat command) and applied live,
 --- with a full Refresh only when crossing 100%.
 local function CreatePopup()
     popup = CreateFrameTry("Frame", nil, button, "BackdropTemplate")
@@ -155,8 +156,8 @@ local function CreatePopup()
     end)
     syncPopup = function()
         syncing = true
-        slider:SetValue(Config.db.alpha)
-        Caption(Config.db.alpha)
+        slider:SetValue(Config:GetAlpha())
+        Caption(Config:GetAlpha())
         syncing = false
     end
     popup:SetScript("OnShow", syncPopup)
@@ -301,6 +302,12 @@ function ToggleButton:Start()
         ToggleButton:Refresh()
     end)
 
+    -- Each map type has its own blend: follow the slider and label to it.
+    hooksecurefunc(WorldMapFrame, "OnMapChanged", function()
+        UpdateLabel()
+        if syncPopup and popup and popup:IsShown() then syncPopup() end
+    end)
+
     -- Close the opacity popup with the map, unless it's pinned: a pinned one
     -- is left "shown", so it hides with the map and returns when it reopens.
     WorldMapFrame:HookScript("OnHide", function()
@@ -315,7 +322,7 @@ end
 --- who just wants the plain map back. Safe to call anytime, including
 --- before CreateButton has ever run.
 function ToggleButton:Refresh()
-    local wantShown = Config.db and Config.db.toggleButtonEnabled
+    local wantShown = Config.db and Config.db.enabled and Config.db.toggleButtonEnabled
     if wantShown then
         CreateButton()
         if button then button:Show() end
