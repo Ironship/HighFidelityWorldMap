@@ -80,7 +80,6 @@ local function ApplyAlpha(value)
     UpdateLabel()
 end
 
-local THUMBTACK = "Interface\\Icons\\INV_Misc_Red_Thumbtack"
 local pinned        -- popup is detached from the map and staying open
 local unpinPopup    -- set by CreatePopup: close the popup and clear the pin
 
@@ -174,12 +173,13 @@ local function CreatePopup()
     local icon = pinBtn:CreateTexture(nil, "ARTWORK")
     icon:SetAllPoints()
     local function SetPinIcon()
+        icon:SetTexCoord(0, 1, 0, 1)
         if pinned then
             icon:SetTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Up")
-            icon:SetTexCoord(0, 1, 0, 1)
+            icon:SetAlpha(1)
         else
-            icon:SetTexture(THUMBTACK)
-            icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) -- trim the icon's edge
+            icon:SetTexture("Interface\\COMMON\\Indicator-Gray")
+            icon:SetAlpha(0.6)
         end
     end
     SetPinIcon()
