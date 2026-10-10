@@ -1,7 +1,7 @@
 -------------------------------------------------------------------------------
 -- HFWM-Forever Options
 -- The options panel, as an AceConfig-3.0 table: enable toggle,
--- remember/zoom/clarity/fog toggles, the Map Background section (Global
+-- remember/zoom toggles, the Map Background section (Global
 -- Background plus a per-map-type override each for Zone/Continent/World),
 -- the cave map section, and a profiles tab (AceDBOptions-3.0).
 --
@@ -110,18 +110,6 @@ local options = {
             set = function(_, value)
                 Config.db.additionalZoomLevels = value
                 ns.ZoomLevels:Refresh()
-            end,
-        },
-        worldMapClarity = {
-            order = 60,
-            type = "toggle",
-            name = "Increase world map clarity",
-            desc = "Draws Kalimdor, Eastern Kingdoms and Azeroth at much "
-                .. "higher detail. May render slower. Off by default.",
-            get = function() return Config.db.worldMapClarity end,
-            set = function(_, value)
-                Config.db.worldMapClarity = value
-                ns.Renderer:ForceRefresh()
             end,
         },
         toggleButtonEnabled = {
@@ -306,7 +294,7 @@ for _, mapType in ipairs(Config.MAP_TYPES) do
         type = "description",
         name = " ",
         width = "relative",
-        relWidth = 0.65,
+        relWidth = mapType.key == "world" and 0.33 or 0.65,
         hidden = isZone and ZoneIsHybrid or nil,
     }
 end
@@ -328,6 +316,26 @@ mapBackgroundArgs.fogOfWarEnabled = {
     get = function() return Config.db.fogOfWarEnabled end,
     set = function(_, value)
         Config.db.fogOfWarEnabled = value
+        ns.Renderer:ForceRefresh()
+    end,
+}
+-- World Map's neighbour: Kalimdor / Eastern Kingdoms / Azeroth resolution.
+-- Stored as the boolean Config.db.worldMapClarity (also driven by `/hfwm
+-- clarity`), so "high" is true and "low" is false (the default).
+mapBackgroundArgs.worldMapClarity = {
+    order = MAP_TYPE_ORDER.world + 1,
+    type = "select",
+    width = "relative",
+    relWidth = 0.32,
+    name = "Map Resolution",
+    desc = "How sharply Kalimdor, Eastern Kingdoms and Azeroth are drawn. "
+        .. "High Resolution draws them at much higher detail but may "
+        .. "render slower. Low Resolution is the default.",
+    values = { high = "High Resolution (slow)", low = "Low Resolution (fast)" },
+    sorting = { "high", "low" },
+    get = function() return Config.db.worldMapClarity and "high" or "low" end,
+    set = function(_, value)
+        Config.db.worldMapClarity = (value == "high")
         ns.Renderer:ForceRefresh()
     end,
 }
