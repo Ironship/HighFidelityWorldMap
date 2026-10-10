@@ -112,6 +112,7 @@ local options = {
                 ns.ZoomLevels:Refresh()
             end,
         },
+
         toggleButtonEnabled = {
             order = 72,
             type = "toggle",

@@ -82,7 +82,6 @@ end
 
 local pinned        -- popup is detached from the map and staying open
 local unpinPopup    -- set by CreatePopup: close the popup and clear the pin
-
 -- How far (UI units) the mouse may stray past the popup or button before
 -- the popup closes.
 local CLOSE_DISTANCE = 40
