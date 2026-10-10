@@ -63,6 +63,8 @@ local function UpdateLabel()
     elseif button.Text then
         button.Text:SetText(text)
     end
+    local alpha = Config.db.alpha
+    button.blendLine:SetShown(alpha > 0.005 and alpha < 0.995)
 end
 
 local syncPopup  -- set by CreatePopup: reload the slider from Config.db.alpha
@@ -78,6 +80,8 @@ local function ApplyAlpha(value)
     UpdateLabel()
 end
 
+local pinned        -- popup is detached from the map and staying open
+local unpinPopup    -- set by CreatePopup: close the popup and clear the pin
 -- How far (UI units) the mouse may stray past the popup or button before
 -- the popup closes.
 local CLOSE_DISTANCE = 40
@@ -156,17 +160,61 @@ local function CreatePopup()
         syncing = false
     end
     popup:SetScript("OnShow", syncPopup)
+
+    -- Pin (top right): keeps the popup open when the mouse leaves it, and
+    -- through closing the map -- it is still a child of the map, so it
+    -- disappears with the map and is back when the map reopens, without
+    -- another right click. Turns into an X, which closes the popup and
+    -- clears the pin. Session-only, not saved.
+    local pinBtn = CreateFrame("Button", nil, popup)
+    pinBtn:SetSize(16, 16)
+    pinBtn:SetPoint("TOPRIGHT", -4, -4)
+    pinBtn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+    local icon = pinBtn:CreateTexture(nil, "ARTWORK")
+    icon:SetAllPoints()
+    local function SetPinIcon()
+        icon:SetTexCoord(0, 1, 0, 1)
+        if pinned then
+            icon:SetTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Up")
+            icon:SetAlpha(1)
+        else
+            icon:SetTexture("Interface\\COMMON\\Indicator-Gray")
+            icon:SetAlpha(0.6)
+        end
+    end
+    SetPinIcon()
+
+    local function Pin()
+        pinned = true
+        SetPinIcon()
+    end
+    unpinPopup = function()
+        pinned = false
+        popup:Hide()
+        SetPinIcon()
+    end
+    pinBtn:SetScript("OnClick", function()
+        if pinned then unpinPopup() else Pin() end
+    end)
+    pinBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(pinned and "Close" or "Pin open")
+    end)
+    pinBtn:SetScript("OnLeave", GameTooltip_Hide)
+
     -- Close once the mouse is off both the popup and the button. Skipped
     -- while a mouse button is held so a drag that strays off the popup
-    -- doesn't close it mid-adjustment.
+    -- doesn't close it mid-adjustment, and while pinned.
     popup:SetScript("OnUpdate", function()
-        if IsMouseButtonDown("LeftButton") then return end
+        if pinned or IsMouseButtonDown("LeftButton") then return end
         if not (IsNear(popup) or IsNear(button)) then popup:Hide() end
     end)
 end
 
 local function OnClick(_, mouseButton)
     if mouseButton == "RightButton" then
+        -- A pinned popup is closed with its X, not toggled from here.
+        if pinned then return end
         if not popup then CreatePopup() end
         popup:SetShown(not popup:IsShown())
         return
@@ -219,6 +267,14 @@ local function CreateButton()
     local mapPane = WorldMapFrame.ScrollContainer or WorldMapFrame
     button:SetPoint("TOPRIGHT", mapPane, "TOPRIGHT", -2, 0)
 
+    -- Small gold dot (the stock yellow status indicator) centred on the
+    -- button's top-left corner while the blend is strictly between 0% and
+    -- 100%; see UpdateLabel. Same thresholds as Config:IsMixing.
+    button.blendLine = button:CreateTexture(nil, "OVERLAY", nil, 7)
+    button.blendLine:SetTexture("Interface\\COMMON\\Indicator-Yellow")
+    button.blendLine:SetSize(10, 10)
+    button.blendLine:SetPoint("CENTER", button, "TOPLEFT", 3, -3)
+
     if not button.SetText then
         -- No button template resolved (CreateFrameTry's own plain-frame
         -- fallback): draw our own label rather than leave a blank button.
@@ -245,9 +301,10 @@ function ToggleButton:Start()
         ToggleButton:Refresh()
     end)
 
-    -- Close the opacity popup with the map.
+    -- Close the opacity popup with the map, unless it's pinned: a pinned one
+    -- is left "shown", so it hides with the map and returns when it reopens.
     WorldMapFrame:HookScript("OnHide", function()
-        if popup then popup:Hide() end
+        if popup and not pinned then popup:Hide() end
     end)
 end
 
@@ -263,6 +320,7 @@ function ToggleButton:Refresh()
         CreateButton()
         if button then button:Show() end
     elseif button then
+        if pinned then unpinPopup() end
         button:Hide()
     end
     UpdateLabel()
