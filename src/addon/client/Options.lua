@@ -449,11 +449,17 @@ function Options:Init()
         options.args.profiles = LibStub("AceDBOptions-3.0"):GetOptionsTable(
             Config.dbObj)
         options.args.profiles.order = 100
+        -- Inline: with no tab/tree child groups AceConfigDialog wraps the
+        -- whole page in one ScrollFrame, instead of squeezing a tree
+        -- under the settings above.
+        options.args.profiles.inline = true
     end
 
     LibStub("AceConfigRegistry-3.0"):RegisterOptionsTable(addonName, options)
 
     local AceConfigDialog = LibStub("AceConfigDialog-3.0")
+    -- Standalone window only; the client's options panel sets its own size.
+    AceConfigDialog:SetDefaultSize(addonName, 700, 650)
     local ok, blizFrame = pcall(
         AceConfigDialog.AddToBlizOptions, AceConfigDialog,
         addonName, PANEL_TITLE)
