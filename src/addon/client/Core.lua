@@ -25,6 +25,7 @@ local CaveRenderer  = ns.CaveRenderer
 local MapMemory     = ns.MapMemory
 local ZoomLevels    = ns.ZoomLevels
 local ResetView     = ns.ResetView
+local KeepCentered  = ns.KeepCentered
 local ToggleButton  = ns.ToggleButton
 local P             = ns.P
 
@@ -83,6 +84,7 @@ function addon:OnEnable()
     Cave:Start()
     MapMemory:Start()
     ZoomLevels:Start()
+    KeepCentered:Start()
     ResetView:Start()
     ToggleButton:Start()
 

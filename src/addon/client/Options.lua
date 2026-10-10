@@ -122,6 +122,31 @@ local options = {
                 ns.ZoomLevels:Refresh()
             end,
         },
+        keepCentered = {
+            order = 55,
+            type = "toggle",
+            name = "Keep Centered",
+            desc = "Pans the world map as you move so your arrow stays "
+                .. "in the center of it. Off by default.",
+            get = function() return Config.db.keepCentered end,
+            set = function(_, value)
+                Config.db.keepCentered = value
+                ns.KeepCentered:Refresh()
+            end,
+        },
+        disableMapFade = {
+            order = 56,
+            type = "toggle",
+            name = "Disable map fade",
+            desc = "Stops the world map going see-through while you "
+                .. "move (the mapFade console variable). Reads and "
+                .. "writes the game setting directly; turning this off "
+                .. "sets mapFade back to 1.",
+            get = function() return _G.GetCVar("mapFade") == "0" end,
+            set = function(_, value)
+                _G.SetCVar("mapFade", value and "0" or "1")
+            end,
+        },
 
         toggleButtonEnabled = {
             order = 72,

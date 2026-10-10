@@ -40,6 +40,7 @@ CaveRenderer.lua
 MapMemory.lua
 ZoomLevels.lua
 ResetView.lua
+KeepCentered.lua
 ToggleButton.lua
 Commands.lua
 Options.lua

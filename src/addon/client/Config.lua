@@ -57,6 +57,10 @@ Config.DEFAULTS = {
     -- job the separate PersistentWorldMap addon does. See MapMemory.lua.
     rememberMapZoomPan = true,
 
+    -- Pans the world map to follow the player's arrow so it stays centered
+    -- on screen. Off by default. See KeepCentered.lua.
+    keepCentered = false,
+
     -- Appends 8 extra, closer zoom steps onto the world map so the
     -- native-resolution zone art this addon ships can be zoomed into past
     -- Blizzard's own ceiling. Off by default: it changes how far the

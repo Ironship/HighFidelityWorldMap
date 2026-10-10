@@ -27,6 +27,7 @@ ns.CaveRenderer = {}
 ns.MapMemory   = {}
 ns.ZoomLevels  = {}
 ns.ResetView   = {}
+ns.KeepCentered = {}
 ns.ToggleButton = {}
 
 -- Convenience printer (accessible everywhere via ns.P)
