@@ -4,6 +4,7 @@
 -- While the world map is open and showing the zone the player is standing
 -- in, re-pans it every time the player's map position changes so the arrow
 -- stays in the middle of the view and the map scrolls under it instead.
+-- Zone-type maps only (not continent, world, or dungeon maps).
 -- Zoom is left alone. Off by default (Config.DEFAULTS.keepCentered).
 --
 -- Only reacts to the player *moving*: standing still leaves the map free to
@@ -23,6 +24,7 @@ local WorldMapFrame = _G.WorldMapFrame
 local C_Map         = _G.C_Map
 
 local lastX, lastY
+local checkedMapID, isZone
 local targetX, targetY
 local snap = true
 
@@ -36,6 +38,12 @@ local function OnUpdate(_, elapsed)
     local sc = WorldMapFrame.ScrollContainer
     local mapID = WorldMapFrame:GetMapID()
     if not (sc and sc.InstantPanAndZoom and mapID) then return end
+
+    -- Zone maps only; classified once per map, not per frame.
+    if mapID ~= checkedMapID then
+        checkedMapID, isZone = mapID, Config:ClassifyMapID(mapID) == "zone"
+    end
+    if not isZone then return end
 
     local pos = C_Map.GetPlayerMapPosition(mapID, "player")
     local x, y
