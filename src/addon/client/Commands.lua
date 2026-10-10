@@ -243,17 +243,6 @@ function Commands:Handle(msg)
     elseif cmd == "options" or cmd == "config" or cmd == "settings" then
         ns.Options:Open()
         return
-    elseif cmd == "alpha" then
-        local val = tonumber(args[2])
-        if val then
-            db.alpha = math.max(0, math.min(1, val))
-            P(("Alpha set to %.0f%%"):format(db.alpha * 100))
-            ns.Renderer:ForceRefresh()
-            return
-        else
-            P("Usage: /hfwm alpha 0.0-1.0")
-            return
-        end
     elseif cmd == "baseart" then
         -- Blizzard's own detail layer: the parchment, the sea labels and the
         -- compass rose. Every background but Hybrid hides it, and only
@@ -480,7 +469,6 @@ function Commands:Handle(msg)
         end
         print("  /hfwm bg [NAME]     - map background: "
             .. table.concat(keys, " | ") .. " (no name cycles)")
-        print("  /hfwm alpha N       - set opacity (0-1)")
         print("  /hfwm remember [on|off] - remember world map zoom+pan "
             .. "across close/reopen")
         print("  /hfwm zoom [on|off] - additional (closer) world map zoom "

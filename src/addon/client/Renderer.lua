@@ -86,6 +86,7 @@ local function RestoreDefaults()
     BaseArt:SetVisible(true)
     MapFrameBg:SetVisible(true)
     Exploration:SetVisible(true)
+    Exploration:ApplyLevels()
 end
 
 --- Fog of War: draw the slice of this addon's own tile grid that falls
@@ -829,7 +830,7 @@ local function DoRefresh(force)
     Config.lastLayerIdx  = layerIdx
     Config.lastSubmerged = submerged
 
-    if not Config.db or not Config.db.enabled or Config.visuallySuppressed then
+    if not Config.db or not Config.db.enabled then
         if trace then P("  BAIL: disabled") end
         RestoreDefaults()
         return
@@ -1046,7 +1047,21 @@ local function DoRefresh(force)
             BaseArt:SetVisible(false)
             MapFrameBg:SetVisible(not background.seeThrough)
         end
-        if fogActive and useBundled then
+        if Config:IsMixing() then
+            -- HD/SD blend: Blizzard's own map has to stay fully visible
+            -- under the overlay (which draws at the slider's alpha, see
+            -- the SetAlpha below), so none of the suppression above or
+            -- below applies. Alpha b of HD over SD is exactly b*HD +
+            -- (1-b)*SD, wherever the overlay is opaque.
+            BaseArt:SetVisible(true)
+            MapFrameBg:SetVisible(true)
+            if fogActive and useBundled then
+                -- Fog of War is reading these pins' textures; see ShowPins.
+                Exploration:ShowPins()
+            else
+                Exploration:SetVisible(true)
+            end
+        elseif fogActive and useBundled then
             -- Fog of War's own tiles below are drawn FROM Blizzard's live
             -- exploration textures (Exploration:EnumerateOverlayTextures /
             -- DrawExploredPiece), so unlike the plain-suppression case,
@@ -1082,6 +1097,11 @@ local function DoRefresh(force)
 
     local currentLevel = canvas:GetFrameLevel()
     Config.overlayFrame:SetFrameLevel(currentLevel + 500)
+    -- Blizzard's exploration art (the explored, coloured part of the SD
+    -- map) lives on pins at frame level ~2000, well above this overlay, so
+    -- while mixing it would cover the HD map completely wherever the player
+    -- has explored. Tuck those pins just under the overlay instead.
+    Exploration:ApplyLevels()
     Config.overlayFrame:SetAlpha(Config.db.alpha)
 
     -- Tile layout
