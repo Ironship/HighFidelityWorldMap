@@ -66,13 +66,44 @@ local function ZoneIsHybrid()
     return zoneBg ~= nil and zoneBg.key == "hybrid"
 end
 
---- The World and continent maps come from the optional Art addon; these two
---- grey out the settings that only affect them while it is missing.
-local function ArtMissing() return not Config:IsArtInstalled() end
-local function ArtNote()
-    if Config:IsArtInstalled() then return "" end
-    return "\n\n|cffff8800Requires the High Fidelity World Map: Art addon, "
-        .. "which is not installed or not enabled.|r"
+--- High Resolution World and continent maps come from the optional Art
+--- addon. Without it that one Map Resolution entry is disabled (everything
+--- else, low resolution included, ships with this addon) and explains why.
+local ART_NOTE = "Requires the High Fidelity World Map: Art addon, which is "
+    .. "not installed or not enabled. Download it from CurseForge "
+    .. "(hfwm-art) and reload the UI to unlock it."
+
+--- Dropdown that disables its "high" entry, with a tooltip saying why,
+--- while the Art addon is missing. AceConfig has no per-entry disable, so
+--- the Map Resolution row asks for this through `dialogControl`.
+local RESOLUTION_DROPDOWN = "HFWM-ResolutionDropdown"
+do
+    local AceGUI = LibStub("AceGUI-3.0")
+
+    local function ShowArtTooltip(item)
+        GameTooltip:SetOwner(item.frame, "ANCHOR_RIGHT")
+        GameTooltip:SetText("High Resolution unavailable", 1, 1, 1)
+        GameTooltip:AddLine(ART_NOTE, 1, 0.53, 0, true)
+        GameTooltip:Show()
+    end
+
+    AceGUI:RegisterWidgetType(RESOLUTION_DROPDOWN, function()
+        local dropdown = AceGUI.WidgetRegistry.Dropdown()
+        dropdown.type = RESOLUTION_DROPDOWN  -- own pool, not Dropdown's
+        local setList = dropdown.SetList
+        function dropdown:SetList(...)
+            setList(self, ...)
+            if Config:IsArtInstalled() then return end
+            for _, item in self.pullout:IterateItems() do
+                if item.userdata.value == "high" then
+                    item:SetDisabled(true)
+                    item:SetCallback("OnEnter", ShowArtTooltip)
+                    item:SetCallback("OnLeave", function() GameTooltip:Hide() end)
+                end
+            end
+        end
+        return dropdown
+    end, 1)
 end
 
 local options = {
@@ -316,9 +347,7 @@ for _, mapType in ipairs(Config.MAP_TYPES) do
         width = "relative",
         relWidth = 0.32,
         name = mapType.label,
-        desc = isZone and desc or function() return desc .. ArtNote() end,
-        -- World and continent maps are drawn from the optional Art addon.
-        disabled = (not isZone) and ArtMissing or nil,
+        desc = desc,
         values = MapTypeBackgroundValues,
         get = function() return Config:GetMapTypeBackgroundKey(mapType.key) end,
         set = function(_, value)
@@ -366,16 +395,13 @@ mapBackgroundArgs.worldMapClarity = {
     width = "relative",
     relWidth = 0.32,
     name = "Map Resolution",
-    desc = function()
-        return "How sharply Kalimdor, Eastern Kingdoms and Azeroth are drawn. "
-            .. "High Resolution draws them at much higher detail but may "
-            .. "render slower. Low Resolution is the default."
-            .. ArtNote()
-    end,
-    disabled = ArtMissing,
+    desc = "How sharply Kalimdor, Eastern Kingdoms and Azeroth are drawn. "
+        .. "High Resolution draws them at much higher detail but may "
+        .. "render slower. Low Resolution is the default.",
+    dialogControl = RESOLUTION_DROPDOWN,
     values = { high = "High Resolution (slow)", low = "Low Resolution (fast)" },
     sorting = { "high", "low" },
-    get = function() return Config.db.worldMapClarity and "high" or "low" end,
+    get = function() return Config:WorldMapClarityEnabled() and "high" or "low" end,
     set = function(_, value)
         Config.db.worldMapClarity = (value == "high")
         ns.ZoomLevels:Refresh()

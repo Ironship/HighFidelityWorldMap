@@ -137,12 +137,18 @@ function Commands:Handle(msg)
         end
         ns.ZoomLevels:Refresh()
         ns.Renderer:ForceRefresh()
-        P(("World map clarity: %s"):format(
-            db.worldMapClarity and "|cff00ff00on|r" or "|cffff4444off|r")
-            .. (db.worldMapClarity
-                and " |cff999999(Kalimdor/Eastern Kingdoms/Azeroth at higher "
-                    .. "detail, may render a bit slower)|r"
-                or ""))
+        if db.worldMapClarity and not Config:IsArtInstalled() then
+            P("World map clarity: |cffff4444off|r |cffff8800(needs the High "
+                .. "Fidelity World Map: Art addon, which is not installed or "
+                .. "not enabled)|r")
+        else
+            P(("World map clarity: %s"):format(
+                db.worldMapClarity and "|cff00ff00on|r" or "|cffff4444off|r")
+                .. (db.worldMapClarity
+                    and " |cff999999(Kalimdor/Eastern Kingdoms/Azeroth at higher "
+                        .. "detail, may render a bit slower)|r"
+                    or ""))
+        end
         ns.Options:Refresh()
         return
     elseif cmd == "cavetitle" then
@@ -517,9 +523,10 @@ function Commands:Debug()
     for _ in pairs(FDID_MAP_SUB) do subCount = subCount + 1 end
     P("debug: FDID_MAP=" .. mapCount .. " entries, FDID_MAP_SUB=" .. subCount
         .. "  enabled=" .. tostring(Config.db and Config.db.enabled))
-    print(("  FDID_BASE: %s"):format(Config.FDID_BASE or "nil"))
+    print(("  FDID_BASE (low res): %s"):format(Config.FDID_BASE or "nil"))
+    print(("  HD_BASE (high res): %s"):format(Config.HD_BASE or "nil"))
     print(("  art addon: %s"):format(Config:IsArtInstalled() and "loaded"
-        or "NOT loaded (world/continent maps left to Blizzard)"))
+        or "NOT loaded (world/continent maps limited to low resolution)"))
     print(("  tile tables: bundled=%d  original=%d"):format(
         Config._fdidMapSize or -1, Config._fdidMapOriginalSize or -1))
     print(("  native zones: bundled=%d  original=%d"):format(

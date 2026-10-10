@@ -401,16 +401,21 @@ Config.FDID_MAP_SUB      = HFWMF_FDID_MAP_SUB      or {}
 -- The raw second dump, written only when the pipeline ran with --original.
 -- Its paths carry their own "Original\\" prefix, so FDID_BASE serves both.
 Config.FDID_MAP_ORIGINAL = HFWMF_FDID_MAP_ORIGINAL or {}
--- The World and continent art (WorldMap\*.blp) ships in the separate, optional
--- Art addon (src/addon/art) so a client update is not a 1 GB download. The
--- lookup tables above stay here and describe it either way.
+-- The low-resolution World and continent art (WorldMap\*.blp, the tiles the
+-- two tables above point at) ships inside this addon, so every map type works
+-- without anything else installed.
+Config.FDID_BASE = "Interface\\AddOns\\" .. addonName .. "\\WorldMap\\"
+-- The high-resolution art (NATIVE_ZONES below) ships in the separate,
+-- optional Art addon (src/addon/art) so a client update is not a 1 GB
+-- download. Tiles are drawn from here only while it is installed.
 Config.ART_ADDON = "HighFidelityWorldMap_Art_Forever"
-Config.FDID_BASE = "Interface\\AddOns\\" .. Config.ART_ADDON .. "\\WorldMap\\"
+Config.HD_BASE   = "Interface\\AddOns\\" .. Config.ART_ADDON .. "\\WorldMap\\"
 
 --- Is the Art addon installed and enabled? Without it the World and
---- continent maps are left to Blizzard (see Renderer.lua's DoRefresh) and
---- their options are greyed out; zone and cave maps do not use it.
---- OptionalDeps in the TOC makes it load first when present.
+--- continent maps are drawn at low resolution only (the High Resolution
+--- option in Options is disabled); zone and cave maps do not use it.
+--- No load-order dependency: the Art addon requires this one, and this is
+--- only asked at draw and options time, after both have loaded.
 ---@return boolean
 function Config:IsArtInstalled()
     local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
@@ -464,11 +469,12 @@ function Config:GetNativeZone(mapID, bg)
 end
 
 --- Whether the capped continent maps (Kalimdor/Eastern Kingdoms/Azeroth)
---- draw from this addon's hi-res tile grid. Zone maps always draw at
---- native resolution regardless.
+--- draw from the Art addon's hi-res tile grid. Always false while that
+--- addon is missing, whatever was saved. Zone maps always draw at native
+--- resolution regardless.
 ---@return boolean
 function Config:WorldMapClarityEnabled()
-    return self.db and self.db.worldMapClarity or false
+    return (self.db and self.db.worldMapClarity and self:IsArtInstalled()) or false
 end
 
 --- Whether this addon's tiles draw only over ground the player has

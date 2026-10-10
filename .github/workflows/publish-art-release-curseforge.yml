@@ -122,6 +122,12 @@ jobs:
       - name: Isolate the art-v* tag series
         run: .github/scripts/isolate-tag-series.sh v mapdata-v
 
+      # The repo's TOC has no Version line; stamp it from the tag (not committed).
+      - name: Stamp TOC version
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: .github/scripts/stamp-toc-version.sh src/addon/art/HighFidelityWorldMap_Art_Forever.toc "$RELEASE_TAG"
+
       # Only CF_API_TOKEN is passed, so the packager uploads to CurseForge and
       # does not touch the GitHub Release. Keep the arguments in sync with
       # release-addon-art.yml. Nothing goes to WoWInterface, so skip pandoc.

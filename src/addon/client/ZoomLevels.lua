@@ -59,11 +59,11 @@ end
 local function ExtendZoomLevels(sc)
     if not Enabled() then return end
 
-    -- Continent and world maps only have art worth zooming into when the
-    -- Art addon is present and High Resolution is selected.
+    -- Continent and world maps only have art worth zooming into when High
+    -- Resolution (which needs the Art addon) is in effect.
     local mapType = Config:ClassifyMapID(WorldMapFrame:GetMapID())
     if (mapType == "world" or mapType == "continent")
-       and not (Config:IsArtInstalled() and Config:WorldMapClarityEnabled()) then
+       and not Config:WorldMapClarityEnabled() then
         return
     end
     local levels = sc.zoomLevels

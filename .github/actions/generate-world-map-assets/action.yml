@@ -1,7 +1,7 @@
 name: Generate world map assets
 description: >-
-  Produce the Art addon's content: the World and continent maps in
-  src/addon/art/WorldMap/, reusing the cached copy when the generator has
+  Produce the Art addon's content: the high-resolution World and continent
+  maps in src/addon/art/WorldMap/, reusing the cached copy when the generator has
   not changed since it was last built.
 
 # The output is a pure function of the generator (src/generator/generateHFWM.py,
@@ -9,10 +9,15 @@ description: >-
 # cache key. A release that only touches Lua, docs or workflows hits the cache
 # and skips the ~40 minute build.
 #
-# One cache entry, mapart-v2-<hash>: src/addon/art/WorldMap, the World and
-# continent maps only (zone and cave maps are drawn from the game's own
-# files), ~1 GB. FDIDMap.lua and CaveData.lua are the client's, committed, and
-# are not touched here (--skip-fdid-map --no-caves).
+# One cache entry, mapart-v3-<hash>: src/addon/art/WorldMap, the
+# high-resolution World and continent maps only (zone and cave maps are drawn
+# from the game's own files), ~1 GB. FDIDMap.lua and CaveData.lua are the
+# client's, committed, and are not touched here (--skip-fdid-map --no-caves).
+#
+# The low-resolution maps (src/addon/client/WorldMap/) are the client addon's:
+# committed, not cached. The generator rewrites them on a cache miss, but
+# only the high-resolution tree is saved, and the client release workflows
+# never run this action. Regenerate and commit them after a generator change.
 #
 # GitHub scopes caches by ref: a run on a tag can read caches saved from the
 # default branch but not from any other tag. So the copy that *later* releases
@@ -39,7 +44,7 @@ outputs:
     description: "'true' when everything came from the cache instead of being generated."
     value: ${{ steps.decide.outputs.cache-hit }}
   art-key:
-    description: "The art cache key, mapart-v2-<hash>. The hash identifies the generator build."
+    description: "The art cache key, mapart-v3-<hash>. The hash identifies the generator build."
     value: ${{ steps.key.outputs.art-key }}
 
 runs:

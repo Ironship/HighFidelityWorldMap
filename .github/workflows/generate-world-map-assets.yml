@@ -1,13 +1,13 @@
 name: Generate World Map Assets
 
 # Runs the Python pipeline (src/generator/generateHFWM.py) that builds the Art
-# addon's content, the World and continent maps (src/addon/art/WorldMap/), and
+# addon's content, the high-resolution World and continent maps (src/addon/art/WorldMap/), and
 # saves it to the Actions cache *from main*. That is the only scope a
 # tag-triggered release can read, so every release (Create Release: Art and
 # Publish Art Release to CurseForge) can reuse it instead of repeating the
 # ~40 minute generation. See .github/actions/generate-world-map-assets.
 #
-# One cache entry, the art (mapart-v2-<hash>, ~1 GB). The hash covers the
+# One cache entry, the art (mapart-v3-<hash>, ~1 GB). The hash covers the
 # generator only (src/generator/generateHFWM.py, src/generator/hfwm/**,
 # src/generator/requirements.txt). A change that leaves those alone, such as an
 # addon Lua fix, docs or a workflow tweak, resolves to the same key, so a new

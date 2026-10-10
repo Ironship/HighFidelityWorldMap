@@ -846,18 +846,6 @@ local function DoRefresh(force)
         return
     end
 
-    -- The World and continent art is in the optional Art addon. Without it
-    -- those maps are left exactly as Blizzard draws them; zones and caves
-    -- draw from the client's own tiles and do not need it.
-    if not Config:IsArtInstalled() then
-        local mapType = Config:ClassifyMapID(mapID)
-        if mapType == "world" or mapType == "continent" then
-            if trace then P("  BAIL: Art addon not installed") end
-            RestoreDefaults()
-            return
-        end
-    end
-
     local layer   = allLayers[layerIdx]
     local layerW  = layer.layerWidth
     local layerH  = layer.layerHeight
@@ -890,6 +878,7 @@ local function DoRefresh(force)
     local FDID_MAP     = Config:GetTileMap(background)
     local FDID_MAP_SUB = Config.FDID_MAP_SUB
     local FDID_BASE    = Config.FDID_BASE
+    local HD_BASE      = Config.HD_BASE
 
     -- Hoisted above Activate() (which used to compute this itself) because
     -- the tile-layout section below needs it too, to decide whether to draw
@@ -945,7 +934,7 @@ local function DoRefresh(force)
         tilePxW, tilePxH = nativeZone.tileW, nativeZone.tileH
         cols, rows = nativeZone.cols, nativeZone.rows
         for i = 1, cols * rows do
-            tileSource[i] = FDID_BASE .. nativeZone.path .. i
+            tileSource[i] = HD_BASE .. nativeZone.path .. i
         end
         useBundled, useNative = true, true
     end

@@ -6,8 +6,9 @@
 # whole checkout into the package folder and `move-folders` below hoists
 # src/addon/client/ to the top.
 #
-# src/addon/art/ (the map art) is its own addon, built from .pkgmeta-art; it is
-# not part of this package.
+# src/addon/art/ (the high-resolution map art) is its own addon, built from
+# .pkgmeta-art; it is not part of this package. The low-resolution art is
+# src/addon/client/WorldMap/, committed, so it ships here as is.
 
 package-as: HighFidelityWorldMap
 
@@ -64,12 +65,12 @@ enable-nolib-creation: no
 # split.
 enable-toc-creation: no
 
-# The map art is its own, optional CurseForge project (built from
+# The high-resolution map art is its own, optional CurseForge project (built from
 # .pkgmeta-art, https://www.curseforge.com/wow/addons/hfwm-art), so a client
 # update is not a 1 GB download. Without it the client still works; the World
-# and continent maps are just left to Blizzard. The packager declares it as an
-# optional relation on every CurseForge upload, matching the TOC's
-# OptionalDeps. CurseForge rejects relations to projects that are not approved
+# and continent maps just stay at low resolution. The packager declares it as an
+# optional relation on every CurseForge upload. CurseForge rejects relations
+# to projects that are not approved
 # and public, so the upload fails if that project ever stops being so.
 optional-dependencies:
   - hfwm-art

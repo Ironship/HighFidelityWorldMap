@@ -2,8 +2,9 @@ name: "Create Release: Client"
 
 # Creates an official tagged release of the client addon: the version tag, the
 # package and the GitHub Release with the zip attached. The package is the Lua
-# code and the generated tile tables and cave data. It does not include the map
-# art (the Art addon, "Create Release: Art") or a CHANGELOG. The package step
+# code, the generated tile tables and cave data, and the low-resolution map
+# art (committed under src/addon/client/WorldMap/). It does not include the
+# high-resolution art (the Art addon, "Create Release: Art") or a CHANGELOG. The package step
 # itself uploads nowhere else; the last job then starts "Publish Client
 # Release to CurseForge" with the new tag. If that fails, re-run it on its own
 # and give it the tag.
@@ -101,8 +102,8 @@ jobs:
           ref: ${{ needs.tag.outputs.tag }}
           fetch-depth: 0
 
-      # The packager ships src/addon/client/ as it is checked out. The Art
-      # addon (src/addon/art/) is its own package, see release-addon-art.yml.
+      # The packager ships src/addon/client/ as it is checked out, low-res
+      # art included. The Art addon (src/addon/art/) is its own package, see release-addon-art.yml.
       #
       # The packager would write a CHANGELOG.md into the package. A manual
       # changelog (see .pkgmeta) is read from the checkout instead, so it is
@@ -114,6 +115,10 @@ jobs:
       # tag" among all tags. Hide the Art addon's art-v* series and the retired mapdata-v* tags from it.
       - name: Isolate the v* tag series
         run: .github/scripts/isolate-tag-series.sh art-v mapdata-v
+
+      # The repo's TOC has no Version line; stamp it from the tag (not committed).
+      - name: Stamp TOC version
+        run: .github/scripts/stamp-toc-version.sh src/addon/client/HighFidelityWorldMap.toc "$RELEASE_TAG"
 
       # -d: build the zip, upload nothing. The packager's own GitHub upload adds
       # release.json, names the zip after the project and dies on a zip this

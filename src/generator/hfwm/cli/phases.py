@@ -181,6 +181,7 @@ def download_source_tiles(
 
 def run_fdid_map_phase(
     output_dir: str,
+    lowres_dir: str,
     zone_db: dict[str, dict],
     passes: dict,
     *,
@@ -193,6 +194,7 @@ def run_fdid_map_phase(
     try:
         summary = generate_fdid_map(
             output_dir,
+            lowres_dir,
             zone_db,
             stamp(passes),
             original=include_original,

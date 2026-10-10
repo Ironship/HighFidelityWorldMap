@@ -225,6 +225,7 @@ def _collect_native_metadata(
 
 def generate_fdid_map(
     output_dir: str,
+    lowres_dir: str,
     zones: dict[str, dict],
     art_passes: list[str] | None = None,
     original: bool = False,
@@ -245,6 +246,7 @@ def generate_fdid_map(
     Returns a small summary dict for the caller to report.
     """
     out = Path(output_dir)
+    low = Path(lowres_dir)
     if metadata_only:
         main = _collect_metadata(zones)
         orig = _collect_metadata(zones, ORIGINAL_SUBDIR) if original else None
@@ -253,15 +255,16 @@ def generate_fdid_map(
             _collect_native_metadata(zones, ORIGINAL_SUBDIR) if original else None
         )
     else:
-        if not out.is_dir():
+        if not (out.is_dir() or low.is_dir()):
             print("  Output directory not found — skipping FDIDMap.lua.",
                   flush=True)
             return {"entries": 0, "zones": 0, "missing": 0,
                     "original_entries": 0, "original_zones": 0,
                     "native_zones": 0, "native_original_zones": 0}
 
-        main = _collect(out, zones)
-        orig = (_collect(out / ORIGINAL_SUBDIR, zones, ORIGINAL_SUBDIR)
+        # Low-resolution maps live with the client, HD ones with the Art addon.
+        main = _collect(low, zones)
+        orig = (_collect(low / ORIGINAL_SUBDIR, zones, ORIGINAL_SUBDIR)
                 if original else None)
         native_main = _collect_native(out, zones)
         native_orig = (

@@ -1,4 +1,4 @@
-# BigWigs packager config for the Art addon (the generated map art):
+# BigWigs packager config for the Art addon (the high-resolution map art):
 # https://github.com/BigWigsMods/packager/wiki/Preparing-the-PackageMeta-File
 #
 # Used with `-m .pkgmeta-art` by release-addon-art.yml, publish-art-release-curseforge.yml
@@ -9,12 +9,12 @@
 # the packager stops treating it as an untracked file and copies it into the
 # package. See .github/workflows/release-addon-art.yml.
 
-# The folder name is the addon name the client's OptionalDeps and
-# Config.FDID_BASE point at, and the name existing hfwm-art installs use.
+# The folder name is the addon name the client's Config.ART_ADDON points at,
+# and the name existing hfwm-art installs use.
 package-as: HighFidelityWorldMap_Art_Forever
 
 # No colon in the value: the packager's pkgmeta parser splits on the first one.
-changelog-title: High Fidelity World Map - Forever Art
+changelog-title: High Fidelity World Map - Art
 
 # The packager would write a CHANGELOG.md into the package. A manual changelog
 # is read from the checkout instead and only used for the upload, so none ships.

@@ -4,11 +4,12 @@ This project is split into three parts:
 
 - `src/addon/client/` — the addon (`HighFidelityWorldMap`) that hooks into the
   in-game world map. Zone and cave views are drawn from the game's own map
-  textures.
+  textures; the World and continent views ship with it at low resolution
+  (`WorldMap/`, committed).
 - `src/addon/art/` — the optional Art addon (`HighFidelityWorldMap_Art_Forever`):
-  just the stitched World, Eastern Kingdoms and Kalimdor map tiles and a TOC,
-  kept separate so a client update is not a 1 GB download. The client
-  works without it.
+  just the high-resolution (`*HD`) World, Eastern Kingdoms and Kalimdor map
+  tiles and a TOC, kept separate so a client update is not a 1 GB download.
+  The client works without it, at low resolution.
 - `src/generator/` — the Python pipeline that generates the art and the Lua
   tables. It writes into `src/addon/art/` and `src/addon/client/`.
 
@@ -53,9 +54,10 @@ ADDONS="<WoW install>/_classic_beta_/Interface/AddOns"
 ln -s "$PWD/src/addon/client" "$ADDONS/HighFidelityWorldMap"
 ```
 
-The client works on its own using the game's built-in assets. The World and
-continent maps need the optional Art addon: link it the same way, or install
-[hfwm-art](https://www.curseforge.com/wow/addons/hfwm-art) from CurseForge:
+The client works on its own: zone and cave maps use the game's built-in assets
+and the World and continent maps use the low-resolution art it ships. The
+High Resolution option needs the optional Art addon: link it the same way, or
+install [hfwm-art](https://www.curseforge.com/wow/addons/hfwm-art) from CurseForge:
 
 ```sh
 ln -s "$PWD/src/addon/art" "$ADDONS/HighFidelityWorldMap_Art_Forever"
@@ -76,8 +78,10 @@ The generated data is not tracked in Git and is rebuilt from source data.
 python src/generator/generateHFWM.py
 ```
 
-The generator writes the art (`WorldMap/`) into `src/addon/art/` and the Lua
-tables (`FDIDMap.lua`, cave tile data) into `src/addon/client/`. Only the World,
+The generator writes the high-resolution art (`WorldMap/`) into
+`src/addon/art/`, the low-resolution art into `src/addon/client/WorldMap/`
+(`--lowres-dir`; commit it, it ships with the client) and the Lua tables
+(`FDIDMap.lua`, cave tile data) into `src/addon/client/`. Only the World,
 Eastern Kingdoms and Kalimdor views are stitched; a full run takes about 40
 minutes. Downloads are cached under `src/generator/.cache-*/`. Pass `--no-caves`
 to skip `CaveData.lua` and `--skip-fdid-map` to skip `FDIDMap.lua`.
@@ -134,8 +138,8 @@ Release packaging is handled by GitHub Actions workflows and the packager tool, 
 
 There are two packages, released separately so a UI or settings update does not mean re-downloading the art:
 
-- `HighFidelityWorldMap`, the client addon, tag series `v1.2.3`. It contains the Lua and the committed tables (`FDIDMap.lua`, `CaveData.lua`, `MinimapTiles.lua`, `CaveTiles.lua`), and no binary map data.
-- `HighFidelityWorldMap_Art_Forever`, the optional Art addon (the [hfwm-art](https://www.curseforge.com/wow/addons/hfwm-art) CurseForge project), tag series `art-v1.2.3`. It is only the stitched `WorldMap/` tiles for the **World**, **Eastern Kingdoms** and **Kalimdor** views and a TOC: no Lua. Zone and cave maps are drawn from the game's own files and ship no art. The client lists it under `OptionalDeps`; without it everything still works, but the World and continent maps are left to Blizzard and their options are greyed out.
+- `HighFidelityWorldMap`, the client addon, tag series `v1.2.3`. It contains the Lua, the committed tables (`FDIDMap.lua`, `CaveData.lua`, `MinimapTiles.lua`, `CaveTiles.lua`) and the low-resolution World and continent map tiles (`WorldMap/`, about 23 MB).
+- `HighFidelityWorldMap_Art_Forever` (title **High Fidelity World Map: Art**), the optional Art addon (the [hfwm-art](https://www.curseforge.com/wow/addons/hfwm-art) CurseForge project), tag series `art-v1.2.3`. It is only the high-resolution `WorldMap/` tiles (`*HD`) for the **World**, **Eastern Kingdoms** and **Kalimdor** views and a TOC: no Lua. Zone and cave maps are drawn from the game's own files and ship no art. Its TOC lists the client under `Dependencies`; the client does not depend on it, and without it everything still works, but World and continent maps stay at low resolution and the High Resolution option is disabled with a tooltip pointing at the Art addon.
 
 The Art addon used to be called `HighFidelityWorldMap_MapData_Forever` with `mapdata-v*` tags. Those tags are retired and hidden from the packager; a leftover `HighFidelityWorldMap_MapData_Forever` folder in an AddOns directory can be deleted.
 
@@ -145,11 +149,12 @@ When ready to publish:
 - run **Create Release: Art** (or push an `art-v*` tag to `main`) to generate the art, package `.pkgmeta-art`, create the GitHub release (one asset, `hfwm-forever-art-v1.2.3.zip`) and then start **Publish Art Release to CurseForge**.
 - run either **Publish ... Release to CurseForge** workflow yourself with a release's tag to retry or redo that upload.
 
-The `generate-world-map-assets` workflow builds and caches the art (`mapart-v2-<hash>`) on `main`, so an Art release only regenerates when the generator changed. Each release workflow's package step ignores the other series' tags.
+The `generate-world-map-assets` workflow builds and caches the art (`mapart-v3-<hash>`) on `main`, so an Art release only regenerates when the generator changes. Each release workflow's package step ignores the other series' tags.
 
 ## Notes
 
 - Generated cave tile data is a build artifact and is not normally committed.
 - `src/addon/client/FDIDMap.lua` and `src/addon/client/CaveData.lua` are part of the repo and are produced by the generator.
-- `src/addon/art/WorldMap/` (the art) is generated and gitignored; only the Art release workflows build it.
+- `src/addon/client/WorldMap/` (the low-resolution art) is committed, like `FDIDMap.lua`: regenerate and commit it whenever the generator's output changes.
+- `src/addon/art/WorldMap/` (the high-resolution art) is generated and gitignored; only the Art release workflows build it.
 - `src/addon/client/Libs/` is fetched during local dev and CI; none of its contents are committed.

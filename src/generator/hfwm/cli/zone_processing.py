@@ -162,22 +162,29 @@ def _stringify(cache: dict) -> dict[str, str]:
     return {str(k): str(v) for k, v in cache.items()}
 
 
+def zone_output_dir(zone: dict, output_dir: str, lowres_dir: str) -> str:
+    """Where *zone*'s tiles go: HD maps to the Art addon, the rest to the client."""
+    return output_dir if zone.get("native") else lowres_dir
+
+
 def process_zones(
     zone_db: dict[str, dict],
     tile_cache: dict[int, object],
     base_art_cache: dict[int, object],
     output_dir: str,
+    lowres_dir: str,
     passes: dict,
     threads: int,
     *,
     ocean_rgb: tuple[int, int, int] | None,
 ) -> ZoneRunStats:
     """Phase 3: stitch, crop, fit and encode every zone."""
-    os.makedirs(output_dir, exist_ok=True)
     tile_cache_str = _stringify(tile_cache)
     base_art_str = _stringify(base_art_cache)
     jobs = [
-        (zone_db[folder], tile_cache_str, output_dir, passes, base_art_str)
+        (zone_db[folder], tile_cache_str,
+         zone_output_dir(zone_db[folder], output_dir, lowres_dir),
+         passes, base_art_str)
         for folder in sorted(zone_db)
     ]
 
@@ -198,9 +205,12 @@ def run_original_pass(
     zone_db: dict[str, dict],
     tile_cache: dict[int, object],
     output_dir: str,
+    lowres_dir: str,
     threads: int,
 ) -> dict:
-    """Write the raw, art-pass-free dump under ``<output_dir>/Original/``.
+    """Write the raw, art-pass-free dump under ``<dir>/Original/``.
+
+    ``<dir>`` is ``output_dir`` for the HD maps and ``lowres_dir`` for the rest.
 
     Phase 3 again with ``passes={}``: the same stitch, crop and geometry
     with none of the transforms, so the FDIDs line up tile for tile with
@@ -211,11 +221,12 @@ def run_original_pass(
     phase 3 has already printed one of those for each, and the geometry it
     would report is by construction identical.
     """
-    dst = os.path.join(output_dir, ORIGINAL_SUBDIR)
-    os.makedirs(dst, exist_ok=True)
     tile_cache_str = _stringify(tile_cache)
     jobs = [
-        (zone_db[folder], tile_cache_str, dst, {}, {})
+        (zone_db[folder], tile_cache_str,
+         os.path.join(zone_output_dir(zone_db[folder], output_dir, lowres_dir),
+                      ORIGINAL_SUBDIR),
+         {}, {})
         for folder in sorted(zone_db)
     ]
 

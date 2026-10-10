@@ -3,7 +3,10 @@
 The repository has two parts — ``src/generator/`` (this package) and
 ``src/addon/`` (the World of Warcraft addons it feeds). The generated Lua
 tables (``FDIDMap.lua``, ``CaveData.lua``) land in ``src/addon/client/``; the
-generated tiles land in ``src/addon/art/WorldMap/``, the separate Art addon.
+generated tiles land in two places: the low-resolution World and continent
+maps in ``src/addon/client/WorldMap/`` (shipped with the client, committed) and
+the high-resolution ``*HD`` maps in ``src/addon/art/WorldMap/``, the separate
+Art addon.
 Everything it merely *caches* stays in ``src/generator/`` so it can never be
 packaged.
 """
@@ -54,6 +57,7 @@ PROVENANCE_FILE = CACHE_ROOT / "provenance.json"
 FDID_MAP_FILE = ADDON_DIR / "FDIDMap.lua"
 CAVE_DATA_FILE = ADDON_DIR / "CaveData.lua"
 WORLDMAP_DIR = ART_DIR / "WorldMap"
+LOWRES_WORLDMAP_DIR = ADDON_DIR / "WorldMap"
 
 # Subdirectory of the output dir holding the raw second dump (--original).
 # It cannot collide with a zone folder: zone folders are named from UiMap's

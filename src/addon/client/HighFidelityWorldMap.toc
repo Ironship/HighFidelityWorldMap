@@ -2,9 +2,7 @@
 ## Title: High Fidelity World Map
 ## Notes: Overlays high-resolution minimap exploration textures onto the world map for a satellite-view experience. Built from World of Warcraft Forever (wow_classic_beta 1.60.1.69913) map data. Type /hfwm to toggle.
 ## Author: HighFidelityWorldMap
-## Version: @project-version@
 ## SavedVariables: HighFidelityWorldMapDB
-## OptionalDeps: HighFidelityWorldMap_Art_Forever
 ## IconTexture: Interface\Icons\INV_Misc_Map02
 ## X-Curse-Project-ID: 1701034
 
@@ -16,9 +14,10 @@ embeds.xml
 
 # Generated data tables (src/generator writes them). Plain globals with no
 # dependency on the addon namespace, so they load first and Config.lua /
-# Namespace.lua can fold them in. The map art itself (WorldMap\*.blp, the world
-# and continent maps) is not listed: it is read through its file path, see
-# Config.FDID_BASE.
+# Namespace.lua can fold them in. The low-resolution map art (WorldMap\*.blp,
+# the world and continent maps) ships in this addon and is not listed: it is
+# read through its file path, see Config.FDID_BASE. The high-resolution art
+# is in the optional Art addon, see Config.HD_BASE.
 # FDIDMap.lua: FileDataID -> tile path, plus the HD continent layouts.
 # MinimapTiles.lua: where each of the client's minimap tiles sits on a zone
 # map. CaveTiles.lua: the same for cave and mine floors.

@@ -6,7 +6,7 @@ import argparse
 from multiprocessing import cpu_count
 
 from ..config.build import GAME_BUILD, GAME_PRODUCT
-from ..config.paths import ORIGINAL_SUBDIR, WORLDMAP_DIR
+from ..config.paths import LOWRES_WORLDMAP_DIR, ORIGINAL_SUBDIR, WORLDMAP_DIR
 from ..formats.wdt import MAID_FIELD_MAPTEXTURE, MAID_FIELD_MINIMAP
 from ..imaging.effects import ART_PASSES
 
@@ -96,7 +96,18 @@ def build_parser() -> argparse.ArgumentParser:
         "output_dir",
         nargs="?",
         default=str(WORLDMAP_DIR),
-        help=f"Output directory for generated tiles (default: {WORLDMAP_DIR})",
+        help=(
+            "Output directory for the high-resolution (*HD) tiles "
+            f"(default: {WORLDMAP_DIR})"
+        ),
+    )
+    parser.add_argument(
+        "--lowres-dir",
+        default=str(LOWRES_WORLDMAP_DIR),
+        help=(
+            "Output directory for the low-resolution tiles, which ship "
+            f"with the client addon (default: {LOWRES_WORLDMAP_DIR})"
+        ),
     )
     parser.add_argument(
         "--zones",

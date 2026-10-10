@@ -130,6 +130,10 @@ jobs:
       - name: Isolate the art-v* tag series
         run: .github/scripts/isolate-tag-series.sh v mapdata-v
 
+      # The repo's TOC has no Version line; stamp it from the tag (not committed).
+      - name: Stamp TOC version
+        run: .github/scripts/stamp-toc-version.sh src/addon/art/HighFidelityWorldMap_Art_Forever.toc "$RELEASE_TAG"
+
       # -d: build the zip, upload nothing. The packager's own GitHub upload adds
       # release.json and dies on a zip this size (curl runs out of memory), so
       # the Release is made by create-github-release.sh below. CurseForge is

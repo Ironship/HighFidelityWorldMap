@@ -83,6 +83,7 @@ def _resolve_art_passes(args: argparse.Namespace) -> tuple[dict, list[str]]:
 def _print_banner(
     args: argparse.Namespace,
     output_dir: str,
+    lowres_dir: str,
     passes: dict,
     pass_notes: list[str],
 ) -> None:
@@ -91,7 +92,8 @@ def _print_banner(
     print("=" * 66, flush=True)
     print(f"Product:   {GAME_PRODUCT}", flush=True)
     print(f"Build:     {GAME_BUILD}", flush=True)
-    print(f"Output:    {output_dir}", flush=True)
+    print(f"Output:    {output_dir}  (HD)", flush=True)
+    print(f"Low-res:   {lowres_dir}", flush=True)
     print(f"Threads:   {args.threads} processing, {args.dl_threads} download",
           flush=True)
     print("Encoding:  uncompressed BGRA BLP2", flush=True)
@@ -103,11 +105,17 @@ def _print_banner(
     print(flush=True)
 
 
+def _has_original(*dirs: str) -> bool:
+    """Is a raw ``Original/`` dump on disk under any of *dirs*?"""
+    return any(os.path.isdir(os.path.join(d, ORIGINAL_SUBDIR)) for d in dirs)
+
+
 def _run_original_phase(
     args: argparse.Namespace,
     zone_db: dict[str, dict],
     tile_cache: dict,
     output_dir: str,
+    lowres_dir: str,
     passes: dict,
 ) -> bool:
     """Phase 3b.  Returns whether the raw dump was written this run."""
@@ -121,12 +129,14 @@ def _run_original_phase(
     if want_original:
         print(f"\n--- Phase 3b: Raw dump into {ORIGINAL_SUBDIR}/ "
               f"({args.threads} workers) ---", flush=True)
-        run_original_pass(zone_db, tile_cache, output_dir, args.threads)
+        run_original_pass(
+            zone_db, tile_cache, output_dir, lowres_dir, args.threads,
+        )
     elif args.original:
         print(f"\n  Skipping the {ORIGINAL_SUBDIR}/ dump: no art passes are "
               f"enabled, so the main output is already the raw stitch.",
               flush=True)
-    elif os.path.isdir(os.path.join(output_dir, ORIGINAL_SUBDIR)):
+    elif _has_original(output_dir, lowres_dir):
         print(f"\n  WARNING: --no-original was given but {ORIGINAL_SUBDIR}/ "
               f"still exists from an earlier build. It is left alone and "
               f"will be picked up by phase 4; delete it to drop the "
@@ -160,6 +170,7 @@ def main() -> None:
         if not args.skip_fdid_map:
             run_fdid_map_phase(
                 os.path.abspath(args.output_dir),
+                os.path.abspath(args.lowres_dir),
                 zone_db,
                 passes,
                 # Same rule as phase 3b: no art passes means no raw dump.
@@ -172,11 +183,12 @@ def main() -> None:
         return
 
     output_dir = os.path.abspath(args.output_dir)
+    lowres_dir = os.path.abspath(args.lowres_dir)
     passes, pass_notes = _resolve_art_passes(args)
     ocean_opts = passes.get("ocean")
     ocean_rgb = ocean_opts["color"] if ocean_opts else None
 
-    _print_banner(args, output_dir, passes, pass_notes)
+    _print_banner(args, output_dir, lowres_dir, passes, pass_notes)
 
     zone_db = load_zone_db(args.refresh, args.maid_field, args.zones)
     # Every zone's source tiles are downloaded (the client-tile placement
@@ -198,23 +210,22 @@ def main() -> None:
     print(f"\n--- Phase 3: Processing zones ({args.threads} workers) ---",
           flush=True)
     stats = process_zones(
-        art_db, tile_cache, base_art_cache, output_dir, passes,
+        art_db, tile_cache, base_art_cache, output_dir, lowres_dir, passes,
         args.threads, ocean_rgb=ocean_rgb,
     )
 
     wrote_original = _run_original_phase(
-        args, art_db, tile_cache, output_dir, passes,
+        args, art_db, tile_cache, output_dir, lowres_dir, passes,
     )
 
     if not args.skip_fdid_map:
         run_fdid_map_phase(
-            output_dir, art_db, passes,
+            output_dir, lowres_dir, art_db, passes,
             # Scan the raw tree whenever one is on disk, not only when this
             # run wrote it: a rebuild with --no-original should not silently
             # strip a background whose art is still installed.
             include_original=(
-                wrote_original
-                or os.path.isdir(os.path.join(output_dir, ORIGINAL_SUBDIR))
+                wrote_original or _has_original(output_dir, lowres_dir)
             ),
             total_out_tiles=stats.total_out_tiles,
         )
