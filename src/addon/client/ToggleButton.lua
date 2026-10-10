@@ -162,10 +162,11 @@ local function CreatePopup()
     end
     popup:SetScript("OnShow", syncPopup)
 
-    -- Pin (top right): detaches the popup from the map so it stays put with
-    -- the mouse elsewhere and the map closed, and turns into an X. The X
-    -- closes the popup and clears the pin. Session-only, not saved.
-    local strata = popup:GetFrameStrata()
+    -- Pin (top right): keeps the popup open when the mouse leaves it, and
+    -- through closing the map -- it is still a child of the map, so it
+    -- disappears with the map and is back when the map reopens, without
+    -- another right click. Turns into an X, which closes the popup and
+    -- clears the pin. Session-only, not saved.
     local pinBtn = CreateFrame("Button", nil, popup)
     pinBtn:SetSize(16, 16)
     pinBtn:SetPoint("TOPRIGHT", -4, -4)
@@ -185,26 +186,11 @@ local function CreatePopup()
     SetPinIcon()
 
     local function Pin()
-        -- Same on-screen spot and size, but parented to UIParent so hiding
-        -- the map (or the button) no longer hides it.
-        local left, top = popup:GetLeft(), popup:GetTop()
-        local scale = popup:GetEffectiveScale()
         pinned = true
-        popup:SetParent(UIParent)
-        popup:SetScale(scale / UIParent:GetEffectiveScale())
-        popup:SetFrameStrata("DIALOG")
-        popup:ClearAllPoints()
-        popup:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
         SetPinIcon()
     end
     unpinPopup = function()
         pinned = false
-        popup:SetParent(button)
-        popup:SetScale(1)
-        popup:SetFrameStrata(strata)
-        popup:SetFrameLevel(button:GetFrameLevel() + 5)
-        popup:ClearAllPoints()
-        popup:SetPoint("TOPRIGHT", button, "BOTTOMRIGHT", 0, 0)
         popup:Hide()
         SetPinIcon()
     end
@@ -316,7 +302,8 @@ function ToggleButton:Start()
         ToggleButton:Refresh()
     end)
 
-    -- Close the opacity popup with the map, unless it's pinned.
+    -- Close the opacity popup with the map, unless it's pinned: a pinned one
+    -- is left "shown", so it hides with the map and returns when it reopens.
     WorldMapFrame:HookScript("OnHide", function()
         if popup and not pinned then popup:Hide() end
     end)
