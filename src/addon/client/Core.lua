@@ -100,7 +100,8 @@ end
 --- while Fog of War is on and the map is shown; both checks avoid a full
 --- Refresh on every step the player takes.
 function addon:MAP_EXPLORATION_UPDATED()
-    if Config:FogOfWarEnabled() and WorldMapFrame:IsShown() then
+    if WorldMapFrame:IsShown() and (Config:FogOfWarEnabled()
+        or Config:WorldFogOfWarEnabled(WorldMapFrame:GetMapID())) then
         Renderer:Refresh(true)
     end
 end

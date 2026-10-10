@@ -362,7 +362,8 @@ for _, mapType in ipairs(Config.MAP_TYPES) do
         name = " ",
         width = "relative",
         relWidth = mapType.key == "world" and 0.33 or 0.65,
-        hidden = isZone and ZoneIsHybrid or nil,
+        -- World's row yields to the Fog of War checkbox below the same way.
+        hidden = (isZone or mapType.key == "world") and ZoneIsHybrid or nil,
     }
 end
 mapBackgroundArgs.fogOfWarEnabled = {
@@ -405,6 +406,27 @@ mapBackgroundArgs.worldMapClarity = {
     set = function(_, value)
         Config.db.worldMapClarity = (value == "high")
         ns.ZoomLevels:Refresh()
+        ns.Renderer:ForceRefresh()
+    end,
+}
+-- World Map's second neighbour, between it and Map Resolution: the
+-- World/Continent version of Fog of War. Same visibility rule as the Zone one
+-- (Zone Map Hybrid), but its own saved value; Config:WorldFogOfWarEnabled()
+-- enforces the rule in code, and a saved "on" picks back up when it holds.
+mapBackgroundArgs.worldFogOfWar = {
+    order = MAP_TYPE_ORDER.world + 0.5,
+    type = "toggle",
+    width = "relative",
+    relWidth = 0.3,
+    name = "Fog of War",
+    desc = "On the World and Continent maps, only draws this addon's map "
+        .. "over zones you have fully explored. A zone with any area still "
+        .. "undiscovered stays as the game draws it. Only shown while the "
+        .. "Zone Map background is Hybrid, same as the zone Fog of War.",
+    hidden = function() return not ZoneIsHybrid() end,
+    get = function() return Config.db.worldFogOfWar end,
+    set = function(_, value)
+        Config.db.worldFogOfWar = value
         ns.Renderer:ForceRefresh()
     end,
 }

@@ -29,6 +29,7 @@ ns.ZoomLevels  = {}
 ns.ResetView   = {}
 ns.KeepCentered = {}
 ns.ToggleButton = {}
+ns.ZoneFog = {}
 
 -- Convenience printer (accessible everywhere via ns.P)
 ns.P = function(msg) print("|cff33ccffHFWM-F:|r " .. msg) end

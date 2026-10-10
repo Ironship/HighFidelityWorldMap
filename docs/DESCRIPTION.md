@@ -14,6 +14,8 @@ Exploration is at the heart of WoW. To keep the spirit of mystery alive going in
 
 ![Fog of War](https://i.postimg.cc/0zY57ff8/fog-of-war.jpg)
 
+On the World and Continent maps a separate "Fog of War" checkbox (next to the World Map background in the settings) draws the high-fidelity map only over zones you have explored in full. Miss one area of a zone and the whole zone stays as the game draws it.
+
 ## Offers optional replacements for *all* maps
 
 Not just individual zones, continents too! With full control and various customization options. (Continent and World maps work out of the box at low resolution; the optional High Fidelity World Map: Art companion addon unlocks the High Resolution option.)

@@ -1,2 +1,3 @@
 # Generated map art; regenerate with `python src/generator/generateHFWM.py`.
 WorldMap
+ZoneMasks

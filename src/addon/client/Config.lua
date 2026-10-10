@@ -82,6 +82,12 @@ Config.DEFAULTS = {
     -- shape. See Renderer's Activate() and DrawExploredPiece.
     fogOfWarEnabled = false,
 
+    -- The "Fog of War" checkbox beside the World Map dropdown (Options),
+    -- offered under the same condition as fogOfWarEnabled above. On: the
+    -- World and Continent maps draw this addon's tiles only over zones
+    -- explored in full. See ZoneFog.lua.
+    worldFogOfWar = false,
+
     -- The "sd"/"hd" button ToggleButton.lua docks in the world map's
     -- top-right corner, for flipping the HD/SD blend (`alpha` above)
     -- between all-SD and all-HD, without touching `enabled` above. On by
@@ -405,6 +411,9 @@ Config.FDID_MAP_ORIGINAL = HFWMF_FDID_MAP_ORIGINAL or {}
 -- two tables above point at) ships inside this addon, so every map type works
 -- without anything else installed.
 Config.FDID_BASE = "Interface\\AddOns\\" .. addonName .. "\\WorldMap\\"
+-- The zone outlines the World/Continent Fog of War crops the map with (see
+-- ZoneFog.lua); committed, unlike WorldMap\ above, which is generated.
+Config.MASK_BASE = "Interface\\AddOns\\" .. addonName .. "\\ZoneMasks\\"
 -- The high-resolution art (NATIVE_ZONES below) ships in the separate,
 -- optional Art addon (src/addon/art) so a client update is not a 1 GB
 -- download. Tiles are drawn from here only while it is installed.
@@ -490,9 +499,29 @@ end
 --- again, rather than being silently cleared.
 ---@return boolean
 function Config:FogOfWarEnabled()
-    if not (self.db and self.db.fogOfWarEnabled) then return false end
+    return (self.db and self.db.fogOfWarEnabled and self:ZoneBackgroundIsHybrid()) or false
+end
+
+--- Is the Zone Map's effective background Hybrid? The one condition both
+--- Fog of War checkboxes in Options hang off.
+---@return boolean
+function Config:ZoneBackgroundIsHybrid()
     local zoneBg = self:GetEffectiveMapTypeBackground("zone")
     return zoneBg ~= nil and zoneBg.key == "hybrid"
+end
+
+--- Is the World/Continent Fog of War checkbox (Options, beside World Map)
+--- in force on *mapID*? Same condition as the zone one -- Zone Map Hybrid --
+--- but its own saved value. When true, Renderer draws this addon's tiles
+--- only over zones the player has fully explored (ZoneFog.lua).
+---@param mapID number|nil
+---@return boolean
+function Config:WorldFogOfWarEnabled(mapID)
+    if not (self.db and self.db.worldFogOfWar and self:ZoneBackgroundIsHybrid()) then
+        return false
+    end
+    local mapType = self:ClassifyMapID(mapID)
+    return mapType == "world" or mapType == "continent"
 end
 
 --- Is the HD/SD slider (ToggleButton's right-click popup) below 100%? Then

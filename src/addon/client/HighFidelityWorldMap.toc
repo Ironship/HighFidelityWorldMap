@@ -24,10 +24,16 @@ embeds.xml
 FDIDMap.lua
 MinimapTiles.lua
 CaveTiles.lua
+# ZoneOverlays.lua, ZoneShapes.lua: how many exploration overlays each zone
+# has, and where each zone lies on the continent and World maps, for the
+# World/Continent Fog of War (ZoneFog.lua).
+ZoneOverlays.lua
+ZoneShapes.lua
 CaveData.lua
 Namespace.lua
 Config.lua
 TexturePool.lua
+ZoneFog.lua
 BaseArt.lua
 MapFrameBg.lua
 Exploration.lua

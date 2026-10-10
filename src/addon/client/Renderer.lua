@@ -736,6 +736,37 @@ local function SoftenFogEdges(cols, rows, filled, pieceTex, trace)
     end
 end
 
+--- Draw the part of this addon's tile grid inside one rectangle, given in
+--- layer pixels, clipping the tiles that straddle its edges. *mask*, when
+--- given, crops every piece to its shape.
+local function DrawLayerRect(x0, y0, x1, y1, layerW, layerH, tilePxW, tilePxH,
+    cols, rows, tileSource, scaleX, scaleY, mask)
+    for row = math.max(0, math.floor(y0 / tilePxH)),
+        math.min(rows - 1, math.ceil(y1 / tilePxH) - 1) do
+        for col = math.max(0, math.floor(x0 / tilePxW)),
+            math.min(cols - 1, math.ceil(x1 / tilePxW) - 1) do
+            local src = tileSource[row * cols + col + 1]
+            if src then
+                local tileX, tileY = col * tilePxW, row * tilePxH
+                local ix0, ix1 = math.max(tileX, x0),
+                    math.min(tileX + tilePxW, layerW, x1)
+                local iy0, iy1 = math.max(tileY, y0),
+                    math.min(tileY + tilePxH, layerH, y1)
+                if ix1 > ix0 and iy1 > iy0 then
+                    local tex = Pool:Acquire()
+                    tex:SetSize((ix1 - ix0) * scaleX, (iy1 - iy0) * scaleY)
+                    tex:SetPoint("TOPLEFT", Config.overlayFrame, "TOPLEFT",
+                        ix0 * scaleX, -iy0 * scaleY)
+                    tex:SetTexCoord((ix0 - tileX) / tilePxW, (ix1 - tileX) / tilePxW,
+                        (iy0 - tileY) / tilePxH, (iy1 - tileY) / tilePxH)
+                    tex:SetTexture(src)
+                    if mask then tex:AddMaskTexture(mask) end
+                end
+            end
+        end
+    end
+end
+
 --- The actual work of a refresh, wrapped and guarded by Renderer:Refresh
 --- below against being re-entered while already running.
 ---@param force boolean|nil
@@ -907,6 +938,14 @@ local function DoRefresh(force)
     local mapType = Config:ClassifyMapID(mapID)
     local fogOfWar = Config:FogOfWarEnabled() and background.key == "hybrid"
         and mapType ~= "world" and mapType ~= "continent"
+
+    -- World/Continent Fog of War (Options' checkbox beside World Map): the
+    -- zones fully explored, each { zone, u0, v0, u1, v1 } (the box its mask
+    -- covers, 0-1 over the map), or nil to draw the map whole.
+    local worldFogZones
+    if Config:WorldFogOfWarEnabled(mapID) then
+        worldFogZones = ns.ZoneFog:Explored(mapID)
+    end
 
     local tileSource = {}
     local useBundled = false
@@ -1229,6 +1268,32 @@ local function DoRefresh(force)
         -- rectangle into an organic outline. Left in place, unused, in
         -- case a future data source calls for it.
         -- SoftenFogEdges(cols, rows, filled, pieceTex, trace)
+    elseif worldFogZones then
+        -- World/Continent Fog of War: this addon's tiles only over the
+        -- zones the player has fully explored (ZoneFog.lua), each cropped
+        -- to its own outline by a mask baked from the game's zone borders.
+        for _, shape in ipairs(worldFogZones) do
+            local x0, y0 = shape[2] * layerW, shape[3] * layerH
+            local x1, y1 = shape[4] * layerW, shape[5] * layerH
+            local mask = MaskPool:Acquire()
+            mask:ClearAllPoints()
+            mask:SetPoint("TOPLEFT", Config.overlayFrame, "TOPLEFT",
+                x0 * scaleX, -y0 * scaleY)
+            mask:SetSize((x1 - x0) * scaleX, (y1 - y0) * scaleY)
+            mask:SetTexture(Config.MASK_BASE .. "z" .. shape[1], "CLAMP", "CLAMP")
+            DrawLayerRect(x0, y0, x1, y1, layerW, layerH, tilePxW, tilePxH,
+                cols, rows, tileSource, scaleX, scaleY, mask)
+        end
+        -- A mask file read for the first time is opaque until it finishes
+        -- loading (same as Fog of War's masks), so draw once more shortly
+        -- after the first draw of a map.
+        if isFreshMapOpen and not Config._zoneMaskRetryPending then
+            Config._zoneMaskRetryPending = true
+            C_Timer.After(0.2, function()
+                Config._zoneMaskRetryPending = false
+                if Config.overlayActive then Renderer:ForceRefresh() end
+            end)
+        end
     elseif clientZone then
         -- Experiment: this zone's tiles are the client's own minimap files,
         -- placed in art-layer pixels (see MinimapTiles.lua). Tiles that
@@ -1290,7 +1355,7 @@ local function DoRefresh(force)
     -- catch, since fogActive being true already means this is Fog of
     -- War's own intentionally-partial grid, not a lookup that came back
     -- empty by mistake, so there is nothing to fall back from.
-    if Pool:ActiveCount() == 0 and not fogActive then
+    if Pool:ActiveCount() == 0 and not fogActive and not worldFogZones then
         P("No textures for mapID " .. mapID .. ", restoring default map art")
         RestoreDefaults()
     end
