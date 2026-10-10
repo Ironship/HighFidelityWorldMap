@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Syntax-checks every Lua file listed in the TOC, plus the fetched Ace3 libs.
+# Syntax-checks every Lua file listed in the TOC, plus the fetched Ace3 libs and
+# the Art addon's FDIDMap.lua.
 # Runs against src/addon/client/ whatever the working directory; needs luac5.1.
 set -euo pipefail
 
@@ -18,5 +19,8 @@ done < <(grep -E '^[^#[:space:]].*\.(lua|xml)[[:space:]]*$' HighFidelityWorldMap
 while IFS= read -r file; do
   luac5.1 -p "$file" || status=1
 done < <(find Libs -name '*.lua')
+
+# The Art addon's only Lua file (generated, committed).
+luac5.1 -p ../art/FDIDMap.lua || status=1
 
 exit $status

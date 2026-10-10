@@ -396,8 +396,8 @@ Config.FDID_MAP_SUB      = HFWMF_FDID_MAP_SUB      or {}
 -- The raw second dump, written only when the pipeline ran with --original.
 -- Its paths carry their own "Original\\" prefix, so FDID_BASE serves both.
 Config.FDID_MAP_ORIGINAL = HFWMF_FDID_MAP_ORIGINAL or {}
--- The art ships in this addon's own WorldMap folder.
-Config.FDID_BASE    = "Interface\\AddOns\\HighFidelityWorldMap\\WorldMap\\"
+-- The art ships in the separate Art addon (src/addon/art), which the TOC requires.
+Config.FDID_BASE    = "Interface\\AddOns\\HighFidelityWorldMap_MapData_Forever\\WorldMap\\"
 
 -- Higher-resolution continent/world maps (see hfwm/gamedata/db2.py's
 -- _hires_geometry and hfwm/lua/fdid_map.py): Kalimdor/Eastern Kingdoms/the

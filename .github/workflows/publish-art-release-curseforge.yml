@@ -1,0 +1,134 @@
+name: Publish Art Release to CurseForge
+
+# Uploads an existing Art addon release (mapdata-v1.2.3) to CurseForge. It never
+# creates tags or GitHub Releases; run "Create Release: Art" first. The client
+# addon has its own workflow: "Publish Client Release to CurseForge".
+#
+# Run it on its own from the Actions tab, or let "Create Release: Art" call it.
+# The TOC of the Art addon carries its own X-Curse-Project-ID, built with
+# .pkgmeta-art.
+#
+# The package is rebuilt from the release tag rather than downloaded from the
+# GitHub Release: the packager is what turns the TOC and tag into CurseForge
+# game versions and a release channel (release/beta/alpha), and it cannot
+# upload a zip it did not build. The generated art is a pure function of the
+# generator code at that tag, so the result matches what the Create Release
+# workflow shipped.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Art release tag to publish, as shown on the Releases page, e.g. mapdata-v1.0.0"
+        type: string
+        required: true
+  workflow_call:
+    inputs:
+      tag:
+        description: "Art release tag to publish, e.g. mapdata-v1.0.0"
+        type: string
+        required: true
+    secrets:
+      CF_API_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+  checks: write
+
+# A publish uploads a ~1 GB zip to CurseForge; never run two at once.
+concurrency:
+  group: publish-art-release-curseforge
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify release
+    # The workflow file and CF_API_TOKEN are only trusted from main. In a called
+    # workflow github.ref is the caller's ref: main for a manual release, or the
+    # pushed release tag itself, whose commit "Verify tag is on main" below
+    # requires to be on main.
+    if: github.ref == 'refs/heads/main' || github.ref == format('refs/tags/{0}', inputs.tag)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TAG_PREFIX: mapdata-v
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # Also checks the tag is an Art tag (client releases use their own publish
+      # workflow). The value is not echoed back: it is free text from a workflow input.
+      - name: Verify release exists
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/verify-release-exists.sh
+
+      - name: Verify tag is on main
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: .github/scripts/verify-tag-on-main.sh
+
+  assets:
+    name: World map assets
+    needs: verify
+    # Called, not dispatched, so the build shows up as jobs of this run. It runs
+    # on the caller's ref, which the verify job guarantees is main or a release
+    # tag on main; main is the cache scope a tag-triggered release can read.
+    permissions:
+      contents: read
+      actions: write
+    uses: ./.github/workflows/generate-world-map-assets.yml
+
+  publish:
+    name: Package and upload to CurseForge
+    needs: [verify, assets]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          # release.sh walks back through tags to build the changelog.
+          fetch-depth: 0
+
+      # The assets job above guarantees main's cache holds the table and art (a
+      # hit when the generator has not changed, see
+      # generate-world-map-assets.yml). Restoring them here is what puts them
+      # in this workspace; a miss would rebuild.
+      - name: Generate world map assets
+        uses: ./.github/actions/generate-world-map-assets
+
+      # See release-addon-art.yml: takes the gitignored art off the packager's
+      # exclude list without writing GBs of blobs into .git.
+      - name: Stage generated art
+        run: git add -fN src/addon/art/WorldMap
+
+      - name: Write release notes
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: .github/scripts/release-notes.sh "$RELEASE_TAG" > .release-notes.md
+
+      # The packager has no tag-prefix option: its changelog uses "the previous
+      # tag" among all tags. Hide the client's v* series from it.
+      - name: Isolate the mapdata-v* tag series
+        run: .github/scripts/isolate-tag-series.sh v
+
+      # Only CF_API_TOKEN is passed, so the packager uploads to CurseForge and
+      # does not touch the GitHub Release. Keep the arguments in sync with
+      # release-addon-art.yml. Nothing goes to WoWInterface, so skip pandoc.
+      - name: Package and upload to CurseForge
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -m .pkgmeta-art -n "{package-name}-{project-version}:{project-version}"
+          pandoc: "false"
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}

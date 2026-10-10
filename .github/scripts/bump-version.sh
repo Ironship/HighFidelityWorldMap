@@ -4,13 +4,14 @@
 # Inputs (environment):
 #   BUMP        patch|minor|major
 #   PRERELEASE  optional suffix, e.g. "beta.1" -> v1.0.1-beta.1
+#   TAG_PREFIX  tag series, default "v" (client); the Art addon uses "mapdata-v"
 # Writes "tag=<new tag>" to $GITHUB_OUTPUT.
 set -euo pipefail
 
-prefix="v"
+prefix="${TAG_PREFIX:-v}"
 prerelease="${PRERELEASE:-}"
 
-# "v[0-9]*" does not match the retired "mapdata-v1.0.0" tags.
+# "v[0-9]*" does not match "mapdata-v1.0.0" and vice versa: the glob is anchored.
 latest="$(git tag -l "${prefix}[0-9]*" --sort=-v:refname | head -n1)"
 if [[ -z "$latest" ]]; then
   base="0.1.0"

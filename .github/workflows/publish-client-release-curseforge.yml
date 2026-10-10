@@ -92,17 +92,16 @@ jobs:
           fetch-depth: 0
 
       # No CHANGELOG.md ships in the package: .pkgmeta points the packager at
-      # this manual changelog, which it uploads but does not copy in. The
-      # gitignored WorldMap/ art is likewise left out of the package.
+      # this manual changelog, which it uploads but does not copy in.
       - name: Write release notes
         env:
           RELEASE_TAG: ${{ inputs.tag }}
         run: .github/scripts/release-notes.sh "$RELEASE_TAG" > .release-notes.md
 
       # The packager has no tag-prefix option: its changelog uses "the previous
-      # tag" among all tags. Hide the retired mapdata-v* series from it.
+      # tag" among all tags. Hide the Art addon's mapdata-v* series from it.
       - name: Isolate the v* tag series
-        run: .github/scripts/isolate-tag-series.sh
+        run: .github/scripts/isolate-tag-series.sh mapdata-v
 
       # Only CF_API_TOKEN is passed, so the packager uploads to CurseForge and
       # does not touch the GitHub Release. Nothing goes to WoWInterface, so skip

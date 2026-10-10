@@ -92,7 +92,7 @@ jobs:
       # takes a minute or two, and it runs the whole path: download,
       # stitch, the sea erase, the resample, BLP2 encode.
       #
-      # --skip-fdid-map because phase 4 writes src/addon/client/FDIDMap.lua rather than
+      # --skip-fdid-map because phase 4 writes src/addon/art/FDIDMap.lua rather than
       # into the output dir, and a one-map run would overwrite the committed
       # one.
       - name: Smoke test
@@ -118,4 +118,10 @@ jobs:
         uses: BigWigsMods/packager@v2
         with:
           args: -d -z
+          pandoc: "false"
+
+      - name: Validate package config (art)
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -d -z -m .pkgmeta-art
           pandoc: "false"

@@ -1,8 +1,8 @@
 name: Generate world map assets
 description: >-
-  Produce the generated map content: the art in src/addon/client/WorldMap/
-  plus the Lua tables src/addon/client/FDIDMap.lua and
-  src/addon/client/CaveData.lua, reusing cached copies when the generator has
+  Produce the generated Art addon content: the World and continent maps in
+  src/addon/art/WorldMap/ plus the lookup table src/addon/art/FDIDMap.lua,
+  reusing cached copies when the generator has
   not changed since they were last built.
 
 # The output is a pure function of the generator (src/generator/generateHFWM.py,
@@ -10,17 +10,21 @@ description: >-
 # cache key. A release that only touches Lua, docs or workflows hits the cache
 # and skips the ~40 minute build.
 #
-# Two cache entries share that hash. Both ship in the addon package, and a miss
-# on either falls back to full generation, which saves both:
+# Two cache entries share that hash. Both ship in the Art addon package, and a
+# miss on either falls back to full generation, which saves both:
 #
-#   mapart-v2-<hash>     src/addon/client/WorldMap, multi-GB.
-#   maptables-v2-<hash>  src/addon/client/FDIDMap.lua and CaveData.lua, small.
+#   mapart-v2-<hash>     src/addon/art/WorldMap, the World and continent
+#                        maps only (zone and cave maps are drawn from the
+#                        game's own files), ~1.2 GB.
+#   maptables-v2-<hash>  src/addon/art/FDIDMap.lua, small.
+#
+# CaveData.lua is the client's and is committed; --no-caves leaves it alone.
 #
 # GitHub scopes caches by ref: a run on a tag can read caches saved from the
 # default branch but not from any other tag. So the copy that *later* releases
 # restore has to be saved from main (see
-# .github/workflows/generate-world-map-assets.yml and release-addon-client.yml). A
-# copy saved from a tag still serves its own run, it just costs ~2-3 GB of the
+# .github/workflows/generate-world-map-assets.yml and release-addon-art.yml). A
+# copy saved from a tag still serves its own run, it just costs ~1 GB of the
 # repo's 10 GB cache quota and is invisible to every other tag.
 
 inputs:
@@ -54,16 +58,6 @@ runs:
         HASH: ${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}
       run: .github/scripts/world-map-assets-keys.sh >> "$GITHUB_OUTPUT"
 
-    # The art tree is ~7 GB. The packager then copies it into .release/ and zips
-    # that, so a stock runner's ~14 GB runs out partway through the zip.
-    # Everything removed here is preinstalled tooling this job never touches.
-    # Started in the background: the deletion (~2 min) overlaps the cache
-    # download, and the art fits in the ~14 GB a stock runner starts with. The
-    # "Wait for disk cleanup" step below blocks before anything needs the room.
-    - name: Free disk space
-      shell: bash
-      run: .github/scripts/free-disk-space.sh start
-
     - name: Delete world map assets caches
       if: inputs.bypass-cache == 'true'
       shell: bash
@@ -77,9 +71,7 @@ runs:
       if: inputs.bypass-cache != 'true'
       uses: actions/cache/restore@v5
       with:
-        path: |
-          src/addon/client/FDIDMap.lua
-          src/addon/client/CaveData.lua
+        path: src/addon/art/FDIDMap.lua
         key: ${{ steps.key.outputs.tables-key }}
 
     - name: Restore world map art cache
@@ -87,12 +79,8 @@ runs:
       if: inputs.bypass-cache != 'true'
       uses: actions/cache/restore@v5
       with:
-        path: src/addon/client/WorldMap
+        path: src/addon/art/WorldMap
         key: ${{ steps.key.outputs.art-key }}
-
-    - name: Wait for disk cleanup
-      shell: bash
-      run: .github/scripts/free-disk-space.sh wait
 
     - name: Decide what to generate
       id: decide
@@ -134,7 +122,7 @@ runs:
     - name: Generate map art
       if: steps.decide.outputs.generate == 'true'
       shell: bash
-      run: python src/generator/generateHFWM.py
+      run: python src/generator/generateHFWM.py --no-caves
 
     # Runs on cache hits too: a bad entry should fail here, not ship.
     - name: Verify world map assets
@@ -147,14 +135,12 @@ runs:
       if: inputs.save == 'true' && steps.decide.outputs.generate == 'true' && steps.tables.outputs.cache-hit != 'true'
       uses: actions/cache/save@v5
       with:
-        path: |
-          src/addon/client/FDIDMap.lua
-          src/addon/client/CaveData.lua
+        path: src/addon/art/FDIDMap.lua
         key: ${{ steps.key.outputs.tables-key }}
 
     - name: Save world map art cache
       if: inputs.save == 'true' && steps.decide.outputs.generate == 'true' && steps.art.outputs.cache-hit != 'true'
       uses: actions/cache/save@v5
       with:
-        path: src/addon/client/WorldMap
+        path: src/addon/art/WorldMap
         key: ${{ steps.key.outputs.art-key }}

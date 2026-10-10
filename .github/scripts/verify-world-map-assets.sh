@@ -4,8 +4,8 @@
 # any working directory.
 #
 # Two checks, because the tables are small and the art is multi-GB:
-#   art     src/addon/client/WorldMap/
-#   tables  src/addon/client/FDIDMap.lua and CaveData.lua
+#   art     src/addon/art/WorldMap/
+#   tables  src/addon/art/FDIDMap.lua
 #
 # Usage: verify-world-map-assets.sh [tables|art|all]    (default: all)
 set -euo pipefail
@@ -15,7 +15,7 @@ repo="$(cd "$(dirname "$0")/../.." && pwd)"
 status=0
 
 verify_art() {
-  cd "$repo/src/addon/client"
+  cd "$repo/src/addon/art"
 
   # Count the two trees separately. A single total lets one of them
   # cover for the other: when every zone in phase 3 died and only the
@@ -57,19 +57,17 @@ verify_art() {
 }
 
 verify_tables() {
-  local fdid="$repo/src/addon/client/FDIDMap.lua"
-  local cave="$repo/src/addon/client/CaveData.lua"
+  local fdid="$repo/src/addon/art/FDIDMap.lua"
 
   test -s "$fdid" || { echo "::error::FDIDMap.lua is missing or empty"; status=1; return; }
-  test -s "$cave" || { echo "::error::CaveData.lua is missing or empty"; status=1; }
-  cd "$repo/src/addon/client"
-  # Both tables have to be populated, or the addon silently drops a
+  cd "$repo/src/addon/art"
+  # The table has to be populated, or the addon silently drops a
   # background that the TOC and the options panel still advertise.
   grep -q '^HFWMF_FDID_MAP_ORIGINAL = {$' FDIDMap.lua || {
     echo "::error::FDIDMap.lua has no populated HFWMF_FDID_MAP_ORIGINAL table"
     status=1
   }
-  echo "Tables OK: FDIDMap.lua $(du -h "$fdid" | cut -f1), CaveData.lua $(du -h "$cave" 2>/dev/null | cut -f1)."
+  echo "Tables OK: FDIDMap.lua $(du -h "$fdid" | cut -f1)."
 }
 
 case "$mode" in
