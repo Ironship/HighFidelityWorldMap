@@ -78,10 +78,9 @@ Config.DEFAULTS = {
     fogOfWarEnabled = false,
 
     -- The "sd"/"hd" button ToggleButton.lua docks in the world map's
-    -- top-right corner, for flipping Config.visuallySuppressed (a
-    -- per-session, visual-only override -- see ToggleButton.lua's own
-    -- header) without touching `enabled` above. On by default; turn off
-    -- here for a cleaner map with one less button.
+    -- top-right corner, for flipping the HD/SD blend (`alpha` above)
+    -- between all-SD and all-HD, without touching `enabled` above. On by
+    -- default; turn off here for a cleaner map with one less button.
     toggleButtonEnabled = true,
 }
 -- The db also carries `caveWindowPoint` -- { point, relPoint, x, y, toMap }
@@ -472,6 +471,16 @@ function Config:FogOfWarEnabled()
     return zoneBg ~= nil and zoneBg.key == "hybrid"
 end
 
+--- Is the HD/SD slider (ToggleButton's right-click popup) below 100%? Then
+--- the overlay is drawn at that alpha over Blizzard's own stock map, left
+--- visible underneath, so the result is an exact HD/SD mix. Renderer's
+--- Activate and Exploration's pin re-hiding both key off this. The
+--- threshold absorbs slider step rounding near the top.
+---@return boolean
+function Config:IsMixing()
+    return self.db ~= nil and self.db.alpha < 0.995
+end
+
 -- Vashj'ir UiMapIDs -- retail-only (Cataclysm). WoW Forever has no
 -- Vashj'ir, so this is intentionally empty. Kept so Renderer.lua stays
 -- structurally identical to the retail addon.
@@ -491,14 +500,6 @@ Config.lastMapID       = nil
 Config.lastLayerIdx    = nil
 Config.lastSubmerged   = nil
 Config.tracing         = false
-
--- Visual-only override for ToggleButton.lua's "sd"/"hd" button: reverts
--- the map to Blizzard's stock art *without* touching Config.db.enabled
--- (the real `/hfwm` on/off switch, which Cave.lua also reads -- toggling
--- that off would take the cave map down with it). Session-only: never
--- saved, and ToggleButton resets it back to false when the map closes, so
--- every fresh open of the world map starts back on the high-fidelity view.
-Config.visuallySuppressed = false
 
 -- Cave map runtime state (the window itself is built by CaveRenderer)
 Config.caveOverlayFrame      = nil   -- the cave window frame

@@ -10,14 +10,16 @@
 -- pulling the real texture/atlas info for that button's own artwork, if
 -- it's ever needed.)
 --
--- Label reads "SD" while the overlay is on -- click to drop back to
--- Blizzard's own stock map -- and "HD" once it's off, so clicking again
--- brings the high-fidelity overlay back. This is purely visual
--- (Config.visuallySuppressed, force-refreshed through directly) and
--- deliberately does NOT touch Config.db.enabled, the real `/hfwm` on/off
--- switch -- that also gates the cave map (see Cave.lua), and this button
--- has no business taking that down too. It's also session-only: closing
--- the map resets it, so the next open always starts back on high-fidelity.
+-- Label reads "SD" while the blend is past 50% HD -- click to drop back to
+-- Blizzard's own stock map -- and "HD" otherwise, so clicking again
+-- brings the high-fidelity overlay back. A click is just the blend slider
+-- (below) jumping to 0% or 100%, so the two always agree, and like the
+-- slider it persists. It deliberately does NOT touch Config.db.enabled,
+-- the real `/hfwm` on/off switch -- that also gates the cave map (see
+-- Cave.lua), and this button has no business taking that down too.
+--
+-- Right-clicking it opens a small slider just below (see CreatePopup) that
+-- blends between the HD overlay and Blizzard's own map, to compare them.
 --
 -- The button itself is opt-out: Config.db.toggleButtonEnabled (Options'
 -- own "HD/SD map toggle button" checkbox) gates whether it's ever created
@@ -32,6 +34,7 @@ local ToggleButton = ns.ToggleButton
 local WorldMapFrame = _G.WorldMapFrame
 
 local button
+local popup
 
 --- CreateFrame against the first template that actually exists. Same reason
 --- as CaveRenderer.lua's own copy: CreateFrame *errors* on an unknown
@@ -45,10 +48,16 @@ local function CreateFrameTry(kind, name, parent, ...)
     return CreateFrame(kind, name, parent)
 end
 
+--- Is the HD side of the blend the dominant one? Past the halfway mark, and
+--- not when the overlay is off. This one test drives both the label (which
+--- names what a click switches to) and the click's own direction.
+local function HDShowing()
+    return Config.db and Config.db.enabled and Config.db.alpha > 0.5
+end
+
 local function UpdateLabel()
     if not button then return end
-    local overlayOn = Config.db and Config.db.enabled and not Config.visuallySuppressed
-    local text = overlayOn and "SD" or "HD"
+    local text = HDShowing() and "SD" or "HD"
     if button.SetText then
         button:SetText(text)
     elseif button.Text then
@@ -56,12 +65,118 @@ local function UpdateLabel()
     end
 end
 
-local function OnClick()
-    -- Flips the visual-only override and redraws immediately. Leaves
-    -- Config.db.enabled (and therefore the cave map) completely alone.
-    Config.visuallySuppressed = not Config.visuallySuppressed
-    Renderer:ForceRefresh()
+local syncPopup  -- set by CreatePopup: reload the slider from Config.db.alpha
+
+--- Set the HD overlay's opacity (the slider's value), live. A full Refresh
+--- only when crossing 100%, which changes what else must be visible
+--- (Blizzard's own map underneath).
+local function ApplyAlpha(value)
+    local wasMixing = Config:IsMixing()
+    Config.db.alpha = value
+    if Config.overlayFrame then Config.overlayFrame:SetAlpha(value) end
+    if Config:IsMixing() ~= wasMixing then Renderer:ForceRefresh() end
     UpdateLabel()
+end
+
+-- How far (UI units) the mouse may stray past the popup or button before
+-- the popup closes.
+local CLOSE_DISTANCE = 40
+
+--- Is the cursor within CLOSE_DISTANCE of this frame's rectangle?
+local function IsNear(frame)
+    local left, bottom, width, height = frame:GetRect()
+    if not left then return false end
+    local x, y = GetCursorPosition()
+    local scale = frame:GetEffectiveScale()
+    x, y = x / scale, y / scale
+    return x >= left - CLOSE_DISTANCE and x <= left + width + CLOSE_DISTANCE
+        and y >= bottom - CLOSE_DISTANCE and y <= bottom + height + CLOSE_DISTANCE
+end
+
+--- Right click: a small Blizzard-style HD/SD blend slider drops below the
+--- button, its top-right corner on the button's bottom-right. 100% is the
+--- plain HD overlay, 0% Blizzard's own map, and anything between is an
+--- exact mix of the two: the overlay draws at that alpha over Blizzard's
+--- map, which Config:IsMixing() makes Renderer leave visible. Stored in
+--- Config.db.alpha (no Options entry or chat command) and applied live,
+--- with a full Refresh only when crossing 100%.
+local function CreatePopup()
+    popup = CreateFrameTry("Frame", nil, button, "BackdropTemplate")
+    popup:SetSize(140, 46)
+    popup:SetPoint("TOPRIGHT", button, "BOTTOMRIGHT", 0, 0)
+    popup:SetFrameLevel(button:GetFrameLevel() + 5)
+    -- Swallow clicks so they don't pan the map underneath.
+    popup:EnableMouse(true)
+    if popup.SetBackdrop then
+        popup:SetBackdrop({
+            bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = true, tileSize = 16, edgeSize = 12,
+            insets = { left = 3, right = 3, top = 3, bottom = 3 },
+        })
+        popup:SetBackdropColor(0, 0, 0, 0.9)
+    end
+    popup:Hide()
+
+    local label = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("TOP", 0, -8)
+
+    local slider = CreateFrameTry(
+        "Slider", "HFWMForeverOpacitySlider", popup, "OptionsSliderTemplate")
+    slider:SetOrientation("HORIZONTAL")
+    slider:SetHeight(17)
+    slider:SetPoint("TOPLEFT", popup, "TOPLEFT", 12, -24)
+    slider:SetPoint("TOPRIGHT", popup, "TOPRIGHT", -12, -24)
+    slider:SetMinMaxValues(0, 1)
+    slider:SetValueStep(0.05)
+    if slider.SetObeyStepOnDrag then slider:SetObeyStepOnDrag(true) end
+    slider:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
+    -- The template's own title and Low/High captions; the label above
+    -- shows the value instead.
+    for _, suffix in ipairs({ "Text", "Low", "High" }) do
+        local region = _G["HFWMForeverOpacitySlider" .. suffix]
+        if region then region:Hide() end
+    end
+
+    local syncing
+    local function Caption(value)
+        label:SetText(("Blend: %.0f%%"):format(value * 100))
+    end
+    slider:SetScript("OnValueChanged", function(_, value)
+        Caption(value)
+        -- SetValue from Sync below fires this too; don't let it re-save
+        -- the value it was just loaded from.
+        if syncing then return end
+        ApplyAlpha(value)
+    end)
+    syncPopup = function()
+        syncing = true
+        slider:SetValue(Config.db.alpha)
+        Caption(Config.db.alpha)
+        syncing = false
+    end
+    popup:SetScript("OnShow", syncPopup)
+    -- Close once the mouse is off both the popup and the button. Skipped
+    -- while a mouse button is held so a drag that strays off the popup
+    -- doesn't close it mid-adjustment.
+    popup:SetScript("OnUpdate", function()
+        if IsMouseButtonDown("LeftButton") then return end
+        if not (IsNear(popup) or IsNear(button)) then popup:Hide() end
+    end)
+end
+
+local function OnClick(_, mouseButton)
+    if mouseButton == "RightButton" then
+        if not popup then CreatePopup() end
+        popup:SetShown(not popup:IsShown())
+        return
+    end
+    -- Leaves Config.db.enabled (and therefore the cave map) completely
+    -- alone. The button reads "SD" while HD is showing at all, and "HD"
+    -- when it isn't; clicking slides the blend all the way to the other
+    -- end, with the slider following if it's open.
+    ApplyAlpha(HDShowing() and 0 or 1)
+    if syncPopup and popup and popup:IsShown() then syncPopup() end
 end
 
 -- Fallback size when WorldMapFrame.SidePanelToggle.OpenButton isn't around
@@ -111,6 +226,7 @@ local function CreateButton()
         button.Text:SetPoint("CENTER")
     end
 
+    button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     button:SetScript("OnClick", OnClick)
     UpdateLabel()
 
@@ -129,12 +245,9 @@ function ToggleButton:Start()
         ToggleButton:Refresh()
     end)
 
-    -- The visual override is session-only: drop it the moment the map
-    -- closes so the next open always starts back on high-fidelity, rather
-    -- than silently staying suppressed until someone clicks the button
-    -- again to notice.
+    -- Close the opacity popup with the map.
     WorldMapFrame:HookScript("OnHide", function()
-        Config.visuallySuppressed = false
+        if popup then popup:Hide() end
     end)
 end
 

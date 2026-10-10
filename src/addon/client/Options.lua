@@ -1,6 +1,6 @@
 -------------------------------------------------------------------------------
 -- HFWM-Forever Options
--- The options panel, as an AceConfig-3.0 table: enable toggle, opacity,
+-- The options panel, as an AceConfig-3.0 table: enable toggle,
 -- remember/zoom/clarity/fog toggles, the Map Background section (Global
 -- Background plus a per-map-type override each for Zone/Continent/World),
 -- the cave map section, and a profiles tab (AceDBOptions-3.0).
@@ -59,6 +59,13 @@ local function ChatCommandHint()
         .. "  |  /hfwm zoom on|off  |  /hfwm clarity on|off  |  /hfwm fog on|off"
 end
 
+--- Is Zone Map's effective background Hybrid? Gates the Fog of War
+--- checkbox, which only works over Blizzard's own art (Hybrid).
+local function ZoneIsHybrid()
+    local zoneBg = Config:GetEffectiveMapTypeBackground("zone")
+    return zoneBg ~= nil and zoneBg.key == "hybrid"
+end
+
 local options = {
     type = "group",
     name = PANEL_TITLE,
@@ -77,18 +84,6 @@ local options = {
             get = function() return Config.db.enabled end,
             set = function(_, value)
                 Config.db.enabled = value
-                ns.Renderer:ForceRefresh()
-            end,
-        },
-        alpha = {
-            order = 30,
-            type = "range",
-            name = "Opacity",
-            desc = "Overlay opacity.",
-            min = 0, max = 1, step = 0.05, isPercent = true,
-            get = function() return Config.db.alpha end,
-            set = function(_, value)
-                Config.db.alpha = value
                 ns.Renderer:ForceRefresh()
             end,
         },
@@ -126,48 +121,6 @@ local options = {
             get = function() return Config.db.worldMapClarity end,
             set = function(_, value)
                 Config.db.worldMapClarity = value
-                ns.Renderer:ForceRefresh()
-            end,
-        },
-        fogOfWarEnabled = {
-            order = 70,
-            type = "toggle",
-            name = "Fog of War",
-            -- A function, not a plain string, so the tooltip itself says
-            -- *why* the checkbox is greyed out (AceConfigDialog shows this
-            -- on hover whether or not the control is disabled -- disabling
-            -- a Button only blocks OnClick, not OnEnter/OnLeave), naming
-            -- the Zone Map background actually in force right now rather
-            -- than just repeating the general rule.
-            desc = function()
-                local base = "Brings back the grayscale fog over "
-                    .. "unexplored ground. Off by default. Only works "
-                    .. "while the Zone Map background (under Map "
-                    .. "Background below) is Hybrid, either directly or "
-                    .. "by inheriting a Hybrid Global Background -- that "
-                    .. "grayscale look IS Blizzard's own map art, which "
-                    .. "only Hybrid leaves showing through."
-                local zoneBg = Config:GetEffectiveMapTypeBackground("zone")
-                if not (zoneBg and zoneBg.key == "hybrid") then
-                    return base .. "\n\n|cffff4444Disabled:|r Zone Map is "
-                        .. "currently " .. (zoneBg and zoneBg.label or "?")
-                        .. ". Set it (or the Global Background it's "
-                        .. "inheriting) to Hybrid to use this."
-                end
-                return base
-            end,
-            -- Backed in code too, not just here: Config:FogOfWarEnabled()
-            -- itself refuses to turn the effect on unless the Zone Map
-            -- background actually resolves to Hybrid, so a saved "on"
-            -- picks back up automatically once it does rather than needing
-            -- to be re-toggled.
-            disabled = function()
-                local zoneBg = Config:GetEffectiveMapTypeBackground("zone")
-                return not (zoneBg and zoneBg.key == "hybrid")
-            end,
-            get = function() return Config.db.fogOfWarEnabled end,
-            set = function(_, value)
-                Config.db.fogOfWarEnabled = value
                 ns.Renderer:ForceRefresh()
             end,
         },
@@ -210,8 +163,7 @@ local options = {
                     order = 10,
                     type = "select",
                     -- width = "full": its own row, set apart from the
-                    -- Zone/Continent/World row below (see the loop that
-                    -- fills that row in, just after this table).
+                    -- Zone/World/Continent rows below.
                     width = "full",
                     name = "Global Background",
                     desc = function() return Config:GetBackground().desc end,
@@ -219,9 +171,9 @@ local options = {
                     get = function() return Config:GetBackground().key end,
                     set = function(_, value) Config:SetBackground(value) end,
                 },
-                -- Zone/Continent/World Map, one dropdown each sharing a
-                -- row below Global Background, filled in just after this
-                -- table from Config.MAP_TYPES.
+                -- Zone/World/Continent Map dropdowns, stacked below Global
+                -- Background, filled in just after this table from
+                -- Config.MAP_TYPES.
             },
         },
         cave = {
@@ -302,33 +254,40 @@ local options = {
         },
     },
 }
--- Zone/Continent/World Map dropdowns, one per Config.MAP_TYPES entry, all
--- three sharing one row below Global Background (relWidth ~0.32 each, so
--- they wrap onto their own row rather than trailing Global Background's
--- full-width one). Built with a loop rather than spelled out three times
--- so the order/name/desc/get/set/width wiring can't drift between them;
--- only the Zone Map entry's extra Fog of War note sets it apart.
+-- Zone/World/Continent Map dropdowns, one per Config.MAP_TYPES entry,
+-- stacked vertically (each row: a relWidth 0.32 dropdown, then whatever
+-- else belongs on its right). Built with a loop so the order/name/desc/
+-- get/set/width wiring can't drift between them.
 --
--- Display order left-to-right is Zone, World, Continent -- Continent
--- placed last (on the right) rather than in Config.MAP_TYPES' own
--- zone/continent/world order, which stays as-is since other code reads
--- it independently of how Options lays these out.
+-- AceConfigDialog flows widgets left to right and wraps when one doesn't
+-- fit, so a row is forced to end by padding it past 0.68 of the width with
+-- a blank description -- otherwise the next dropdown would slide up beside
+-- this one. Replace the filler with real widgets as the right-hand side
+-- fills up; just keep each row's relWidths summing to 0.9-0.99.
+--
+-- Display order top to bottom is Zone, World, Continent -- Continent last
+-- rather than in Config.MAP_TYPES' own zone/continent/world order, which
+-- stays as-is since other code reads it independently of how Options lays
+-- these out.
 local MAP_TYPE_ORDER = { zone = 20, world = 30, continent = 40 }
+local mapBackgroundArgs = options.args.mapBackground.args
 for _, mapType in ipairs(Config.MAP_TYPES) do
     local desc = "Which background " .. mapType.label .. " draws with, "
         .. "or \"Use Global\" to just follow the Global Background above."
-    if mapType.key == "zone" then
+    local isZone = mapType.key == "zone"
+    if isZone then
         -- The "little info section that pops up": AceConfig shows every
         -- option's own `desc` as a hover tooltip, so this is that tooltip
-        -- rather than a separate widget. Config:FogOfWarEnabled() and the
-        -- Fog of War toggle's own `disabled` above enforce the same
-        -- Hybrid-only rule in code.
+        -- rather than a separate widget. Config:FogOfWarEnabled() enforces
+        -- the same Hybrid-only rule in code.
         desc = desc .. "\n\nFog of War is only supported while this ends "
             .. "up Hybrid -- set directly, or by leaving this on \"Use "
-            .. "Global\" while the Global Background is Hybrid."
+            .. "Global\" while the Global Background is Hybrid. The Fog "
+            .. "of War checkbox appears beside it while that's the case."
     end
-    options.args.mapBackground.args["mapType_" .. mapType.key] = {
-        order = MAP_TYPE_ORDER[mapType.key],
+    local order = MAP_TYPE_ORDER[mapType.key]
+    mapBackgroundArgs["mapType_" .. mapType.key] = {
+        order = order,
         type = "select",
         width = "relative",
         relWidth = 0.32,
@@ -340,7 +299,47 @@ for _, mapType in ipairs(Config.MAP_TYPES) do
             Config:SetMapTypeBackground(mapType.key, value)
         end,
     }
+    -- Every row gets a filler; the Zone one yields to the Fog of War
+    -- checkbox (order + 1, added below) while Zone Map is Hybrid.
+    mapBackgroundArgs["mapTypeFill_" .. mapType.key] = {
+        order = order + 2,
+        type = "description",
+        name = " ",
+        width = "relative",
+        relWidth = 0.65,
+        hidden = isZone and ZoneIsHybrid or nil,
+    }
 end
+mapBackgroundArgs.fogOfWarEnabled = {
+    order = MAP_TYPE_ORDER.zone + 1,
+    type = "toggle",
+    width = "relative",
+    relWidth = 0.3,
+    name = "Fog of War",
+    desc = "Brings back the grayscale fog over unexplored ground. Off by "
+        .. "default. Only shown while the Zone Map background is Hybrid, "
+        .. "either directly or by inheriting a Hybrid Global Background "
+        .. "-- that grayscale look IS Blizzard's own map art, which only "
+        .. "Hybrid leaves showing through.",
+    -- Hidden, not disabled: a saved "on" picks back up by itself once Zone
+    -- Map is Hybrid again, because Config:FogOfWarEnabled() checks the
+    -- background too.
+    hidden = function() return not ZoneIsHybrid() end,
+    get = function() return Config.db.fogOfWarEnabled end,
+    set = function(_, value)
+        Config.db.fogOfWarEnabled = value
+        ns.Renderer:ForceRefresh()
+    end,
+}
+-- Pads the Hybrid-only Zone row (0.32 + 0.3 + 0.3) past the wrap point.
+mapBackgroundArgs.fogFill = {
+    order = MAP_TYPE_ORDER.zone + 2,
+    type = "description",
+    name = " ",
+    width = "relative",
+    relWidth = 0.3,
+    hidden = function() return not ZoneIsHybrid() end,
+}
 
 Options.optionsTable = options
 

@@ -6,7 +6,6 @@
 -- /hfwm on|off      - explicit enable / disable
 -- /hfwm bg NAME     - map background: default | ocean | hybrid
 -- /hfwm options     - open the options panel
--- /hfwm alpha 0-1   - set overlay opacity
 -- /hfwm cave        - the cave map window (on|off|show|hide|reset|alpha N)
 -- /hfwm remember    - remember world map zoom+pan across close/reopen
 -- /hfwm zoom        - additional (closer) world map zoom levels

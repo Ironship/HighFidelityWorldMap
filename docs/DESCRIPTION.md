@@ -1,4 +1,4 @@
-![High-Fidelity World Map logo](assets/images/logo.png)
+![High-Fidelity World Map logo](assets/images/logo_lowres.png)
 
 # High-Fidelity World Map (HFWM)
 

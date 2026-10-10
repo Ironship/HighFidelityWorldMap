@@ -64,7 +64,8 @@ local function HookDPs()
                 -- tiles (see DrawExploredPiece) reuse the same geometry and
                 -- art, but as a separate MaskTexture object, so alpha 0 here
                 -- has no bearing on those.
-                if Config.db and Config.db.enabled and Config.overlayActive then
+                if Config.db and Config.db.enabled and Config.overlayActive
+                    and not Config:IsMixing() then
                     Exploration:HidePins()
                 end
             end)
@@ -92,6 +93,63 @@ function Exploration:HidePins()
             end
         end
     end
+end
+
+--- Undo HidePins' alpha and mouse changes without touching the pins' data
+--- (SetVisible(true) also refreshes every data provider, which recycles the
+--- reveal textures Fog of War is reading geometry from, and can leave them
+--- not laid out yet when the next draw reads them). For the HD/SD blend
+--- with Fog of War on: Blizzard's own explored art has to show under the
+--- overlay while those same textures stay enumerable.
+function Exploration:ShowPins()
+    HookDPs()
+
+    ForEachPin(function(pin)
+        pin:SetAlpha(1)
+        RestoreMouse(pin)
+        for _, region in ipairs({pin:GetRegions()}) do
+            region:SetAlpha(1)
+        end
+    end)
+
+    if WorldMapFrame.dataProviders then
+        for dp in next, WorldMapFrame.dataProviders do
+            if dp.overlayTexturePool then
+                for tex in dp.overlayTexturePool:EnumerateActive() do
+                    tex:SetAlpha(1)
+                end
+            end
+        end
+    end
+end
+
+local levelHooked = {}
+
+--- While the HD/SD blend is below 100% (Config:IsMixing()), put the
+--- exploration pins one frame level under the overlay, so Blizzard's
+--- explored art draws beneath the HD map's alpha instead of on top of it.
+--- Otherwise give them back Blizzard's own level. Blizzard re-asserts a
+--- pin's level whenever it re-applies pin levels, so each pin gets a hook
+--- that tucks it back down while mixing.
+function Exploration:ApplyLevels()
+    local function underOverlay()
+        return Config:IsMixing() and Config.overlayActive and Config.overlayFrame
+    end
+    ForEachPin(function(pin)
+        if pin.ApplyFrameLevel and not levelHooked[pin] then
+            levelHooked[pin] = true
+            hooksecurefunc(pin, "ApplyFrameLevel", function()
+                if underOverlay() then
+                    pin:SetFrameLevel(math.max(Config.overlayFrame:GetFrameLevel() - 1, 0))
+                end
+            end)
+        end
+        if underOverlay() then
+            pin:SetFrameLevel(math.max(Config.overlayFrame:GetFrameLevel() - 1, 0))
+        elseif pin.ApplyFrameLevel then
+            pin:ApplyFrameLevel()
+        end
+    end, true)
 end
 
 ---@param visible boolean
@@ -173,6 +231,13 @@ end
 ---     threw away every explored area but one; this collects all of them.
 ---@return table[] textures
 function Exploration:EnumerateOverlayTextures()
+    -- Closed map: nothing to reveal, and its data providers aren't ready
+    -- to refresh (Blizzard errors in the scroll container's zoom code when
+    -- one is forced before the map has ever been laid out, e.g. from
+    -- changing a setting in the options window). WorldMapFrame's OnShow
+    -- hook in Core.lua runs a full Refresh when it opens.
+    if not WorldMapFrame:IsShown() then return {} end
+
     HookDPs()
 
     if WorldMapFrame.RefreshAllDataProviders then
