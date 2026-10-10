@@ -1718,6 +1718,23 @@ local function ContentCursorXY()
     return x - left, y - top
 end
 
+--- Is the cursor over the art area, by geometry alone? Hit-testing through
+--- the frame stack (content's own OnMouse* scripts) depends on nothing
+--- mouse-enabled sitting above `content`, which this window can't guarantee
+--- (AceGUI chrome, the dropdown, the client's own map frames); the cursor
+--- rect doesn't. The floor picker and its open list overlap the art and are
+--- real controls, so they keep their clicks.
+local function CursorOverArt()
+    if not (content and content:IsVisible() and content:IsMouseOver()) then
+        return false
+    end
+    if floorPicker and floorPicker:IsShown() and floorPicker:IsMouseOver() then
+        return false
+    end
+    local list = _G.DropDownList1
+    return not (list and list:IsShown() and list:IsMouseOver())
+end
+
 --- Keep canvasScale from panning far enough that the flat backdrop shows
 --- through inside the content viewport. At zoomScale 1 both bounds collapse
 --- to 0: no pan is possible, which is correct, since there is nothing
@@ -1740,7 +1757,11 @@ local function ApplyCanvasTransform()
     if not canvasScale then return end
     canvasScale:SetScale(zoomScale)
     canvasScale:ClearAllPoints()
-    canvasScale:SetPoint("TOPLEFT", content, "TOPLEFT", panX, panY)
+    -- SetPoint offsets are in the frame's *own* scale, so at zoomScale z an
+    -- offset of n lands n*z away from the anchor. panX/panY are in content's
+    -- (parent) units, so divide the scale back out.
+    canvasScale:SetPoint("TOPLEFT", content, "TOPLEFT",
+        panX / zoomScale, panY / zoomScale)
 end
 
 --- Change zoom by `factor` (>1 in, <1 out), driving the picture toward
@@ -1820,9 +1841,19 @@ end
 --- so a fast drag that carries the cursor off of `content` before the
 --- button lifts still stops cleanly instead of sticking the pan to the
 --- cursor.
+local leftWasDown = false
 local function ContentPanUpdate()
-    if not contentDrag then return end
-    if not IsMouseButtonDown("LeftButton") then
+    local down = IsMouseButtonDown("LeftButton")
+    local pressed = down and not leftWasDown
+    leftWasDown = down
+
+    if not contentDrag then
+        -- Normally OnMouseDown has already started the drag; this catches the
+        -- press when something else in the stack got the event instead.
+        if pressed and CursorOverArt() then BeginContentPan() end
+        return
+    end
+    if not down then
         contentDrag = nil
         return
     end
@@ -1942,6 +1973,11 @@ local function EnsureWindow()
         if button == "LeftButton" then BeginContentPan() end
     end)
     content:SetScript("OnUpdate", ContentPanUpdate)
+    -- Same wheel handler on the window, gated on the cursor being over the
+    -- art: covers a wheel event landing on the window rather than `content`.
+    window:SetScript("OnMouseWheel", function(_, dir)
+        if CursorOverArt() then ZoomBy(dir > 0 and ZOOM_STEP or (1 / ZOOM_STEP)) end
+    end)
 
     -- On canvasScale, not `content`: the pin marks the player's real
     -- position on the underlying map, so it has to zoom and pan with the
