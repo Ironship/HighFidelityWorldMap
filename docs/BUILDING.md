@@ -5,7 +5,7 @@ This project is split into three parts:
 - `src/addon/client/` — the addon (`HighFidelityWorldMap`) that hooks into the
   in-game world map. Zone and cave views are drawn from the game's own map
   textures.
-- `src/addon/art/` — the optional Art addon (`HighFidelityWorldMap_MapData_Forever`):
+- `src/addon/art/` — the optional Art addon (`HighFidelityWorldMap_Art_Forever`):
   just the stitched World, Eastern Kingdoms and Kalimdor map tiles and a TOC,
   kept separate so a client update is not a 1 GB download. The client
   works without it.
@@ -58,7 +58,7 @@ continent maps need the optional Art addon: link it the same way, or install
 [hfwm-art](https://www.curseforge.com/wow/addons/hfwm-art) from CurseForge:
 
 ```sh
-ln -s "$PWD/src/addon/art" "$ADDONS/HighFidelityWorldMap_MapData_Forever"
+ln -s "$PWD/src/addon/art" "$ADDONS/HighFidelityWorldMap_Art_Forever"
 ```
 
 ## 3) Install Python dependencies
@@ -135,12 +135,14 @@ Release packaging is handled by GitHub Actions workflows and the packager tool, 
 There are two packages, released separately so a UI or settings update does not mean re-downloading the art:
 
 - `HighFidelityWorldMap`, the client addon, tag series `v1.2.3`. It contains the Lua and the committed tables (`FDIDMap.lua`, `CaveData.lua`, `MinimapTiles.lua`, `CaveTiles.lua`), and no binary map data.
-- `HighFidelityWorldMap_MapData_Forever`, the optional Art addon (the [hfwm-art](https://www.curseforge.com/wow/addons/hfwm-art) CurseForge project), tag series `mapdata-v1.2.3`. It is only the stitched `WorldMap/` tiles for the **World**, **Eastern Kingdoms** and **Kalimdor** views and a TOC: no Lua. Zone and cave maps are drawn from the game's own files and ship no art. The client lists it under `OptionalDeps`; without it everything still works, but the World and continent maps are left to Blizzard and their options are greyed out.
+- `HighFidelityWorldMap_Art_Forever`, the optional Art addon (the [hfwm-art](https://www.curseforge.com/wow/addons/hfwm-art) CurseForge project), tag series `art-v1.2.3`. It is only the stitched `WorldMap/` tiles for the **World**, **Eastern Kingdoms** and **Kalimdor** views and a TOC: no Lua. Zone and cave maps are drawn from the game's own files and ship no art. The client lists it under `OptionalDeps`; without it everything still works, but the World and continent maps are left to Blizzard and their options are greyed out.
+
+The Art addon used to be called `HighFidelityWorldMap_MapData_Forever` with `mapdata-v*` tags. Those tags are retired and hidden from the packager; a leftover `HighFidelityWorldMap_MapData_Forever` folder in an AddOns directory can be deleted.
 
 When ready to publish:
 
 - run **Create Release: Client** (or push a `v*` tag to `main`) to package the client, create the GitHub release (one asset, `hfwm-forever-client-v1.2.3.zip`) and then start **Publish Client Release to CurseForge**.
-- run **Create Release: Art** (or push a `mapdata-v*` tag to `main`) to generate the art, package `.pkgmeta-art`, create the GitHub release (one asset, `hfwm-forever-mapdata-v1.2.3.zip`) and then start **Publish Art Release to CurseForge**.
+- run **Create Release: Art** (or push an `art-v*` tag to `main`) to generate the art, package `.pkgmeta-art`, create the GitHub release (one asset, `hfwm-forever-art-v1.2.3.zip`) and then start **Publish Art Release to CurseForge**.
 - run either **Publish ... Release to CurseForge** workflow yourself with a release's tag to retry or redo that upload.
 
 The `generate-world-map-assets` workflow builds and caches the art (`mapart-v2-<hash>`) on `main`, so an Art release only regenerates when the generator changed. Each release workflow's package step ignores the other series' tags.

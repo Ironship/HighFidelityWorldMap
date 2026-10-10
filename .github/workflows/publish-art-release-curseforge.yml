@@ -1,6 +1,6 @@
 name: Publish Art Release to CurseForge
 
-# Uploads an existing Art addon release (mapdata-v1.2.3) to CurseForge. It never
+# Uploads an existing Art addon release (art-v1.2.3) to CurseForge. It never
 # creates tags or GitHub Releases; run "Create Release: Art" first. The client
 # addon has its own workflow: "Publish Client Release to CurseForge".
 #
@@ -19,13 +19,13 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Art release tag to publish, as shown on the Releases page, e.g. mapdata-v1.0.0"
+        description: "Art release tag to publish, as shown on the Releases page, e.g. art-v1.0.0"
         type: string
         required: true
   workflow_call:
     inputs:
       tag:
-        description: "Art release tag to publish, e.g. mapdata-v1.0.0"
+        description: "Art release tag to publish, e.g. art-v1.0.0"
         type: string
         required: true
     secrets:
@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      TAG_PREFIX: mapdata-v
+      TAG_PREFIX: art-v
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -118,9 +118,9 @@ jobs:
         run: .github/scripts/release-notes.sh "$RELEASE_TAG" > .release-notes.md
 
       # The packager has no tag-prefix option: its changelog uses "the previous
-      # tag" among all tags. Hide the client's v* series from it.
-      - name: Isolate the mapdata-v* tag series
-        run: .github/scripts/isolate-tag-series.sh v
+      # tag" among all tags. Hide the client's v* series and the retired mapdata-v* tags from it.
+      - name: Isolate the art-v* tag series
+        run: .github/scripts/isolate-tag-series.sh v mapdata-v
 
       # Only CF_API_TOKEN is passed, so the packager uploads to CurseForge and
       # does not touch the GitHub Release. Keep the arguments in sync with

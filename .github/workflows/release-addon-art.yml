@@ -1,17 +1,17 @@
 name: "Create Release: Art"
 
 # Creates an official tagged release of the Art addon
-# (HighFidelityWorldMap_MapData_Forever, the hfwm-art CurseForge project): the
+# (HighFidelityWorldMap_Art_Forever, the hfwm-art CurseForge project): the
 # generated World, Eastern Kingdoms and Kalimdor maps, ~1 GB. Zone and cave maps
 # are drawn from the game's own files and are not part of it. It has its own
-# tags (mapdata-v<semver>), its own version and its own CurseForge project, so
+# tags (art-v<semver>), its own version and its own CurseForge project, so
 # the client addon can ship UI and settings updates without anyone
 # re-downloading the art. "Create Release: Client" is the other half; the two
 # workflows are independent and do not trigger each other.
 #
 # Two ways in:
 #
-#   1. Push a tag yourself:  git tag -a mapdata-v1.0.1 -m mapdata-v1.0.1 && git push origin mapdata-v1.0.1
+#   1. Push a tag yourself:  git tag -a art-v1.0.1 -m art-v1.0.1 && git push origin art-v1.0.1
 #   2. Actions -> Create Release: Art -> Run workflow, pick patch/minor/major
 #      and the tag is created for you.
 #
@@ -32,8 +32,8 @@ name: "Create Release: Art"
 on:
   push:
     tags:
-      - "mapdata-v[0-9]+.[0-9]+.[0-9]+"
-      - "mapdata-v[0-9]+.[0-9]+.[0-9]+-*"
+      - "art-v[0-9]+.[0-9]+.[0-9]+"
+      - "art-v[0-9]+.[0-9]+.[0-9]+-*"
   workflow_dispatch:
     inputs:
       bump:
@@ -46,7 +46,7 @@ on:
           - minor
           - major
       prerelease:
-        description: 'Optional suffix, e.g. "beta.1" -> mapdata-v1.1.0-beta.1. A tag containing "beta" or "alpha" is marked as a pre-release, and is published to that CurseForge channel.'
+        description: 'Optional suffix, e.g. "beta.1" -> art-v1.1.0-beta.1. A tag containing "beta" or "alpha" is marked as a pre-release, and is published to that CurseForge channel.'
         type: string
         required: false
         default: ""
@@ -79,7 +79,7 @@ jobs:
         env:
           BUMP: ${{ inputs.bump }}
           PRERELEASE: ${{ inputs.prerelease }}
-          TAG_PREFIX: mapdata-v
+          TAG_PREFIX: art-v
         run: .github/scripts/bump-version.sh
 
   release:
@@ -126,9 +126,9 @@ jobs:
         run: .github/scripts/release-notes.sh "$RELEASE_TAG" > .release-notes.md
 
       # The packager has no tag-prefix option: its changelog uses "the previous
-      # tag" among all tags. Hide the client's v* series from it.
-      - name: Isolate the mapdata-v* tag series
-        run: .github/scripts/isolate-tag-series.sh v
+      # tag" among all tags. Hide the client's v* series and the retired mapdata-v* tags from it.
+      - name: Isolate the art-v* tag series
+        run: .github/scripts/isolate-tag-series.sh v mapdata-v
 
       # -d: build the zip, upload nothing. The packager's own GitHub upload adds
       # release.json and dies on a zip this size (curl runs out of memory), so
@@ -141,11 +141,11 @@ jobs:
           # Nothing goes to WoWInterface, so skip the pandoc install.
           pandoc: "false"
 
-      # The Release carries one asset: the addon zip, hfwm-forever-mapdata-v1.2.3.zip.
+      # The Release carries one asset: the addon zip, hfwm-forever-art-v1.2.3.zip.
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: .github/scripts/create-github-release.sh "hfwm-forever-mapdata-${RELEASE_TAG#mapdata-}.zip"
+        run: .github/scripts/create-github-release.sh "hfwm-forever-art-${RELEASE_TAG#art-}.zip"
 
       # A new Release defaults to Latest. That belongs to the client addon,
       # which is what people download from the Releases page.

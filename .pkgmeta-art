@@ -11,7 +11,7 @@
 
 # The folder name is the addon name the client's OptionalDeps and
 # Config.FDID_BASE point at, and the name existing hfwm-art installs use.
-package-as: HighFidelityWorldMap_MapData_Forever
+package-as: HighFidelityWorldMap_Art_Forever
 
 # No colon in the value: the packager's pkgmeta parser splits on the first one.
 changelog-title: High Fidelity World Map - Forever Art
@@ -25,7 +25,7 @@ manual-changelog:
 
 # Hoist the addon out of src/addon/art/ so the TOC ends up at the package root.
 move-folders:
-  HighFidelityWorldMap_MapData_Forever/src/addon/art: HighFidelityWorldMap_MapData_Forever
+  HighFidelityWorldMap_Art_Forever/src/addon/art: HighFidelityWorldMap_Art_Forever
 
 # Everything outside src/addon/art/ belongs to the client addon or is build
 # machinery. Dotfiles (.github, .git, .gitignore, .pkgmeta, .release,

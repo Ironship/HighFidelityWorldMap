@@ -3,7 +3,7 @@
 # matching "Create Release" workflow has already made. Publishing never creates
 # one.
 # Inputs (environment): RELEASE_TAG, GH_TOKEN, GITHUB_REPOSITORY, and
-# TAG_PREFIX (series, default "v"; the Art addon uses "mapdata-v").
+# TAG_PREFIX (series, default "v"; the Art addon uses "art-v").
 set -euo pipefail
 
 prefix="${TAG_PREFIX:-v}"

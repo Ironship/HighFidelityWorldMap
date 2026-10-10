@@ -399,7 +399,7 @@ Config.FDID_MAP_ORIGINAL = HFWMF_FDID_MAP_ORIGINAL or {}
 -- The World and continent art (WorldMap\*.blp) ships in the separate, optional
 -- Art addon (src/addon/art) so a client update is not a 1 GB download. The
 -- lookup tables above stay here and describe it either way.
-Config.ART_ADDON = "HighFidelityWorldMap_MapData_Forever"
+Config.ART_ADDON = "HighFidelityWorldMap_Art_Forever"
 Config.FDID_BASE = "Interface\\AddOns\\" .. Config.ART_ADDON .. "\\WorldMap\\"
 
 --- Is the Art addon installed and enabled? Without it the World and

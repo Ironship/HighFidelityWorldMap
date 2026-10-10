@@ -111,9 +111,9 @@ jobs:
         run: .github/scripts/release-notes.sh "$RELEASE_TAG" > .release-notes.md
 
       # The packager has no tag-prefix option: its changelog uses "the previous
-      # tag" among all tags. Hide the Art addon's mapdata-v* series from it.
+      # tag" among all tags. Hide the Art addon's art-v* series and the retired mapdata-v* tags from it.
       - name: Isolate the v* tag series
-        run: .github/scripts/isolate-tag-series.sh mapdata-v
+        run: .github/scripts/isolate-tag-series.sh art-v mapdata-v
 
       # -d: build the zip, upload nothing. The packager's own GitHub upload adds
       # release.json, names the zip after the project and dies on a zip this
