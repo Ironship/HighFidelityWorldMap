@@ -135,6 +135,7 @@ function Commands:Handle(msg)
         else
             db.worldMapClarity = not db.worldMapClarity
         end
+        ns.ZoomLevels:Refresh()
         ns.Renderer:ForceRefresh()
         P(("World map clarity: %s"):format(
             db.worldMapClarity and "|cff00ff00on|r" or "|cffff4444off|r")

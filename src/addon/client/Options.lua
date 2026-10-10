@@ -378,6 +378,7 @@ mapBackgroundArgs.worldMapClarity = {
     get = function() return Config.db.worldMapClarity and "high" or "low" end,
     set = function(_, value)
         Config.db.worldMapClarity = (value == "high")
+        ns.ZoomLevels:Refresh()
         ns.Renderer:ForceRefresh()
     end,
 }

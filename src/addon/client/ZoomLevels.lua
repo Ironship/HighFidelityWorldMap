@@ -58,6 +58,14 @@ end
 ---@param sc table the ScrollContainer instance (its own `self`)
 local function ExtendZoomLevels(sc)
     if not Enabled() then return end
+
+    -- Continent and world maps only have art worth zooming into when the
+    -- Art addon is present and High Resolution is selected.
+    local mapType = Config:ClassifyMapID(WorldMapFrame:GetMapID())
+    if (mapType == "world" or mapType == "continent")
+       and not (Config:IsArtInstalled() and Config:WorldMapClarityEnabled()) then
+        return
+    end
     local levels = sc.zoomLevels
     if not levels or #levels == 0 then return end
 
@@ -80,14 +88,22 @@ local function ExtendZoomLevels(sc)
 end
 
 --- Force the ladder to rebuild right now, so toggling the option in Options
---- (or via /hfwm zoom) takes effect immediately rather than waiting for the
---- next map change or canvas resize. CreateZoomLevels only recomputes
---- self.baseScale/self.zoomLevels; it does not itself move the current
---- view, so this is safe to call at any time the map happens to be open.
+--- (or via /hfwm zoom, or switching world map resolution) takes effect
+--- immediately rather than waiting for the next map change or canvas
+--- resize. CreateZoomLevels only recomputes self.baseScale/self.zoomLevels;
+--- it does not itself move the current view, so if the ladder just got
+--- shorter the view is left zoomed past the new maximum: snap it back.
 function ZoomLevels:Refresh()
     local sc = WorldMapFrame.ScrollContainer
-    if sc and sc.CreateZoomLevels then
-        pcall(sc.CreateZoomLevels, sc)
+    if not (sc and sc.CreateZoomLevels) then return end
+    pcall(sc.CreateZoomLevels, sc)
+
+    local levels = sc.zoomLevels
+    local maxScale = levels and levels[#levels] and levels[#levels].scale
+    local scale, x, y = sc.currentScale, sc.currentScrollX, sc.currentScrollY
+    if maxScale and scale and x and y and scale > maxScale
+       and sc.InstantPanAndZoom then
+        pcall(sc.InstantPanAndZoom, sc, maxScale, x, y, true)
     end
 end
 
