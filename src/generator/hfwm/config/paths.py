@@ -1,11 +1,11 @@
 """Filesystem layout: what the generator reads, caches and writes.
 
 The repository has two parts — ``src/generator/`` (this package) and
-``src/addon/`` (the World of Warcraft addons it feeds). The generated tiles
-land in ``src/addon/art/WorldMap/`` and their lookup table
-(``FDIDMap.lua``) in ``src/addon/art/``; ``CaveData.lua`` lands in
-``src/addon/client/``. Everything it merely *caches* stays in
-``src/generator/`` so it can never be packaged.
+``src/addon/`` (the World of Warcraft addons it feeds). The generated Lua
+tables (``FDIDMap.lua``, ``CaveData.lua``) land in ``src/addon/client/``; the
+generated tiles land in ``src/addon/art/WorldMap/``, the separate Art addon.
+Everything it merely *caches* stays in ``src/generator/`` so it can never be
+packaged.
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ PROVENANCE_FILE = CACHE_ROOT / "provenance.json"
 # ---------------------------------------------------------------------------
 # Generated addon content (addon-side)
 # ---------------------------------------------------------------------------
-FDID_MAP_FILE = ART_DIR / "FDIDMap.lua"
+FDID_MAP_FILE = ADDON_DIR / "FDIDMap.lua"
 CAVE_DATA_FILE = ADDON_DIR / "CaveData.lua"
 WORLDMAP_DIR = ART_DIR / "WorldMap"
 

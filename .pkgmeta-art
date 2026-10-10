@@ -9,7 +9,7 @@
 # the packager stops treating it as an untracked file and copies it into the
 # package. See .github/workflows/release-addon-art.yml.
 
-# The folder name is the addon name the client's RequiredDeps and
+# The folder name is the addon name the client's OptionalDeps and
 # Config.FDID_BASE point at, and the name existing hfwm-art installs use.
 package-as: HighFidelityWorldMap_MapData_Forever
 

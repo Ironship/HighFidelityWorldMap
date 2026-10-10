@@ -66,6 +66,15 @@ local function ZoneIsHybrid()
     return zoneBg ~= nil and zoneBg.key == "hybrid"
 end
 
+--- The World and continent maps come from the optional Art addon; these two
+--- grey out the settings that only affect them while it is missing.
+local function ArtMissing() return not Config:IsArtInstalled() end
+local function ArtNote()
+    if Config:IsArtInstalled() then return "" end
+    return "\n\n|cffff8800Requires the High Fidelity World Map: Art addon, "
+        .. "which is not installed or not enabled.|r"
+end
+
 local options = {
     type = "group",
     name = PANEL_TITLE,
@@ -116,8 +125,12 @@ local options = {
             order = 60,
             type = "toggle",
             name = "Increase world map clarity",
-            desc = "Draws Kalimdor, Eastern Kingdoms and Azeroth at much "
-                .. "higher detail. May render slower. Off by default.",
+            desc = function()
+                return "Draws Kalimdor, Eastern Kingdoms and Azeroth at much "
+                    .. "higher detail. May render slower. Off by default."
+                    .. ArtNote()
+            end,
+            disabled = ArtMissing,
             get = function() return Config.db.worldMapClarity end,
             set = function(_, value)
                 Config.db.worldMapClarity = value
@@ -292,7 +305,9 @@ for _, mapType in ipairs(Config.MAP_TYPES) do
         width = "relative",
         relWidth = 0.32,
         name = mapType.label,
-        desc = desc,
+        desc = isZone and desc or function() return desc .. ArtNote() end,
+        -- World and continent maps are drawn from the optional Art addon.
+        disabled = (not isZone) and ArtMissing or nil,
         values = MapTypeBackgroundValues,
         get = function() return Config:GetMapTypeBackgroundKey(mapType.key) end,
         set = function(_, value)

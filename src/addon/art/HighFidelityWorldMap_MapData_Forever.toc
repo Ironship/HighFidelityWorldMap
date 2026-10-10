@@ -1,17 +1,11 @@
 ## Interface: 16001
 ## Title: High Fidelity World Map - Forever Art
-## Notes: Required map art for High Fidelity World Map: Forever. Contains the stitched high-resolution World, Eastern Kingdoms and Kalimdor maps. No settings or UI of its own; install High Fidelity World Map to use it.
+## Notes: Optional map art for High Fidelity World Map: Forever. Contains the stitched high-resolution World, Eastern Kingdoms and Kalimdor maps. No code, settings or UI of its own; install High Fidelity World Map to use it.
 ## Author: HighFidelityWorldMap
 ## Version: @project-version@
 ## IconTexture: Interface\Icons\INV_Misc_Map02
 ## X-Curse-Project-ID: 1727004
 
-# The tiles under WorldMap\ (the World, Eastern Kingdoms and Kalimdor maps,
-# nothing else) are read by High Fidelity World Map through their file paths,
-# so they are not listed here. Zone and cave maps are drawn from the game's own
-# minimap tiles and need no art.
-#
-# FDIDMap.lua (generated; FileDataID -> tile path, plus the HD continent
-# layouts) defines plain HFWMF_* globals that the core addon reads at load
-# time, after this addon (it RequiredDeps on it).
-FDIDMap.lua
+# Art only, no Lua. The tiles under WorldMap\ are read by High Fidelity World
+# Map through their file paths (its FDIDMap.lua says which); zone and cave maps
+# are drawn from the game's own minimap tiles and need no art.

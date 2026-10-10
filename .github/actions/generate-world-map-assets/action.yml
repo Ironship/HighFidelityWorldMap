@@ -1,24 +1,18 @@
 name: Generate world map assets
 description: >-
-  Produce the generated Art addon content: the World and continent maps in
-  src/addon/art/WorldMap/ plus the lookup table src/addon/art/FDIDMap.lua,
-  reusing cached copies when the generator has
-  not changed since they were last built.
+  Produce the Art addon's content: the World and continent maps in
+  src/addon/art/WorldMap/, reusing the cached copy when the generator has
+  not changed since it was last built.
 
 # The output is a pure function of the generator (src/generator/generateHFWM.py,
 # src/generator/hfwm/**, src/generator/requirements.txt), so that is the whole
 # cache key. A release that only touches Lua, docs or workflows hits the cache
 # and skips the ~40 minute build.
 #
-# Two cache entries share that hash. Both ship in the Art addon package, and a
-# miss on either falls back to full generation, which saves both:
-#
-#   mapart-v2-<hash>     src/addon/art/WorldMap, the World and continent
-#                        maps only (zone and cave maps are drawn from the
-#                        game's own files), ~1.2 GB.
-#   maptables-v2-<hash>  src/addon/art/FDIDMap.lua, small.
-#
-# CaveData.lua is the client's and is committed; --no-caves leaves it alone.
+# One cache entry, mapart-v2-<hash>: src/addon/art/WorldMap, the World and
+# continent maps only (zone and cave maps are drawn from the game's own
+# files), ~1 GB. FDIDMap.lua and CaveData.lua are the client's, committed, and
+# are not touched here (--skip-fdid-map --no-caves).
 #
 # GitHub scopes caches by ref: a run on a tag can read caches saved from the
 # default branch but not from any other tag. So the copy that *later* releases
@@ -66,14 +60,6 @@ runs:
         ART_KEY: ${{ steps.key.outputs.art-key }}
       run: .github/scripts/delete-world-map-assets-cache.sh
 
-    - name: Restore world map tables cache
-      id: tables
-      if: inputs.bypass-cache != 'true'
-      uses: actions/cache/restore@v5
-      with:
-        path: src/addon/art/FDIDMap.lua
-        key: ${{ steps.key.outputs.tables-key }}
-
     - name: Restore world map art cache
       id: art
       if: inputs.bypass-cache != 'true'
@@ -86,7 +72,6 @@ runs:
       id: decide
       shell: bash
       env:
-        TABLES_HIT: ${{ steps.tables.outputs.cache-hit }}
         ART_HIT: ${{ steps.art.outputs.cache-hit }}
         BYPASS: ${{ inputs.bypass-cache }}
       run: .github/scripts/decide-world-map-assets.sh >> "$GITHUB_OUTPUT"
@@ -122,22 +107,15 @@ runs:
     - name: Generate map art
       if: steps.decide.outputs.generate == 'true'
       shell: bash
-      run: python src/generator/generateHFWM.py --no-caves
+      run: python src/generator/generateHFWM.py --no-caves --skip-fdid-map
 
     # Runs on cache hits too: a bad entry should fail here, not ship.
     - name: Verify world map assets
       shell: bash
       run: .github/scripts/verify-world-map-assets.sh
 
-    # Only after verification, so a broken build is never cached. Each entry is
-    # saved only if it was missing: saving an existing key just fails.
-    - name: Save world map tables cache
-      if: inputs.save == 'true' && steps.decide.outputs.generate == 'true' && steps.tables.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v5
-      with:
-        path: src/addon/art/FDIDMap.lua
-        key: ${{ steps.key.outputs.tables-key }}
-
+    # Only after verification, so a broken build is never cached. Saved only
+    # if it was missing: saving an existing key just fails.
     - name: Save world map art cache
       if: inputs.save == 'true' && steps.decide.outputs.generate == 'true' && steps.art.outputs.cache-hit != 'true'
       uses: actions/cache/save@v5

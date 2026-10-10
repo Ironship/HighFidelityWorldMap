@@ -64,10 +64,12 @@ enable-nolib-creation: no
 # split.
 enable-toc-creation: no
 
-# The map art is its own CurseForge project (built from .pkgmeta-art,
-# https://www.curseforge.com/wow/addons/hfwm-art). The packager declares it as
-# a required relation on every CurseForge upload, matching the TOC's
-# RequiredDeps. CurseForge rejects relations to projects that are not approved
+# The map art is its own, optional CurseForge project (built from
+# .pkgmeta-art, https://www.curseforge.com/wow/addons/hfwm-art), so a client
+# update is not a 1 GB download. Without it the client still works; the World
+# and continent maps are just left to Blizzard. The packager declares it as an
+# optional relation on every CurseForge upload, matching the TOC's
+# OptionalDeps. CurseForge rejects relations to projects that are not approved
 # and public, so the upload fails if that project ever stops being so.
-required-dependencies:
+optional-dependencies:
   - hfwm-art

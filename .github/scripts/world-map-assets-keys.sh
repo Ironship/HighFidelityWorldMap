@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# Prints the two cache keys for the generator hash, as step outputs
+# Prints the art cache key for the generator hash, as a step output
 # (redirect into $GITHUB_OUTPUT):
 #   art-key     mapart-v2-<hash>      the art, src/addon/art/WorldMap
-#   tables-key  maptables-v2-<hash>   src/addon/art/FDIDMap.lua
 #
 # Inputs (environment): HASH, the hashFiles() of the generator sources. The
 # workflow computes it because hashFiles() is only available in expressions.
 # Bump the "v2" in all places (this file and delete-world-map-assets-cache.sh)
-# to invalidate every cache entry at once.
+# to invalidate the cache entry.
 set -euo pipefail
 
 : "${HASH:?HASH must be set to the hash of the generator sources}"
@@ -17,4 +16,3 @@ if [[ ! "$HASH" =~ ^[0-9a-f]+$ ]]; then
 fi
 
 echo "art-key=mapart-v2-${HASH}"
-echo "tables-key=maptables-v2-${HASH}"

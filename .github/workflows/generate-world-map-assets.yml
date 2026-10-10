@@ -1,20 +1,17 @@
 name: Generate World Map Assets
 
 # Runs the Python pipeline (src/generator/generateHFWM.py) that builds the Art
-# addon's content: the World and continent maps (src/addon/art/WorldMap/) and
-# src/addon/art/FDIDMap.lua. It saves the result to the Actions cache *from
-# main*. That is the only scope a tag-triggered release can read, so every
-# release (Create Release: Art and Publish Art Release to CurseForge)
-# can reuse it instead of repeating the ~40 minute generation. See
-# .github/actions/generate-world-map-assets.
+# addon's content, the World and continent maps (src/addon/art/WorldMap/), and
+# saves it to the Actions cache *from main*. That is the only scope a
+# tag-triggered release can read, so every release (Create Release: Art and
+# Publish Art Release to CurseForge) can reuse it instead of repeating the
+# ~40 minute generation. See .github/actions/generate-world-map-assets.
 #
-# Two cache entries share one key hash: the art (mapart-v2-<hash>, ~1 GB)
-# and the Lua table (maptables-v2-<hash>, small). Both ship in the Art addon
-# package. The hash covers the generator only
-# (src/generator/generateHFWM.py, src/generator/hfwm/**,
+# One cache entry, the art (mapart-v2-<hash>, ~1 GB). The hash covers the
+# generator only (src/generator/generateHFWM.py, src/generator/hfwm/**,
 # src/generator/requirements.txt). A change that leaves those alone, such as an
-# addon Lua fix, docs or a workflow tweak, resolves to the same keys, so a new
-# tag or manual release reuses the existing assets without regenerating anything.
+# addon Lua fix, docs or a workflow tweak, resolves to the same key, so a new
+# tag or manual release reuses the existing art without regenerating anything.
 #
 #   - weekly: GitHub evicts caches unused for 7 days; restoring the entry
 #     resets that clock. A miss here (evicted, or never built) regenerates it.
@@ -55,7 +52,7 @@ jobs:
     name: Check world map asset cache
     runs-on: ubuntu-latest
     outputs:
-      cache-hit: ${{ steps.tables.outputs.cache-hit == 'true' && steps.art.outputs.cache-hit == 'true' }}
+      cache-hit: ${{ steps.art.outputs.cache-hit == 'true' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -66,20 +63,11 @@ jobs:
           HASH: ${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}
         run: .github/scripts/world-map-assets-keys.sh >> "$GITHUB_OUTPUT"
 
-      # A real restore, not lookup-only: restoring an entry is what resets
-      # GitHub's 7-day eviction clock, which is the point of the weekly run.
-      - name: Restore world map tables cache
-        id: tables
-        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.bypass-asset-cache }}
-        uses: actions/cache/restore@v5
-        with:
-          path: src/addon/art/FDIDMap.lua
-          key: ${{ steps.key.outputs.tables-key }}
-
-      # Only the weekly run downloads the multi-GB art, to reset the eviction
-      # clock. Otherwise (a release calling this, a manual warm-up) this only
-      # has to know the entry exists; the job that uses the art restores it
-      # itself, so downloading it here too just doubles the ~1.5 minutes.
+      # Only the weekly run downloads the ~1 GB art, to reset the eviction
+      # clock (a real restore: restoring an entry is what resets GitHub's
+      # 7-day clock). Otherwise (a release calling this, a manual warm-up) this
+      # only has to know the entry exists; the job that uses the art restores
+      # it itself, so downloading it here too just doubles the time.
       - name: Restore world map art cache
         id: art
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.bypass-asset-cache }}

@@ -3,14 +3,10 @@
 # published or cached. Resolves its paths from the repo layout, so it works from
 # any working directory.
 #
-# Two checks, because the tables are small and the art is multi-GB:
-#   art     src/addon/art/WorldMap/
-#   tables  src/addon/art/FDIDMap.lua
-#
-# Usage: verify-world-map-assets.sh [tables|art|all]    (default: all)
+# Checks the art in src/addon/art/WorldMap/. FDIDMap.lua is the client's, not
+# the art addon's, and is not checked here.
 set -euo pipefail
 
-mode="${1:-all}"
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
 status=0
 
@@ -49,31 +45,12 @@ verify_art() {
     status=1
   fi
   # Generated with --original on, so an empty Original/ is a failure
-  # too: FDIDMap.lua would ship the background with no textures.
+  # too: the client's FDIDMap.lua would offer the Raw background with no textures.
   if (( orig < 2000 )); then
     echo "::error::only $orig BLPs in WorldMap/Original/, expected ~2150 — the in-game Original background would have no art"
     status=1
   fi
 }
 
-verify_tables() {
-  local fdid="$repo/src/addon/art/FDIDMap.lua"
-
-  test -s "$fdid" || { echo "::error::FDIDMap.lua is missing or empty"; status=1; return; }
-  cd "$repo/src/addon/art"
-  # The table has to be populated, or the addon silently drops a
-  # background that the TOC and the options panel still advertise.
-  grep -q '^HFWMF_FDID_MAP_ORIGINAL = {$' FDIDMap.lua || {
-    echo "::error::FDIDMap.lua has no populated HFWMF_FDID_MAP_ORIGINAL table"
-    status=1
-  }
-  echo "Tables OK: FDIDMap.lua $(du -h "$fdid" | cut -f1)."
-}
-
-case "$mode" in
-  tables) verify_tables ;;
-  art)    verify_art ;;
-  all)    verify_tables; verify_art ;;
-  *)      echo "usage: $0 [tables|art|all]" >&2; exit 2 ;;
-esac
+verify_art
 exit $status
