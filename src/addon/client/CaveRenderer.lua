@@ -86,17 +86,15 @@ local ACE_FRAME_BOTTOM_INSET_NO_STATUS = 20  -- tighter: no pane to leave room f
 --- pinned corner sits; see PositionWindow.
 local PIN_GAP = 6
 local SLIDER_COL_W = 30   -- depth slider gutter, only when there are floors
-local SLIDER_W     = 14   -- the track itself
-local NOTCH_W      = 18   -- tick mark width
+local SLIDER_W     = 16   -- the track itself: a stock scroll bar's width
 -- The thumb never reaches the very ends of a vertical Slider's track (half
--- its height is always inside it), so anything else meant to line up with
--- floor notches or a fraction of the track (LayoutNotches, the height-window
--- rectangle) has to live inside the same inset range, or it won't agree with
--- where the thumb itself can land.
-local SLIDER_INSET = 10
--- cave-satellite-v2 Phase 2's height-window rectangle: how wide, past the
--- window's exact edges, the widget's drag handles reach. Purely cosmetic
--- extra grab room, not part of the elevation math.
+-- its height is always inside it), so anything else meant to track a
+-- fraction of the track (the height-window rectangle) has to live inside the
+-- same inset range, or it won't agree with where the thumb itself can land.
+local SLIDER_INSET = 12
+-- cave-satellite-v2 Phase 2's height-window rectangle: height of each drag
+-- handle, which sits inside the window's top/bottom edge. Purely cosmetic
+-- grab room, not part of the elevation math.
 local HEIGHT_WINDOW_HANDLE_H = 8
 -- Fixed cosmetic smoothing for a piece just outside the height window: fades
 -- to invisible over this many yards rather than popping, same as the old
@@ -188,8 +186,7 @@ local function HideGroupPins(from)
     end
 end
 local sliderCol     -- gutter frame, hidden on single-floor caves
-local sliderTrack   -- the notched track (a Slider, for real drag behaviour)
-local notches       -- { {tick=Texture, hit=Button}, ... }
+local sliderTrack   -- the trough (a Slider, for real drag behaviour)
 local statusbg      -- aceWindow.statustext's own parent frame (the pane
                     -- behind it); hidden along with the text itself when
                     -- "All" floors is selected (see ShowCave) since there's
@@ -246,6 +243,7 @@ local floorPickerUnavailable
 -- currently being dragged.
 local windowBody
 local windowTopHandle, windowBottomHandle
+local windowCapTop, windowCapBottom   -- the rectangle's knob end caps
 local heightWindowDrag
 
 -- Reopen icon: shown in place of the window when Cave.lua has a cave to
@@ -259,9 +257,9 @@ local caveBorder, caveHeader
 
 -- Content dimensions from the last layout pass. Kept rather than read back
 -- with GetHeight(): a frame sized purely by its anchors does not always have
--- a resolved height in the same frame it was anchored, and the notch
--- positions have to line up with the slider thumb exactly or the widget
--- looks broken.
+-- a resolved height in the same frame it was anchored, and the height
+-- window has to line up with the slider thumb exactly or the widget looks
+-- broken.
 local contentW, contentH = 0, 0
 
 -------------------------------------------------------------------------------
@@ -761,41 +759,42 @@ local function EnsureSlider()
     -- The track. A real Slider rather than a texture moved by hand, so that
     -- thumb dragging, click-on-track and the step snapping all come from the
     -- widget rather than from this file.
-    sliderTrack = CreateFrame("Slider", nil, sliderCol)
+    -- BackdropTemplate for the trough (see below); CreateFrameTry falls back
+    -- to a plain Slider on a client without it.
+    sliderTrack = CreateFrameTry("Slider", nil, sliderCol, "BackdropTemplate")
     sliderTrack:SetOrientation("VERTICAL")
     sliderTrack:SetWidth(SLIDER_W)
     -- Anchored at the top only, with the height set explicitly by
     -- LayoutWindow: anchoring both ends would make the height anchor-derived
-    -- and therefore not reliably readable when the notches are placed.
+    -- and therefore not reliably readable when the height window is placed.
     sliderTrack:SetPoint("TOP", sliderCol, "TOP", 0, 0)
     sliderTrack:SetValueStep(1)
     if sliderTrack.SetObeyStepOnDrag then
         sliderTrack:SetObeyStepOnDrag(true)
     end
-    sliderTrack:SetThumbTexture(
-        "Interface\\Buttons\\UI-SliderBar-Button-Vertical")
+    -- The stock scroll bar's knob, at its native 18x24 and texcoords: the
+    -- vertical control every WoW player already knows how to grab.
+    sliderTrack:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
     local thumb = sliderTrack:GetThumbTexture()
-    if thumb then thumb:SetSize(16, 20) end
+    if thumb then
+        thumb:SetSize(18, 24)
+        thumb:SetTexCoord(0.20, 0.80, 0.125, 0.875)
+    end
 
-    -- Track groove: this track is only SLIDER_W (14px) wide, far too
-    -- narrow for DIALOG_BACKDROP's 32px ornate corners to tile correctly
-    -- (StyleBox's dialog border is sized for whole windows, not a thin
-    -- groove). Instead this uses the exact resource the real game uses for
-    -- every slider groove: Interface\Buttons\UI-SliderBar-Background and
-    -- UI-SliderBar-Border, the same pair FrameXML's OptionsSliderTemplate
-    -- draws under its thumb for the volume/camera-distance sliders and
-    -- every other vertical slider in the default UI. Plain textures, not a
-    -- backdrop, matching how the template itself builds it; created at
-    -- BACKGROUND/BORDER draw layers so the thumb texture (set below) still
-    -- draws above them without any extra layering work.
-    local grooveBg = sliderTrack:CreateTexture(nil, "BACKGROUND")
-    grooveBg:SetTexture("Interface\\Buttons\\UI-SliderBar-Background")
-    grooveBg:SetPoint("TOPLEFT", sliderTrack, "TOPLEFT", 3, -3)
-    grooveBg:SetPoint("BOTTOMRIGHT", sliderTrack, "BOTTOMRIGHT", -3, 3)
-
-    local grooveBorder = sliderTrack:CreateTexture(nil, "BORDER")
-    grooveBorder:SetTexture("Interface\\Buttons\\UI-SliderBar-Border")
-    grooveBorder:SetAllPoints(sliderTrack)
+    -- Trough: the same backdrop FrameXML's OptionsSliderTemplate gives every
+    -- stock slider (SliderBar-Border edge, tiled SliderBar-Background), with
+    -- its insets turned 90 degrees for a vertical track. Edge pieces are
+    -- 8px, so the 16px SLIDER_W is the narrowest it can be without the
+    -- corners crossing. Stretching the border *texture* over the track, as
+    -- this used to, smeared a horizontal 3-slice across a vertical frame.
+    if sliderTrack.SetBackdrop then
+        sliderTrack:SetBackdrop({
+            bgFile   = "Interface\\Buttons\\UI-SliderBar-Background",
+            edgeFile = "Interface\\Buttons\\UI-SliderBar-Border",
+            tile = true, tileSize = 8, edgeSize = 8,
+            insets = { left = 6, right = 6, top = 3, bottom = 3 },
+        })
+    end
 
     sliderTrack:SetScript("OnValueChanged", function(self, rawValue)
         if self._syncing then return end
@@ -861,74 +860,10 @@ local function EnsureSlider()
     end)
     sliderTrack:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    notches = {}
-
     -- For /hfwm debug and the test harness; built lazily, so it cannot be
     -- published alongside the window itself.
     Config.caveSliderCol   = sliderCol
     Config.caveSliderTrack = sliderTrack
-    Config.caveNotches     = notches
-end
-
---- One tick mark per floor, drawn across the groove so the track reads as a
---- notched ruler. Parented to the slider at a low sublevel on purpose: the
---- thumb has to pass over the ticks, and nothing may sit *above* the track as
---- a click target or it would steal the mousedown that starts a drag.
-local function GetOrCreateNotch(i)
-    local notch = notches[i]
-    if notch then return notch end
-    notch = sliderTrack:CreateTexture(nil, "BACKGROUND", nil, 2)
-    notch:SetHeight(1)
-    notches[i] = notch
-    return notch
-end
-
---- Place the ticks along the track and highlight the active one.
-local function LayoutNotches(floors, currentMapID)
-    local n = #floors
-    local trackH = contentH
-    if trackH <= 0 then return end
-
-    -- A single floor has nothing to notch *between* -- this only runs at
-    -- all for a single-floor place when it has active pieces (see
-    -- SyncSlider's own n <= 1 guard), where the height-window rectangle is
-    -- the sole control on the track. A lone centred tick there marks
-    -- nothing and just clutters a clean track, so hide whatever notches
-    -- exist from a previous, multi-floor place and stop rather than
-    -- drawing one.
-    if n <= 1 then
-        for i = 1, #notches do
-            notches[i]:Hide()
-        end
-        return
-    end
-
-    local inset  = SLIDER_INSET
-    local usable = trackH - inset * 2
-
-    for i, floor in ipairs(floors) do
-        local notch  = GetOrCreateNotch(i)
-        local frac   = (IndexToValue(i) - 1) / (n - 1)
-        local offset = inset + usable * frac   -- measured up from the bottom
-        local active = (floor.mapID == currentMapID)
-
-        notch:ClearAllPoints()
-        notch:SetPoint("BOTTOM", sliderTrack, "BOTTOM", 0, offset)
-        notch:SetWidth(active and NOTCH_W or NOTCH_W - 4)
-        notch:SetHeight(active and 3 or 1)
-        -- Gold for the active floor, dim tan/bronze for the rest: matches
-        -- the same gold-for-selected convention as the depth tooltip above.
-        notch:SetColorTexture(
-            active and 1.00 or 0.55,
-            active and 0.82 or 0.45,
-            active and 0.00 or 0.28,
-            active and 1.00 or 0.85)
-        notch:Show()
-    end
-
-    for i = n + 1, #notches do
-        notches[i]:Hide()
-    end
 end
 
 --- Pull the slider's displayed position back from the active floor.
@@ -945,8 +880,7 @@ local function SyncSlider(floors, currentMapID, continuous)
     -- already `continuousActive or piecesActive` from the caller, so it is
     -- true in exactly that case. Everything below already tolerates n == 1:
     -- SetMinMaxValues(1, 1) just freezes the (hidden, once pieces are
-    -- active -- see SyncHeightWindow) thumb, and LayoutNotches falls back
-    -- to a single centred notch when n <= 1.
+    -- active -- see SyncHeightWindow) thumb.
     if n <= 1 and not continuous then
         if sliderCol then sliderCol:Hide() end
         return
@@ -961,10 +895,8 @@ local function SyncSlider(floors, currentMapID, continuous)
     -- floor behind the user's back.
     sliderTrack._syncing = true
     sliderTrack:SetMinMaxValues(1, n)
-    -- Mirror the same way OnValueChanged does, so the thumb lands where the
-    -- hand-drawn notches (LayoutNotches, below) already place the active
-    -- floor: index 1 (topmost) at the top of the track, index n (deepest)
-    -- at the bottom.
+    -- Mirror the same way OnValueChanged does: index 1 (topmost) at the top
+    -- of the track, index n (deepest) at the bottom.
     sliderTrack:SetValue(MirrorSliderValue(IndexToValue(idx)))
     -- Discrete caves snap to whole floors; a shared-canvas cave drags
     -- smoothly between them so the opacity crossfade has something
@@ -975,7 +907,6 @@ local function SyncSlider(floors, currentMapID, continuous)
     end
     sliderTrack._syncing = false
 
-    LayoutNotches(floors, currentMapID)
     sliderCol:Show()
 end
 
@@ -1005,7 +936,7 @@ end
 -------------------------------------------------------------------------------
 
 --- Cursor's current position along the track, as the same 0..1 fraction
---- LayoutNotches/HeightWindowElevationBounds use (0 at the bottom of the
+--- HeightWindowElevationBounds use (0 at the bottom of the
 --- track's usable range, 1 at the top), clamped to stay on the track even
 --- if the cursor has strayed outside it.
 local function CursorTrackFrac()
@@ -1040,7 +971,13 @@ local function LayoutHeightWindow()
 
     windowBody:ClearAllPoints()
     windowBody:SetPoint("BOTTOM", sliderTrack, "BOTTOM", 0, bottomOffset)
-    windowBody:SetHeight(math.max(1, topOffset - bottomOffset))
+    local height = math.max(1, topOffset - bottomOffset)
+    windowBody:SetHeight(height)
+    -- Caps are each half the knob, but never more than half the window, so
+    -- a squeezed window stays a knob rather than overlapping itself.
+    local cap = math.min(12, height / 2)
+    windowCapTop:SetHeight(cap)
+    windowCapBottom:SetHeight(cap)
     windowBody:Show()
 end
 
@@ -1080,13 +1017,18 @@ local function HeightWindowDragUpdate()
     end
 
     local frac = CursorTrackFrac()
+    -- Edges move by how far the cursor has travelled since the press, not to
+    -- where it is: a click a few pixels off an edge's exact position would
+    -- otherwise snap the edge to the cursor before any actual drag.
+    local delta = frac - heightWindowDrag.startFrac
     if heightWindowDrag.kind == "top" then
-        Config:SetCaveHeightWindow(frac, heightWindowDrag.startBottom)
+        Config:SetCaveHeightWindow(heightWindowDrag.startTop + delta,
+            heightWindowDrag.startBottom)
     elseif heightWindowDrag.kind == "bottom" then
-        Config:SetCaveHeightWindow(heightWindowDrag.startTop, frac)
+        Config:SetCaveHeightWindow(heightWindowDrag.startTop,
+            heightWindowDrag.startBottom + delta)
     else -- "body": both edges move together, preserving the span
         local span  = heightWindowDrag.startTop - heightWindowDrag.startBottom
-        local delta = frac - heightWindowDrag.startFrac
         local top, bottom = heightWindowDrag.startTop + delta,
             heightWindowDrag.startBottom + delta
         if top > 1 then top, bottom = 1, 1 - span end
@@ -1098,6 +1040,59 @@ local function HeightWindowDragUpdate()
     CaveRenderer:UpdatePieceWindowAlphas()
 end
 
+local GLOW_FADE   = 0.15   -- seconds for an edge glow to fade fully in or out
+-- The glow is centred on its handle, which sits flush inside the window edge.
+local GLOW_HALF_H = 10     -- px each side of the glow's centre line
+
+--- Gold glow on a resize handle: fades in while the cursor is over it or
+--- while it is the edge being dragged (the cursor often outruns the strip
+--- mid-drag), and back out otherwise. Driven from the handle's own OnUpdate,
+--- which only runs while the handle is shown.
+---@param handle Button
+---@param kind "top"|"bottom"
+local function AddEdgeGlow(handle, kind)
+    -- A soft band centred on the handle. Gold is built from two gradient
+    -- halves (bright at the centre line, clear at both ends) because
+    -- tinting a stock highlight texture read green.
+    local y = 0
+    local bright = CreateColor(1.00, 0.80, 0.15, 0.85)
+    local clear  = CreateColor(1.00, 0.80, 0.15, 0)
+
+    -- anchor: which edge of the half sits on the centre line. The half
+    -- above the line is bright at its bottom; the half below, at its top.
+    local function Half(anchor, minColor, maxColor)
+        local t = handle:CreateTexture(nil, "OVERLAY")
+        t:SetColorTexture(1, 1, 1, 1)
+        t:SetBlendMode("ADD")
+        t:SetGradient("VERTICAL", minColor, maxColor)
+        t:SetHeight(GLOW_HALF_H)
+        t:SetPoint(anchor .. "LEFT", handle, "LEFT", -2, y)
+        t:SetPoint(anchor .. "RIGHT", handle, "RIGHT", 2, y)
+        return t
+    end
+    local halves = {
+        Half("BOTTOM", bright, clear),   -- above the line
+        Half("TOP", clear, bright),      -- below the line
+    }
+
+    local level = 0
+    local function SetLevel(a)
+        level = a
+        for _, t in ipairs(halves) do
+            t:SetAlpha(a)
+            t:SetShown(a > 0)
+        end
+    end
+    SetLevel(0)
+
+    handle:SetScript("OnUpdate", function(self, elapsed)
+        local lit = self:IsMouseOver()
+            or (heightWindowDrag and heightWindowDrag.kind == kind)
+        local step = elapsed / GLOW_FADE
+        SetLevel(lit and math.min(1, level + step) or math.max(0, level - step))
+    end)
+end
+
 --- Build the rectangle and its two resize handles, lazily on first use,
 --- same pattern as EnsureSlider, which this calls first since the widget
 --- is anchored to the slider track it overlays.
@@ -1105,10 +1100,12 @@ local function EnsureHeightWindow()
     if windowBody then return end
     EnsureSlider()
 
-    -- A little wider than the groove so the rectangle reads as its own
-    -- control rather than a fatter version of the track, and gives the
-    -- drag targets more room than the bare SLIDER_W would.
-    local widgetW = SLIDER_W + 10
+    -- The rectangle is the stock scroll bar knob (the same art the plain
+    -- thumb uses) stretched to the window: its top and bottom halves as end
+    -- caps and a one-row slice of its middle repeated between them, so a
+    -- resized window is a longer knob rather than a different widget.
+    local widgetW = 18
+    local KNOB = "Interface\\Buttons\\UI-ScrollBar-Knob"
 
     windowBody = CreateFrame("Button", nil, sliderCol)
     windowBody:SetWidth(widgetW)
@@ -1129,31 +1126,31 @@ local function EnsureHeightWindow()
     end)
     windowBody:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    local fill = windowBody:CreateTexture(nil, "ARTWORK", nil, 1)
-    fill:SetAllPoints(windowBody)
-    fill:SetColorTexture(1.00, 0.82, 0.00, 0.22)
+    windowCapTop = windowBody:CreateTexture(nil, "ARTWORK", nil, 2)
+    windowCapTop:SetTexture(KNOB)
+    windowCapTop:SetTexCoord(0.20, 0.80, 0.125, 0.50)
+    windowCapTop:SetPoint("TOPLEFT", windowBody, "TOPLEFT", 0, 0)
+    windowCapTop:SetPoint("TOPRIGHT", windowBody, "TOPRIGHT", 0, 0)
 
-    local edgeTop = windowBody:CreateTexture(nil, "ARTWORK", nil, 2)
-    edgeTop:SetColorTexture(1.00, 0.85, 0.35, 0.9)
-    edgeTop:SetHeight(2)
-    edgeTop:SetPoint("TOPLEFT", windowBody, "TOPLEFT", 0, 0)
-    edgeTop:SetPoint("TOPRIGHT", windowBody, "TOPRIGHT", 0, 0)
+    windowCapBottom = windowBody:CreateTexture(nil, "ARTWORK", nil, 2)
+    windowCapBottom:SetTexture(KNOB)
+    windowCapBottom:SetTexCoord(0.20, 0.80, 0.50, 0.875)
+    windowCapBottom:SetPoint("BOTTOMLEFT", windowBody, "BOTTOMLEFT", 0, 0)
+    windowCapBottom:SetPoint("BOTTOMRIGHT", windowBody, "BOTTOMRIGHT", 0, 0)
 
-    local edgeBottom = windowBody:CreateTexture(nil, "ARTWORK", nil, 2)
-    edgeBottom:SetColorTexture(1.00, 0.85, 0.35, 0.9)
-    edgeBottom:SetHeight(2)
-    edgeBottom:SetPoint("BOTTOMLEFT", windowBody, "BOTTOMLEFT", 0, 0)
-    edgeBottom:SetPoint("BOTTOMRIGHT", windowBody, "BOTTOMRIGHT", 0, 0)
+    local middle = windowBody:CreateTexture(nil, "ARTWORK", nil, 1)
+    middle:SetTexture(KNOB)
+    middle:SetTexCoord(0.20, 0.80, 0.49, 0.51)
+    middle:SetPoint("TOPLEFT", windowCapTop, "BOTTOMLEFT", 0, 0)
+    middle:SetPoint("BOTTOMRIGHT", windowCapBottom, "TOPRIGHT", 0, 0)
 
-    -- Handles overlap a little past the body's own edge (rather than
-    -- sitting flush inside it) so there is always a grabbable strip even
-    -- when the window has been resized down near its minimum span.
+    -- Handles sit flush inside the body's edge, not straddling it: a strip
+    -- reaching past the rectangle made the hover (and its glow) trigger
+    -- over bare track.
     windowTopHandle = CreateFrame("Button", nil, windowBody)
     windowTopHandle:SetHeight(HEIGHT_WINDOW_HANDLE_H)
-    windowTopHandle:SetPoint("TOPLEFT", windowBody, "TOPLEFT",
-        0, HEIGHT_WINDOW_HANDLE_H / 2)
-    windowTopHandle:SetPoint("TOPRIGHT", windowBody, "TOPRIGHT",
-        0, HEIGHT_WINDOW_HANDLE_H / 2)
+    windowTopHandle:SetPoint("TOPLEFT", windowBody, "TOPLEFT", 0, 0)
+    windowTopHandle:SetPoint("TOPRIGHT", windowBody, "TOPRIGHT", 0, 0)
     windowTopHandle:SetFrameLevel(windowBody:GetFrameLevel() + 2)
     windowTopHandle:EnableMouse(true)
     windowTopHandle:SetScript("OnMouseDown", function()
@@ -1166,13 +1163,14 @@ local function EnsureHeightWindow()
         GameTooltip:Show()
     end)
     windowTopHandle:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    AddEdgeGlow(windowTopHandle, "top")
 
     windowBottomHandle = CreateFrame("Button", nil, windowBody)
     windowBottomHandle:SetHeight(HEIGHT_WINDOW_HANDLE_H)
     windowBottomHandle:SetPoint("BOTTOMLEFT", windowBody, "BOTTOMLEFT",
-        0, -HEIGHT_WINDOW_HANDLE_H / 2)
+        0, 0)
     windowBottomHandle:SetPoint("BOTTOMRIGHT", windowBody, "BOTTOMRIGHT",
-        0, -HEIGHT_WINDOW_HANDLE_H / 2)
+        0, 0)
     windowBottomHandle:SetFrameLevel(windowBody:GetFrameLevel() + 2)
     windowBottomHandle:EnableMouse(true)
     windowBottomHandle:SetScript("OnMouseDown", function()
@@ -1185,6 +1183,7 @@ local function EnsureHeightWindow()
         GameTooltip:Show()
     end)
     windowBottomHandle:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    AddEdgeGlow(windowBottomHandle, "bottom")
 end
 
 --- Show/position the rectangle for a per-piece place, or hide it (and give
@@ -1914,7 +1913,7 @@ local function LayoutWindow(floorMapID)
         EnsureSlider()
         sliderCol:ClearAllPoints()
         sliderCol:SetPoint("TOPLEFT", content, "TOPRIGHT", 2, 0)
-        -- Height set outright as well as anchored: LayoutNotches needs the
+        -- Height set outright as well as anchored: LayoutHeightWindow needs the
         -- number this frame, and an anchor-derived size is not guaranteed to
         -- be readable yet.
         sliderCol:SetSize(SLIDER_COL_W, h)
