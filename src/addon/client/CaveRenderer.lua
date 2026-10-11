@@ -1680,25 +1680,70 @@ end
 --- centred on UIParent (see ApplyStatus in AceGUIContainer-Frame.lua) and
 --- every LayoutWindow call is cheap insurance against that ever showing.
 local mapOpen = false
+local pinnedTo  -- the frame PositionWindow last anchored to; a moved window isn't anchored to it
+
+--- Rightmost shown left-side Blizzard panel (character sheet, spellbook...),
+--- or nil. The map is excluded: it has its own slot.
+local function RightmostPanel()
+    local best, bestRight
+    for name, info in pairs(UIPanelWindows or {}) do
+        local f = _G[name]
+        local r = f and f ~= WorldMapFrame and info.area
+            and (info.area == "left" or info.area == "doublewide")
+            and f:IsShown() and f:GetRight()
+        if r and (not bestRight or r > bestRight) then best, bestRight = f, r end
+    end
+    return best
+end
+
+--- Where the cave window's BOTTOMLEFT sits relative to a panel: beside the
+--- panel's right edge, except the character sheet's own mode tabs
+--- (Pet/Reputation/Currency...) extend past that edge and would be covered,
+--- so anchor past the tabs themselves when they are shown.
+local function PanelSideAnchor(panel)
+    if panel == _G.CharacterFrame then
+        local tabs = _G.CharacterFrameModeTabs
+        if tabs and tabs:IsShown() then
+            -- x from the tabs' right edge, y still level with the panel's
+            -- own bottom (the tabs strip sits higher than the sheet).
+            return tabs, "BOTTOMRIGHT", PIN_GAP,
+                (panel:GetBottom() or 0) - (tabs:GetBottom() or 0)
+        end
+    end
+    return panel, "BOTTOMRIGHT", 0, 0
+end
+
 local function PositionWindow()
     if not window then return end
     window:ClearAllPoints()
-    if Config.db and Config.db.caveKeepOpen and not mapOpen then
+    local panel = Config.db and Config.db.caveKeepOpen and not mapOpen and RightmostPanel()
+    if panel then
+        -- Map closed: sit beside the open panel so it isn't covered.
+        local rel, point, x, y = PanelSideAnchor(panel)
+        pinnedTo = rel
+        window:SetPoint("BOTTOMLEFT", rel, point, x, y)
+    elseif Config.db and Config.db.caveKeepOpen and not mapOpen then
         -- Map closed, window kept open: take the map's slot (the map keeps
         -- its rect while hidden), so the window's left edge is the map's.
+        pinnedTo = WorldMapFrame
         window:SetPoint("BOTTOMLEFT", WorldMapFrame, "BOTTOMLEFT", 0, 0)
     else
+        pinnedTo = WorldMapFrame
         window:SetPoint("BOTTOMLEFT", WorldMapFrame, "BOTTOMRIGHT", PIN_GAP, 0)
     end
 end
 
---- Map opened/closed. Re-pins the window only while it is still anchored to
---- the map; a dragged window (anchor rewritten to UIParent) stays put.
-function CaveRenderer:SetMapOpen(open)
-    mapOpen = open
-    if window and window:IsShown() and select(2, window:GetPoint()) == WorldMapFrame then
+--- Re-pin only while the window is still where PositionWindow put it; a
+--- dragged window (anchor rewritten to UIParent) stays put.
+function CaveRenderer:Repin()
+    if window and window:IsShown() and select(2, window:GetPoint()) == pinnedTo then
         PositionWindow()
     end
+end
+
+function CaveRenderer:SetMapOpen(open)
+    mapOpen = open
+    self:Repin()
 end
 
 local function EnsureWindow()

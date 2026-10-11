@@ -75,6 +75,10 @@ function addon:OnEnable()
         CaveRenderer:SetMapOpen(false)
     end)
     CaveRenderer:SetMapOpen(WorldMapFrame:IsShown() and true or false)
+    -- Character sheet and other side panels: the kept-open cave window
+    -- moves aside rather than sit under them.
+    hooksecurefunc("ShowUIPanel", function() CaveRenderer:Repin() end)
+    hooksecurefunc("HideUIPanel", function() CaveRenderer:Repin() end)
 
     Config.overlayFrame:SetScript("OnSizeChanged", function()
         Renderer:ScheduleRefresh()
