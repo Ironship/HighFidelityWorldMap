@@ -323,6 +323,12 @@ function Commands:Handle(msg)
                     .. "e.g. |cff999999framebg big 0.15|r)")
             end
             return
+        elseif sub == "strip" then
+            P("navbar strip:")
+            for _, line in ipairs(MapFrameBg:DescribeStrip()) do
+                print("  " .. line)
+            end
+            return
         elseif sub == "nuke" then
             -- Not a setting: a bisection tool. If this makes the map
             -- see-through then the backing is in the survey and the ordinary

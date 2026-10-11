@@ -50,8 +50,12 @@ MapFrameBg.visible = true
 MapFrameBg.hidden = {}
 MapFrameBg.order  = {}
 
+MapFrameBg.strip = nil
+MapFrameBg.bar   = nil
+
 --- Is this widget ours, or inside something of ours?
 local function isOurs(obj)
+    if obj == MapFrameBg.strip or obj == MapFrameBg.bar then return true end
     local frames = { Config.overlayFrame, Config.caveOverlayFrame }
     for _, mine in ipairs(frames) do
         if mine then
@@ -243,6 +247,95 @@ local function hook(obj)
     end
 end
 
+--- The art that normally shows behind the navbar: of the textures we have
+--- hidden, the smallest one with art of its own (atlas or file) whose rect
+--- contains the navbar's centre. Found by position because the navbar sits
+--- above the ScrollContainer, not on it, and the canvas's TiledBackground
+--- (the obvious guess) turned out to carry no art at all.
+---@return table|nil texture, string|nil atlas, any file
+local function stripSource(navbar)
+    local l, r, t, b = navbar:GetLeft(), navbar:GetRight(), navbar:GetTop(), navbar:GetBottom()
+    if not (l and r and t and b) then return end
+    local cx, cy = (l + r) / 2, (t + b) / 2
+
+    local best, bestArea
+    for _, obj in ipairs(MapFrameBg.order) do
+        if obj.GetObjectType and obj:GetObjectType() == "Texture"
+            and (obj:GetAtlas() or obj:GetTexture())
+        then
+            local ol, or_, ot, ob = obj:GetLeft(), obj:GetRight(), obj:GetTop(), obj:GetBottom()
+            if ol and or_ and ot and ob
+                and ol <= cx and cx <= or_ and ob <= cy and cy <= ot
+            then
+                local area = (or_ - ol) * (ot - ob)
+                if not bestArea or area < bestArea then
+                    best, bestArea = obj, area
+                end
+            end
+        end
+    end
+    if best then return best, best:GetAtlas(), best:GetTexture() end
+end
+
+--- Transparent hides the panel backing, including whatever sits behind the
+--- navbar at the top of the map pane, leaving the navbar floating over the
+--- world. Re-draw just that band: a copy of the hidden art, from the
+--- navbar's top edge down to the ScrollContainer's top edge, across the
+--- scroll container's width. A copy rather than un-hiding the original
+--- because the original spans far more than the band.
+local function updateStrip(show)
+    local strip = MapFrameBg.strip
+    local scroll = WorldMapFrame and WorldMapFrame.ScrollContainer
+    local navbar = WorldMapFrame and WorldMapFrame.NavBar
+
+    local dy
+    if show and navbar and scroll and navbar:IsShown() then
+        local nt, st = navbar:GetTop(), scroll:GetTop()
+        dy = nt and st and nt - st
+    end
+
+    if not (dy and dy > 0) then
+        if strip then strip:Hide() end
+        if MapFrameBg.bar then MapFrameBg.bar:Hide() end
+        return
+    end
+
+    if not strip then
+        strip = navbar:CreateTexture(nil, "BACKGROUND")
+        MapFrameBg.strip = strip
+        -- Sublevel above the strip, still under the navbar's own widgets.
+        MapFrameBg.bar = navbar:CreateTexture(nil, "BACKGROUND", nil, 1)
+        MapFrameBg.bar:SetColorTexture(0, 0, 0, 1)
+    end
+
+    -- The black bar the navbar's own text and buttons sit on: exactly the
+    -- navbar frame, so only the area nav elements can occupy is black and
+    -- the strip's art shows around it.
+    local bar = MapFrameBg.bar
+    bar:SetAllPoints(navbar)
+    bar:Show()
+
+    -- Retried until a source turns up: the first call can precede the
+    -- search having hidden anything. Left alone once copied.
+    if not strip.copied then
+        local src, atlas, file = stripSource(navbar)
+        if not src then return end
+        if atlas then
+            strip:SetAtlas(atlas)
+        else
+            strip:SetTexture(file, "REPEAT", "REPEAT")
+        end
+        strip:SetHorizTile(true)
+        strip:SetVertTile(true)
+        strip.copied = atlas or file
+    end
+
+    strip:ClearAllPoints()
+    strip:SetPoint("TOPLEFT", scroll, "TOPLEFT", 0, dy)
+    strip:SetPoint("BOTTOMRIGHT", scroll, "TOPRIGHT", 0, 0)
+    strip:Show()
+end
+
 --- Show or hide the map frame's backing.
 ---@param visible boolean true to leave the client's backing alone
 function MapFrameBg:SetVisible(visible)
@@ -250,6 +343,7 @@ function MapFrameBg:SetVisible(visible)
     self.visible = visible
 
     if visible then
+        updateStrip(false)
         -- Restore covers everything ever hidden, not just what the search
         -- finds this time, so switching away from Transparent can never leave
         -- a region permanently invisible.
@@ -264,6 +358,38 @@ function MapFrameBg:SetVisible(visible)
         hook(obj)
         conceal(obj)
     end
+    updateStrip(true)
+end
+
+--- Why the navbar strip is or isn't drawn, for `/hfwm framebg strip`.
+---@return string[] lines
+function MapFrameBg:DescribeStrip()
+    local wmf = WorldMapFrame
+    local scroll = wmf and wmf.ScrollContainer
+    local nav = wmf and wmf.NavBar
+    local s = self.strip
+    local function box(f)
+        if not f then return "nil" end
+        return ("top=%s bottom=%s h=%s lvl=%s scale=%s"):format(
+            tostring(f.GetTop and f:GetTop()), tostring(f.GetBottom and f:GetBottom()),
+            tostring(f.GetHeight and f:GetHeight()),
+            tostring(f.GetFrameLevel and f:GetFrameLevel()),
+            tostring(f.GetEffectiveScale and f:GetEffectiveScale()))
+    end
+    return {
+        "scroll: " .. box(scroll),
+        "navbar: " .. box(nav),
+        ("source: %s"):format((function()
+            local o, atlas, file = nav and stripSource(nav)
+            if not o then return "none found" end
+            return ("%s atlas=%s file=%s"):format(
+                o:GetDebugName(), tostring(atlas), tostring(file))
+        end)()),
+        ("strip: %s copied=%s shown=%s w=%s h=%s alpha=%s"):format(
+            s and "created" or "nil", tostring(s and s.copied),
+            tostring(s and s:IsShown()), tostring(s and s:GetWidth()),
+            tostring(s and s:GetHeight()), tostring(s and s:GetEffectiveAlpha())),
+    }
 end
 
 --- Human-readable list of what SetVisible would act on right now, each with
