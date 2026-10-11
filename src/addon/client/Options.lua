@@ -284,9 +284,9 @@ local options = {
             order = 75,
             type = "group",
             inline = true,
-            -- Boxed section, same treatment as Cave map (beta) just below
-            -- it -- not a tab under Profiles' tree, and placed directly
-            -- above Cave map since it matters more.
+            -- Boxed section, same treatment as Cave map just below it --
+            -- not a tab under Profiles' tree, and placed directly above
+            -- Cave map since it matters more.
             name = "Map Background",
             args = {
                 intro = {
@@ -319,7 +319,7 @@ local options = {
             order = 80,
             type = "group",
             inline = true,
-            name = "Cave map (beta)",
+            name = "Cave map",
             args = {
                 intro = {
                     order = 1,
@@ -388,7 +388,7 @@ local options = {
                 caveOtherIndoors = {
                     order = 37,
                     type = "toggle",
-                    name = "Other indoors",
+                    name = "Other indoors (beta)",
                     desc = "Also opens the cave map inside buildings, "
                         .. "houses and every other indoor area, not just "
                         .. "caves, mines and dungeons.",
