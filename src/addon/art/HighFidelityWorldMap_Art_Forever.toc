@@ -3,6 +3,7 @@
 ## Notes: Map art for High Fidelity World Map: Forever. Contains the stitched high-resolution World, Eastern Kingdoms and Kalimdor maps. No code, settings or UI of its own; requires High Fidelity World Map.
 ## Dependencies: HighFidelityWorldMap
 ## Author: HighFidelityWorldMap
+## Category: Map
 ## IconTexture: Interface\Icons\INV_Misc_Map02
 ## X-Curse-Project-ID: 1727004
 
