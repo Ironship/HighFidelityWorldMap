@@ -105,6 +105,14 @@ def group_leaves(tile_fdid, extent_px=None):
 
 def mine_entries(spec):
     """Yield ``(synthetic_fdid, entry_dict)`` for every floor and piece."""
+    yield from mine_bake(spec)[1]
+
+
+def mine_bake(spec):
+    """``(canvas, entries)``: *entries* as :func:`mine_entries` yields them,
+    *canvas* the numbers the placement was composed with (``groups`` by
+    index, ``tiled`` indices, ``minx``/``maxy``/``w0``/``h0`` the pre-rotation
+    canvas, ``w1``/``h1`` the rotated one, ``placement``, ``angle``)."""
     groups = _load_groups(spec)
     by_index = {g.index: g for g in groups}
     tiled = sorted(i for i in by_index if by_index[i].tile_fdid is not None)
@@ -168,6 +176,7 @@ def mine_entries(spec):
                         round(h1 / 2 - dx * sin + dy * cos, 2), dw, dh])
         return out
 
+    entries = []
     if spec.single_floor:
         floors = {"floor": sorted(tiled)}
     else:
@@ -175,10 +184,14 @@ def mine_entries(spec):
         floors = {"upper": upper, "lower": lower}
     for i, name in enumerate(floors):
         leaves = [leaf for idx in floors[name] for leaf in placed(idx)]
-        yield spec.floor_fdid_base + i, {"w": w1, "h": h1, "a": angle, "l": leaves}
+        entries.append((spec.floor_fdid_base + i,
+                        {"w": w1, "h": h1, "a": angle, "l": leaves}))
     for order, idx in enumerate(tiled):
-        yield spec.piece_fdid_base + order, {
-            "w": w1, "h": h1, "a": angle, "l": placed(idx)}
+        entries.append((spec.piece_fdid_base + order, {
+            "w": w1, "h": h1, "a": angle, "l": placed(idx)}))
+    canvas = dict(groups=by_index, tiled=tiled, minx=minx, maxy=maxy,
+                  w0=w0, h0=h0, w1=w1, h1=h1, placement=placement, angle=angle)
+    return canvas, entries
 
 
 def lua_entry(fdid, e):

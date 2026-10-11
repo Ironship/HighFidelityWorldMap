@@ -6,7 +6,7 @@
 -- /hfwm on|off      - explicit enable / disable
 -- /hfwm bg NAME     - map background: default | ocean | hybrid
 -- /hfwm options     - open the options panel
--- /hfwm cave        - the cave map window (on|off|show|hide|reset|alpha N)
+-- /hfwm cave        - the cave map window (on|off|show|hide|reset|alpha N|indoors)
 -- /hfwm remember    - remember world map zoom+pan across close/reopen
 -- /hfwm zoom        - additional (closer) world map zoom levels
 -- /hfwm clarity     - higher-detail Kalimdor/Eastern Kingdoms/Azeroth maps

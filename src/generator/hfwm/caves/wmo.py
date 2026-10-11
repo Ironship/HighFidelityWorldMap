@@ -75,23 +75,21 @@ class WmoPlacement:
     name_set: int
 
 
-def parse_modf_placements(obj0_adt_bytes: bytes,
-                           wmo_fdid: int) -> list[WmoPlacement]:
-    """Parse every MODF record in a split-format ``_obj0.adt`` that places
-    *wmo_fdid*, direct-FileDataID mode only.
+def iter_modf_placements(obj0_adt_bytes: bytes):
+    """Yield ``(wmo_fdid, WmoPlacement)`` for every direct-FileDataID MODF
+    record in a split-format ``_obj0.adt``.
 
     ``SMMapObjDef`` (wowdev.wiki/ADT/v18#MODF_chunk) is 64 bytes: nameId,
     uniqueId, C3Vector position, C3Vector rotation, CAaBox extents,
-    flags, doodadSet, nameSet, scale. This build's Fargodeep-covering ADT
-    carries no MWMO/MWID chunk at all (confirmed by scanning its own
-    top-level chunk list), which only makes sense if ``modf_entry_is_
-    filedata_id`` (flag 0x8) is set on every record and ``nameId`` is
-    already the FileDataID — so that's the only mode this parses; a
-    record without that flag would need an MWID lookup this function
-    doesn't have and is skipped rather than misread.
+    flags, doodadSet, nameSet, scale. This build's obj0 ADTs carry no
+    MWMO/MWID chunk at all (confirmed by scanning Fargodeep's own top-level
+    chunk list), which only makes sense if ``modf_entry_is_filedata_id``
+    (flag 0x8) is set on every record and ``nameId`` is already the
+    FileDataID — so that's the only mode this parses; a record without
+    that flag would need an MWID lookup this function doesn't have and is
+    skipped rather than misread.
     """
     pos = 0
-    placements: list[WmoPlacement] = []
     while pos < len(obj0_adt_bytes) - 8:
         magic = obj0_adt_bytes[pos:pos + 4][::-1]
         size = struct.unpack_from("<I", obj0_adt_bytes, pos + 4)[0]
@@ -101,14 +99,20 @@ def parse_modf_placements(obj0_adt_bytes: bytes,
                 (name_id, unique_id, px, py, pz, rx, ry, rz,
                  *_rest_bbox, flags, doodad_set, name_set, _scale) = \
                     struct.unpack_from("<II3f3f6fHHHH", body, i * 64)
-                if name_id != wmo_fdid or not (flags & 0x8):
+                if not (flags & 0x8):
                     continue
-                placements.append(WmoPlacement(
+                yield name_id, WmoPlacement(
                     unique_id=unique_id, position=(px, py, pz),
                     rotation=(rx, ry, rz), name_set=name_set,
-                ))
+                )
         pos += 8 + size
-    return placements
+
+
+def parse_modf_placements(obj0_adt_bytes: bytes,
+                           wmo_fdid: int) -> list[WmoPlacement]:
+    """Every MODF record in *obj0_adt_bytes* that places *wmo_fdid*."""
+    return [p for fdid, p in iter_modf_placements(obj0_adt_bytes)
+            if fdid == wmo_fdid]
 
 
 def select_placement(

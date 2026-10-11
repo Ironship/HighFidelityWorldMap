@@ -73,6 +73,16 @@ function Commands:Handle(msg)
                 db.caveRememberState and "|cff00ff00on|r" or "|cffff4444off|r"))
             ns.Options:Refresh()
             return
+        elseif sub == "indoors" then
+            local want = args[3]
+            if want == "on" then db.caveOtherIndoors = true
+            elseif want == "off" then db.caveOtherIndoors = false
+            else db.caveOtherIndoors = not db.caveOtherIndoors end
+            P(("Cave map other indoors: %s"):format(
+                db.caveOtherIndoors and "|cff00ff00on|r" or "|cffff4444off|r"))
+            ns.Cave:UpdateState()
+            ns.Options:Refresh()
+            return
         elseif sub == "on" or sub == "enable" then
             db.caveEnabled = true
         elseif sub == "off" or sub == "disable" then

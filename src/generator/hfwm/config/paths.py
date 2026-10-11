@@ -48,6 +48,9 @@ BASE_ART_TILE_CACHE = CACHE_ROOT / "baseart"
 # the per-group minimap tiles.
 WMO_CACHE_DIR = CACHE_ROOT / "wmo"
 WMO_TILE_CACHE_DIR = CACHE_ROOT / "wmo_minimap"
+# The wowdev community listfile (FileDataID -> path); the only place the
+# WMO -> minimap tile mapping exists. ~150 MB, downloaded once.
+LISTFILE_CACHE = CACHE_ROOT / "survey" / "community-listfile.csv"
 
 PROVENANCE_FILE = CACHE_ROOT / "provenance.json"
 
@@ -56,6 +59,8 @@ PROVENANCE_FILE = CACHE_ROOT / "provenance.json"
 # ---------------------------------------------------------------------------
 FDID_MAP_FILE = ADDON_DIR / "FDIDMap.lua"
 CAVE_DATA_FILE = ADDON_DIR / "CaveData.lua"
+INDOOR_DATA_FILE = ADDON_DIR / "IndoorData.lua"
+INDOOR_TILES_FILE = ADDON_DIR / "IndoorTiles.lua"
 WORLDMAP_DIR = ART_DIR / "WorldMap"
 LOWRES_WORLDMAP_DIR = ADDON_DIR / "WorldMap"
 

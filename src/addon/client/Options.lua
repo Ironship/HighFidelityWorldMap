@@ -55,7 +55,7 @@ local function ChatCommandHint()
         keys[#keys + 1] = bg.key
     end
     return "Also from chat: /hfwm bg " .. table.concat(keys, "|")
-        .. "  |  /hfwm cave on|off|autoopen|remember  |  /hfwm remember on|off"
+        .. "  |  /hfwm cave on|off|autoopen|remember|indoors  |  /hfwm remember on|off"
         .. "  |  /hfwm zoom on|off  |  /hfwm clarity on|off  |  /hfwm fog on|off"
 end
 
@@ -383,6 +383,21 @@ local options = {
                         Config.db.caveKeepOpen = value
                         -- Re-parent an already-open window now.
                         ns.CaveRenderer:Relayout()
+                    end,
+                },
+                caveOtherIndoors = {
+                    order = 37,
+                    type = "toggle",
+                    name = "Other indoors",
+                    desc = "Also opens the cave map inside buildings, "
+                        .. "houses and every other indoor area, not just "
+                        .. "caves, mines and dungeons.",
+                    disabled = function() return not (Config.db.enabled and Config.db.caveEnabled) end,
+                    get = function() return Config.db.caveOtherIndoors end,
+                    set = function(_, value)
+                        Config.db.caveOtherIndoors = value
+                        ns.Cave:Unsuppress()
+                        ns.Cave:UpdateState()
                     end,
                 },
                 caveAlpha = {

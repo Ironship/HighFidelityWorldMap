@@ -49,8 +49,10 @@ local FLOOR_ID_BASE = 4000000
 local UI_MAP_TYPE = (Enum and Enum.UiMapType) or {}
 local MAP_TYPE_BY_KIND = {
     micro   = UI_MAP_TYPE.Micro   or 5,
+    indoor  = UI_MAP_TYPE.Micro   or 5,
     dungeon = UI_MAP_TYPE.Dungeon or 4,
 }
+
 
 -------------------------------------------------------------------------------
 -- Indices, built once at login
@@ -60,6 +62,10 @@ local places = {}        -- [i] = place, with .floors[j].id filled in
 local floorByID = {}     -- [floorID] = { place = place, floor = floor }
 local placesByName = {}  -- [lowercased localised area name] = { place, ... }
 local placeByInstance = {} -- [Map.ID] = place, dungeons only
+-- Buildings, houses and every other WMO interior (IndoorData.lua). Matched by
+-- Map.ID and footprint alone, never by name: most sit in the same subzone as
+-- the street outside, so the name says nothing about which building it is.
+local indoorPlaces = {}
 
 --- Fold a place into the name index under every name it could be recognised
 --- by: the place's own areas and each floor's.
@@ -98,14 +104,24 @@ end
 function CaveTable:Load()
     loaded = false
     places, floorByID, placesByName, placeByInstance = {}, {}, {}, {}
+    indoorPlaces = {}
 
     local data = HFWMF_CAVE_DATA
     if type(data) ~= "table" or type(data.places) ~= "table" then
         return false
     end
 
+    -- Indoors ship in their own table (IndoorData.lua, same shape, kind =
+    -- "indoor") so regenerating them never touches the hand-curated places.
+    local sources = data.places
+    if type(HFWMF_INDOOR_PLACES) == "table" then
+        sources = {}
+        for _, src in ipairs(data.places) do sources[#sources + 1] = src end
+        for _, src in ipairs(HFWMF_INDOOR_PLACES) do sources[#sources + 1] = src end
+    end
+
     local nextID = FLOOR_ID_BASE
-    for i, src in ipairs(data.places) do
+    for i, src in ipairs(sources) do
         if type(src.floors) == "table" and #src.floors > 0 then
             local place = {
                 index   = i,
@@ -171,7 +187,11 @@ function CaveTable:Load()
                 floorByID[nextID] = place.floors[j]
             end
             places[#places + 1] = place
-            IndexNames(place)
+            if place.kind == "indoor" then
+                indoorPlaces[#indoorPlaces + 1] = place
+            else
+                IndexNames(place)
+            end
             -- Instance map IDs are unique per dungeon and are exactly what
             -- GetInstanceInfo hands back, so inside a dungeon the lookup can
             -- skip the names entirely. Micro dungeons share the continent's
@@ -407,6 +427,24 @@ local function PlayerAreaNames()
     return out
 end
 
+--- The smallest "indoor" place whose footprint holds (worldX, worldY), or
+--- nil. Only while the Other indoors option is on.
+---@return table|nil place
+local function IndoorAt(mapID, worldX, worldY)
+    if not (worldX and Config.db and Config.db.caveOtherIndoors) then return nil end
+    local best, bestArea
+    for _, place in ipairs(indoorPlaces) do
+        if (mapID == nil or place.mapID == mapID)
+           and Contains(place.bounds, worldX, worldY) then
+            local area = RectArea(place.bounds)
+            if not bestArea or area < bestArea then
+                best, bestArea = place, area
+            end
+        end
+    end
+    return best
+end
+
 --- The baked floor the player is standing on, or nil.
 ---
 --- Two routes in, and the instance one is both simpler and stronger:
@@ -484,6 +522,8 @@ function CaveTable:FindPlayerFloor(preferredFloorID)
         if best then break end
     end
 
+    -- No named cave or mine here: a building or other indoor area?
+    best = best or IndoorAt(mapID, worldX, worldY)
     if not best then return nil, false end
     local floor, confident = FloorForPosition(best, preferredFloorID)
     return floor.id, confident
@@ -558,6 +598,10 @@ function CaveTable:DebugTrace()
         end
     end
 
+    local indoor = IndoorAt(mapID, worldX, worldY)
+    add(("  findFloor: other indoors option=%s  footprint match=%s"):format(
+        tostring(Config.db and Config.db.caveOtherIndoors or false),
+        indoor and indoor.name or "none"))
     return lines
 end
 
@@ -641,6 +685,9 @@ end
 --- Bay", so a title taken from the floor would never say "Gnomeregan".
 function CaveTable:GetPlaceName(floorID)
     local floor = self:GetFloor(floorID)
+    -- Indoors have no name of their own; nil sends the title down to the
+    -- client's subzone text (Cave:GetAreaTitle), as the real minimap does.
+    if floor and floor.place.kind == "indoor" then return nil end
     return floor and floor.place.name or nil
 end
 

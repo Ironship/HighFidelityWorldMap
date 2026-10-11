@@ -47,6 +47,12 @@ Config.DEFAULTS = {
     caveLastVisible   = true,
     caveKeepOpen      = false,
 
+    -- caveOtherIndoors: also open the window for buildings, houses and
+    -- every other WMO interior (places the generator marks kind = "indoor"),
+    -- not just caves, mines and dungeons. Off by default: there are far more
+    -- of them and most are one-room houses.
+    caveOtherIndoors  = false,
+
     -- Cave map depth window: the real-world elevation range a per-piece
     -- place's rooms (currently just Fargodeep Mine) stay visible within,
     -- as two fractions (0..1) of that place's own [zMin, zMax] span.
@@ -459,11 +465,13 @@ end
 -- Baked cave floors/pieces as placements of the client's own WMO minimap
 -- tiles (CaveTiles.lua), keyed by the synthetic FDIDs CaveData.lua uses.
 Config.CAVE_TILES = HFWMF_CAVE_TILES or {}
+-- The same for every other indoor area (IndoorTiles.lua).
+Config.INDOOR_TILES = HFWMF_INDOOR_TILES or {}
 
 ---@param fdid number
 ---@return table|nil
 function Config:GetCaveComposite(fdid)
-    return self.CAVE_TILES[fdid]
+    return self.CAVE_TILES[fdid] or self.INDOOR_TILES[fdid]
 end
 
 --- Higher-resolution geometry for *mapID* under the given background, or

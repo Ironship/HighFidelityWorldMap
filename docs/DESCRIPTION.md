@@ -40,6 +40,8 @@ A slider on the side can be adjusted to change the slice of cave depth you are c
 
 ![Cave 2](https://i.postimg.cc/Mn7Z1DDc/cave-2.jpg)
 
+An optional **Other indoors** toggle extends the same window to buildings, houses and every other indoor area.
+
 ## FAQ:
 
 ### Who is the artist?
