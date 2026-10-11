@@ -25,7 +25,7 @@ Config.DEFAULTS = {
     -- somewhere the map above it has nothing to show (caves, mines, micro
     -- dungeons). On by default; turn it off from Options or /hfwm cave off.
     caveEnabled = true,
-    caveAlpha   = 0.95,
+    caveAlpha   = 0,
 
     -- How the cave window decides to show itself, as opposed to whether
     -- the feature exists at all (caveEnabled above).
@@ -103,13 +103,13 @@ Config.DEFAULTS = {
 -- in DEFAULTS: absent means "wherever the window opens by default".
 -- /hfwm cave reset clears it.
 
---- Cave window opacity, clamped with a floor so it can never fade to
---- invisible (the window has a close button for that).
+--- Cave map backdrop opacity (the dark fill behind the art, not the window
+--- chrome), 0 (fully see-through) to 1.
 ---@return number
 function Config:CaveAlpha()
     local a = self.db and self.db.caveAlpha or self.DEFAULTS.caveAlpha
     if type(a) ~= "number" then a = self.DEFAULTS.caveAlpha end
-    return math.max(0.2, math.min(1, a))
+    return math.max(0, math.min(1, a))
 end
 
 -------------------------------------------------------------------------------

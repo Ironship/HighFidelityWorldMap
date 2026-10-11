@@ -602,6 +602,42 @@ local function SkinBorderPiece(slot, src, apply)
     return true
 end
 
+local dialogFill   -- { file, tile, r, g, b, a } captured from GameMenuFrame
+local fillStrips   -- four textures: top, bottom, left, right of the art
+
+--- Dialog fill around (never behind) the art area, so the cave opacity
+--- setting can fade the art's dark backdrop alone.
+local function LayoutDialogFill()
+    if not (dialogFill and content and window and aceWindow) then return end
+    local body = aceWindow.content
+    local d = dialogFill
+    local rects = {
+        { "TOPLEFT", window, "TOPLEFT", 0, 0,         "BOTTOMRIGHT", body,    "TOPRIGHT", 17, 0 },
+        { "TOPLEFT", body, "BOTTOMLEFT", -17, 0,      "BOTTOMRIGHT", window,  "BOTTOMRIGHT", 0, 0 },
+        { "TOPLEFT", body, "TOPLEFT", -17, 0,         "BOTTOMRIGHT", body,    "BOTTOMLEFT", 0, 0 },
+        { "TOPLEFT", content, "TOPRIGHT", 0, 0,       "BOTTOMRIGHT", body,    "BOTTOMRIGHT", 17, 0 },
+    }
+    fillStrips = fillStrips or {}
+    for i, r in ipairs(rects) do
+        local tex = fillStrips[i]
+        if not tex then
+            tex = window:CreateTexture(nil, "BACKGROUND", nil, -8)
+            fillStrips[i] = tex
+        end
+        if d.file then
+            if d.tile then tex:SetTexture(d.file, "REPEAT", "REPEAT") else tex:SetTexture(d.file) end
+            tex:SetHorizTile(d.tile and true or false)
+            tex:SetVertTile(d.tile and true or false)
+            tex:SetVertexColor(d.r, d.g, d.b, d.a)
+        else
+            tex:SetColorTexture(d.r, d.g, d.b, d.a)
+        end
+        tex:ClearAllPoints()
+        tex:SetPoint(r[1], r[2], r[3], r[4], r[5])
+        tex:SetPoint(r[6], r[7], r[8], r[9], r[10])
+    end
+end
+
 --- Match cave window chrome to the game's own menu frame art so it aligns
 --- with the Forever look while leaving every other Ace3 frame untouched.
 local function ApplyGameMenuChrome()
@@ -618,18 +654,21 @@ local function ApplyGameMenuChrome()
             local leftEdge = BorderTextureSource(border, "LeftEdge", "LeftBorder", "Left")
 
             window:SetBackdrop({
-                bgFile = live.bgFile,
                 edgeFile = nil,
-                tile = live.tile,
-                tileSize = live.tileSize,
                 edgeSize = 0,
                 insets = live.insets,
             })
 
             local okBg, br, bg, bb, ba = pcall(menu.GetBackdropColor, menu)
-            if okBg and br then
-                window:SetBackdropColor(br, bg, bb, ba or 1)
-            end
+            -- The dialog fill is drawn as four strips around the art (see
+            -- LayoutDialogFill) instead of the backdrop's single bgFile, so
+            -- the art area can be see-through without fading the dialog.
+            dialogFill = {
+                file = live.bgFile, tile = live.tile,
+                r = okBg and br or 0, g = okBg and bg or 0,
+                b = okBg and bb or 0, a = okBg and ba or 1,
+            }
+            LayoutDialogFill()
             local okBorder, rr, rg, rb, ra = pcall(menu.GetBackdropBorderColor, menu)
             if okBorder and rr then
                 window:SetBackdropBorderColor(rr, rg, rb, ra or 1)
@@ -1951,7 +1990,8 @@ local function EnsureWindow()
 
     backdropTex = content:CreateTexture(nil, "BACKGROUND")
     backdropTex:SetAllPoints(content)
-    backdropTex:SetColorTexture(0.05, 0.04, 0.03, 1)
+    CaveRenderer:ApplyAlpha()
+    LayoutDialogFill()
 
     -- Zoom/pan canvas; see the "Zoom & pan" section above EnsureWindow.
     -- Sized to match `content` exactly (LayoutWindow keeps the two in sync);
@@ -2654,7 +2694,8 @@ function CaveRenderer:ShowCave(floorMapID)
     end
     UpdatePlayerPin()
 
-    window:SetAlpha(Config:CaveAlpha())
+    window:SetAlpha(1)
+    self:ApplyAlpha()
     window:Show()
 
     Config.caveOverlayActive     = true
@@ -2753,9 +2794,12 @@ function CaveRenderer:Relayout()
     end)
 end
 
---- Apply the opacity setting to an already-open window.
+--- Apply the opacity setting to an already-open window: fades only the dark
+--- fill behind the art, never the dialog chrome.
 function CaveRenderer:ApplyAlpha()
-    if window then window:SetAlpha(Config:CaveAlpha()) end
+    if backdropTex then
+        backdropTex:SetColorTexture(0.05, 0.04, 0.03, Config:CaveAlpha())
+    end
 end
 
 --- Current height-window rectangle state, for /hfwm debug. Returns nil

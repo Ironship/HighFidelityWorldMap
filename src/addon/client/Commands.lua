@@ -47,10 +47,10 @@ function Commands:Handle(msg)
         elseif sub == "alpha" then
             local val = tonumber(args[3])
             if not val then
-                P("Usage: /hfwm cave alpha 0.2-1.0")
+                P("Usage: /hfwm cave alpha 0-1.0")
                 return
             end
-            db.caveAlpha = math.max(0.2, math.min(1, val))
+            db.caveAlpha = math.max(0, math.min(1, val))
             ns.CaveRenderer:ApplyAlpha()
             P(("Cave map opacity: %.0f%%"):format(db.caveAlpha * 100))
             ns.Options:Refresh()

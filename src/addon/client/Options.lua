@@ -375,8 +375,8 @@ local options = {
                     order = 40,
                     type = "range",
                     name = "Cave map opacity",
-                    desc = "Opacity of the cave map window.",
-                    min = 0.2, max = 1, step = 0.05, isPercent = true,
+                    desc = "Opacity of the dark background behind the cave map art. The window frame stays solid.",
+                    min = 0, max = 1, step = 0.05, isPercent = true,
                     disabled = function() return not (Config.db.enabled and Config.db.caveEnabled) end,
                     get = function() return Config:CaveAlpha() end,
                     set = function(_, value)
