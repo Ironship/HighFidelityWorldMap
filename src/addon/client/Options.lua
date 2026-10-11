@@ -59,19 +59,65 @@ local function ChatCommandHint()
         .. "  |  /hfwm zoom on|off  |  /hfwm clarity on|off  |  /hfwm fog on|off"
 end
 
---- Is Zone Map's effective background Hybrid? Gates the Fog of War
---- checkbox, which only works over Blizzard's own art (Hybrid).
-local function ZoneIsHybrid()
-    local zoneBg = Config:GetEffectiveMapTypeBackground("zone")
-    return zoneBg ~= nil and zoneBg.key == "hybrid"
+--- Fog of War only works over Blizzard's own art, which only Hybrid leaves
+--- showing. Each map type's checkbox is disabled (not hidden) otherwise,
+--- with the reason appended to its tooltip.
+local function NotHybrid(mapTypeKey)
+    return function() return not Config:MapTypeBackgroundIsHybrid(mapTypeKey) end
 end
+local HYBRID_ONLY = "\n\n|cffff8800Fog of War is only supported with the "
+    .. "Hybrid background type.|r"
+local function FogDesc(base, mapTypeKey)
+    return function()
+        return Config:MapTypeBackgroundIsHybrid(mapTypeKey) and base
+            or base .. HYBRID_ONLY
+    end
+end
+local FOG_ZONE_DESC = "Brings back the grayscale fog over unexplored ground. "
+    .. "Off by default. That grayscale look IS Blizzard's own map art, "
+    .. "which only Hybrid leaves showing through."
+local FOG_WORLD_DESC = "On the World map, only draws this addon's map over "
+    .. "zones you have fully explored. A zone with any area still "
+    .. "undiscovered stays as the game draws it."
+local FOG_CONTINENT_DESC = "On the Continent maps, only draws this addon's "
+    .. "map over zones you have fully explored. A zone with any area still "
+    .. "undiscovered stays as the game draws it."
 
 --- High Resolution World and continent maps come from the optional Art
 --- addon. Without it that one Map Resolution entry is disabled (everything
 --- else, low resolution included, ships with this addon) and explains why.
+local ART_URL = "https://www.curseforge.com/wow/addons/high-fidelity-world-map-art"
 local ART_NOTE = "Requires the High Fidelity World Map: Art addon, which is "
-    .. "not installed or not enabled. Download it from CurseForge "
-    .. "(hfwm-art) and reload the UI to unlock it."
+    .. "not installed or not enabled. Install it and reload the UI to "
+    .. "unlock it."
+
+-- The game can't open a browser, so the link goes in a popup's edit box,
+-- selected for Ctrl+C. Edits are undone so it stays copy-only.
+StaticPopupDialogs["HFWM_ART_URL"] = {
+    text = "High Resolution needs the High Fidelity World Map: Art addon.\n"
+        .. "Copy this link (Ctrl+C) and open it in your browser:",
+    button1 = CLOSE,
+    hasEditBox = true,
+    editBoxWidth = 350,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+    OnShow = function(self)
+        self:SetFrameStrata("TOOLTIP")  -- above the options window
+        local box = self.EditBox or self.editBox
+        box:SetText(ART_URL)
+        box:HighlightText()
+        box:SetFocus()
+    end,
+    EditBoxOnTextChanged = function(box)
+        if box:GetText() ~= ART_URL then
+            box:SetText(ART_URL)
+            box:HighlightText()
+        end
+    end,
+    EditBoxOnEscapePressed = function(box) box:GetParent():Hide() end,
+}
 
 --- Dropdown that disables its "high" entry, with a tooltip saying why,
 --- while the Art addon is missing. AceConfig has no per-entry disable, so
@@ -84,6 +130,9 @@ do
         GameTooltip:SetOwner(item.frame, "ANCHOR_RIGHT")
         GameTooltip:SetText("High Resolution unavailable", 1, 1, 1)
         GameTooltip:AddLine(ART_NOTE, 1, 0.53, 0, true)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Click to show the CurseForge link for the Art addon.",
+            0, 1, 1, true)
         GameTooltip:Show()
     end
 
@@ -99,10 +148,45 @@ do
                     item:SetDisabled(true)
                     item:SetCallback("OnEnter", ShowArtTooltip)
                     item:SetCallback("OnLeave", function() GameTooltip:Hide() end)
+                    item.hfwmArt = true
+                    -- A disabled item's own OnClick is skipped by AceGUI, so
+                    -- hook the frame; hfwmArt/disabled stop pooled items
+                    -- reused elsewhere from opening it.
+                    if not item.frame.hfwmArtHooked then
+                        item.frame.hfwmArtHooked = true
+                        item.frame:HookScript("OnClick", function(frame)
+                            local it = frame.obj
+                            if it.hfwmArt and it.disabled then
+                                GameTooltip:Hide()
+                                it.pullout:Close()
+                                StaticPopup_Show("HFWM_ART_URL")
+                            end
+                        end)
+                    end
                 end
             end
         end
         return dropdown
+    end, 1)
+end
+
+--- Checkbox that keeps its tooltip while disabled. The stock one calls
+--- frame:Disable(), after which this client sends no OnEnter, so the "only
+--- supported with Hybrid" tooltip never showed. AceGUI's click handlers
+--- already ignore clicks while `self.disabled`, so re-enabling the frame
+--- only restores mouse-over.
+local FOG_CHECKBOX = "HFWM-FogCheckBox"
+do
+    local AceGUI = LibStub("AceGUI-3.0")
+    AceGUI:RegisterWidgetType(FOG_CHECKBOX, function()
+        local checkbox = AceGUI.WidgetRegistry.CheckBox()
+        checkbox.type = FOG_CHECKBOX  -- own pool, not CheckBox's
+        local setDisabled = checkbox.SetDisabled
+        function checkbox:SetDisabled(disabled)
+            setDisabled(self, disabled)
+            self.frame:Enable()
+        end
+        return checkbox
     end, 1)
 end
 
@@ -329,17 +413,6 @@ local mapBackgroundArgs = options.args.mapBackground.args
 for _, mapType in ipairs(Config.MAP_TYPES) do
     local desc = "Which background " .. mapType.label .. " draws with, "
         .. "or \"Use Global\" to just follow the Global Background above."
-    local isZone = mapType.key == "zone"
-    if isZone then
-        -- The "little info section that pops up": AceConfig shows every
-        -- option's own `desc` as a hover tooltip, so this is that tooltip
-        -- rather than a separate widget. Config:FogOfWarEnabled() enforces
-        -- the same Hybrid-only rule in code.
-        desc = desc .. "\n\nFog of War is only supported while this ends "
-            .. "up Hybrid -- set directly, or by leaving this on \"Use "
-            .. "Global\" while the Global Background is Hybrid. The Fog "
-            .. "of War checkbox appears beside it while that's the case."
-    end
     local order = MAP_TYPE_ORDER[mapType.key]
     mapBackgroundArgs["mapType_" .. mapType.key] = {
         order = order,
@@ -354,18 +427,6 @@ for _, mapType in ipairs(Config.MAP_TYPES) do
             Config:SetMapTypeBackground(mapType.key, value)
         end,
     }
-    -- Every row gets a filler; the Zone one yields to the Fog of War
-    -- checkbox (order + 1, added below) while Zone Map is Hybrid.
-    mapBackgroundArgs["mapTypeFill_" .. mapType.key] = {
-        order = order + 2,
-        type = "description",
-        name = " ",
-        width = "relative",
-        relWidth = isZone and 0.65 or 0.33,
-        -- World's and Continent's rows yield to their Fog of War checkbox
-        -- below the same way.
-        hidden = ZoneIsHybrid,
-    }
 end
 mapBackgroundArgs.fogOfWarEnabled = {
     order = MAP_TYPE_ORDER.zone + 1,
@@ -373,15 +434,12 @@ mapBackgroundArgs.fogOfWarEnabled = {
     width = "relative",
     relWidth = 0.3,
     name = "Fog of War",
-    desc = "Brings back the grayscale fog over unexplored ground. Off by "
-        .. "default. Only shown while the Zone Map background is Hybrid, "
-        .. "either directly or by inheriting a Hybrid Global Background "
-        .. "-- that grayscale look IS Blizzard's own map art, which only "
-        .. "Hybrid leaves showing through.",
-    -- Hidden, not disabled: a saved "on" picks back up by itself once Zone
+    desc = FogDesc(FOG_ZONE_DESC, "zone"),
+    -- Disabled, not hidden: a saved "on" picks back up by itself once Zone
     -- Map is Hybrid again, because Config:FogOfWarEnabled() checks the
     -- background too.
-    hidden = function() return not ZoneIsHybrid() end,
+    disabled = NotHybrid("zone"),
+    dialogControl = FOG_CHECKBOX,
     get = function() return Config.db.fogOfWarEnabled end,
     set = function(_, value)
         Config.db.fogOfWarEnabled = value
@@ -419,20 +477,19 @@ mapBackgroundArgs.continentMapClarity =
     ResolutionOption("continent", "continentMapClarity",
         "Kalimdor and Eastern Kingdoms are")
 -- World Map's second neighbour, between it and Map Resolution: the World
--- Map version of Fog of War. Same visibility rule as the Zone one (Zone Map
--- Hybrid), but its own saved value; Config:WorldFogOfWarEnabled() enforces
--- the rule in code, and a saved "on" picks back up when it holds.
+-- Map version of Fog of War. Same rule as the Zone one, but keyed to the
+-- World Map's own background and its own saved value;
+-- Config:WorldFogOfWarEnabled() enforces the rule in code, and a saved "on"
+-- picks back up when it holds.
 mapBackgroundArgs.worldFogOfWar = {
     order = MAP_TYPE_ORDER.world + 0.5,
     type = "toggle",
     width = "relative",
     relWidth = 0.3,
     name = "Fog of War",
-    desc = "On the World map, only draws this addon's map over zones you "
-        .. "have fully explored. A zone with any area still undiscovered "
-        .. "stays as the game draws it. Only shown while the Zone Map "
-        .. "background is Hybrid, same as the zone Fog of War.",
-    hidden = function() return not ZoneIsHybrid() end,
+    desc = FogDesc(FOG_WORLD_DESC, "world"),
+    disabled = NotHybrid("world"),
+    dialogControl = FOG_CHECKBOX,
     get = function() return Config.db.worldFogOfWar end,
     set = function(_, value)
         Config.db.worldFogOfWar = value
@@ -446,33 +503,37 @@ mapBackgroundArgs.continentFogOfWar = {
     width = "relative",
     relWidth = 0.3,
     name = "Fog of War",
-    desc = "On the Continent maps, only draws this addon's map over zones "
-        .. "you have fully explored. A zone with any area still "
-        .. "undiscovered stays as the game draws it. Only shown while the "
-        .. "Zone Map background is Hybrid, same as the zone Fog of War.",
-    hidden = function() return not ZoneIsHybrid() end,
+    desc = FogDesc(FOG_CONTINENT_DESC, "continent"),
+    disabled = NotHybrid("continent"),
+    dialogControl = FOG_CHECKBOX,
     get = function() return Config.db.continentFogOfWar end,
     set = function(_, value)
         Config.db.continentFogOfWar = value
         ns.Renderer:ForceRefresh()
     end,
 }
--- Pads the Hybrid-only Zone row (0.32 + 0.3 + 0.3) past the wrap point.
+-- Pads the Zone row (0.32 + 0.3 + 0.3) like the other rows' two selects.
 mapBackgroundArgs.fogFill = {
     order = MAP_TYPE_ORDER.zone + 2,
     type = "description",
     name = " ",
     width = "relative",
     relWidth = 0.3,
-    hidden = function() return not ZoneIsHybrid() end,
 }
 -- Everything but the Enable toggle (and the intro text) greys out while the
 -- addon is off. `disabled` is inherited, but the deepest definition wins, so
--- the cave children (which have their own) repeat the check above.
+-- the cave children (which have their own) repeat the check above, and the
+-- Fog of War toggles' own Hybrid-only rule is combined in here.
 -- Profiles is added later in Init, so it stays usable.
 for key, option in pairs(options.args) do
     if key ~= "enabled" and key ~= "intro" then
         option.disabled = function() return not Config.db.enabled end
+    end
+end
+for key, option in pairs(mapBackgroundArgs) do
+    if option.disabled then
+        local notHybrid = option.disabled
+        option.disabled = function() return not Config.db.enabled or notHybrid() end
     end
 end
 

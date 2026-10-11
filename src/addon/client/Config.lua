@@ -510,26 +510,36 @@ function Config:FogOfWarEnabled()
     return (self.db and self.db.fogOfWarEnabled and self:ZoneBackgroundIsHybrid()) or false
 end
 
---- Is the Zone Map's effective background Hybrid? The one condition both
---- Fog of War checkboxes in Options hang off.
+--- Is the effective background of *mapType* ("zone"/"continent"/"world")
+--- Hybrid? Fog of War shows Blizzard's own art through the unexplored
+--- ground, which only Hybrid leaves visible, so each map type's Fog of War
+--- checkbox in Options hangs off that map type's own background.
+---@param mapType string
 ---@return boolean
+function Config:MapTypeBackgroundIsHybrid(mapType)
+    local bg = self:GetEffectiveMapTypeBackground(mapType)
+    return bg ~= nil and bg.key == "hybrid"
+end
+
 function Config:ZoneBackgroundIsHybrid()
-    local zoneBg = self:GetEffectiveMapTypeBackground("zone")
-    return zoneBg ~= nil and zoneBg.key == "hybrid"
+    return self:MapTypeBackgroundIsHybrid("zone")
 end
 
 --- Is the World or Continent Fog of War checkbox (Options, beside each map's
---- dropdown) in force on *mapID*? Same condition as the zone one -- Zone Map
---- Hybrid -- but each map type has its own saved value. When true, Renderer
---- draws this addon's tiles only over zones the player has fully explored
---- (ZoneFog.lua).
+--- dropdown) in force on *mapID*? Each map type has its own saved value and
+--- is only armed while that map type's own background is Hybrid. When true,
+--- Renderer draws this addon's tiles only over zones the player has fully
+--- explored (ZoneFog.lua).
 ---@param mapID number|nil
 ---@return boolean
 function Config:WorldFogOfWarEnabled(mapID)
-    if not (self.db and self:ZoneBackgroundIsHybrid()) then return false end
+    if not self.db then return false end
     local mapType = self:ClassifyMapID(mapID)
-    if mapType == "world" then return self.db.worldFogOfWar == true end
-    if mapType == "continent" then return self.db.continentFogOfWar == true end
+    if mapType == "world" then
+        return self.db.worldFogOfWar == true and self:MapTypeBackgroundIsHybrid("world")
+    elseif mapType == "continent" then
+        return self.db.continentFogOfWar == true and self:MapTypeBackgroundIsHybrid("continent")
+    end
     return false
 end
 
