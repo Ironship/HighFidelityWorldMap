@@ -361,7 +361,7 @@ for _, mapType in ipairs(Config.MAP_TYPES) do
         type = "description",
         name = " ",
         width = "relative",
-        relWidth = mapType.key == "world" and 0.33 or 0.65,
+        relWidth = isZone and 0.65 or 0.33,
         -- World's and Continent's rows yield to their Fog of War checkbox
         -- below the same way.
         hidden = ZoneIsHybrid,
@@ -388,28 +388,36 @@ mapBackgroundArgs.fogOfWarEnabled = {
         ns.Renderer:ForceRefresh()
     end,
 }
--- World Map's neighbour: Kalimdor / Eastern Kingdoms / Azeroth resolution.
--- Stored as the boolean Config.db.worldMapClarity (also driven by `/hfwm
--- clarity`), so "high" is true and "low" is false (the default).
-mapBackgroundArgs.worldMapClarity = {
-    order = MAP_TYPE_ORDER.world + 1,
-    type = "select",
-    width = "relative",
-    relWidth = 0.32,
-    name = "Map Resolution",
-    desc = "How sharply Kalimdor, Eastern Kingdoms and Azeroth are drawn. "
-        .. "High Resolution draws them at much higher detail but may "
-        .. "render slower. Low Resolution is the default.",
-    dialogControl = RESOLUTION_DROPDOWN,
-    values = { high = "High Resolution (slow)", low = "Low Resolution (fast)" },
-    sorting = { "high", "low" },
-    get = function() return Config:WorldMapClarityEnabled() and "high" or "low" end,
-    set = function(_, value)
-        Config.db.worldMapClarity = (value == "high")
-        ns.ZoomLevels:Refresh()
-        ns.Renderer:ForceRefresh()
-    end,
-}
+-- World/Continent Map's neighbour: Kalimdor / Eastern Kingdoms / Azeroth
+-- resolution, one saved boolean per map type (Config.db.worldMapClarity /
+-- continentMapClarity; `/hfwm clarity` sets both), so "high" is true and
+-- "low" is false (the default).
+local function ResolutionOption(mapTypeKey, dbKey, what)
+    return {
+        order = MAP_TYPE_ORDER[mapTypeKey] + 1,
+        type = "select",
+        width = "relative",
+        relWidth = 0.32,
+        name = "Map Resolution",
+        desc = "How sharply " .. what .. " drawn. High Resolution draws "
+            .. "at much higher detail but may render slower. Low Resolution "
+            .. "is the default.",
+        dialogControl = RESOLUTION_DROPDOWN,
+        values = { high = "High Resolution (slow)", low = "Low Resolution (fast)" },
+        sorting = { "high", "low" },
+        get = function() return Config:MapClarityEnabled(mapTypeKey) and "high" or "low" end,
+        set = function(_, value)
+            Config.db[dbKey] = (value == "high")
+            ns.ZoomLevels:Refresh()
+            ns.Renderer:ForceRefresh()
+        end,
+    }
+end
+mapBackgroundArgs.worldMapClarity =
+    ResolutionOption("world", "worldMapClarity", "Azeroth is")
+mapBackgroundArgs.continentMapClarity =
+    ResolutionOption("continent", "continentMapClarity",
+        "Kalimdor and Eastern Kingdoms are")
 -- World Map's second neighbour, between it and Map Resolution: the World
 -- Map version of Fog of War. Same visibility rule as the Zone one (Zone Map
 -- Hybrid), but its own saved value; Config:WorldFogOfWarEnabled() enforces
@@ -433,7 +441,7 @@ mapBackgroundArgs.worldFogOfWar = {
 }
 -- Continent Map's own Fog of War, same rule, separate saved value.
 mapBackgroundArgs.continentFogOfWar = {
-    order = MAP_TYPE_ORDER.continent + 1,
+    order = MAP_TYPE_ORDER.continent + 0.5,
     type = "toggle",
     width = "relative",
     relWidth = 0.3,
@@ -448,14 +456,6 @@ mapBackgroundArgs.continentFogOfWar = {
         Config.db.continentFogOfWar = value
         ns.Renderer:ForceRefresh()
     end,
-}
-mapBackgroundArgs.continentFogFill = {
-    order = MAP_TYPE_ORDER.continent + 2,
-    type = "description",
-    name = " ",
-    width = "relative",
-    relWidth = 0.3,
-    hidden = function() return not ZoneIsHybrid() end,
 }
 -- Pads the Hybrid-only Zone row (0.32 + 0.3 + 0.3) past the wrap point.
 mapBackgroundArgs.fogFill = {

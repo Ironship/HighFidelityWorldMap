@@ -63,7 +63,7 @@ local function ExtendZoomLevels(sc)
     -- Resolution (which needs the Art addon) is in effect.
     local mapType = Config:ClassifyMapID(WorldMapFrame:GetMapID())
     if (mapType == "world" or mapType == "continent")
-       and not Config:WorldMapClarityEnabled() then
+       and not Config:MapClarityEnabled(mapType) then
         return
     end
     local levels = sc.zoomLevels

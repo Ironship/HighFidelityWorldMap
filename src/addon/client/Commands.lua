@@ -135,6 +135,7 @@ function Commands:Handle(msg)
         else
             db.worldMapClarity = not db.worldMapClarity
         end
+        db.continentMapClarity = db.worldMapClarity
         ns.ZoomLevels:Refresh()
         ns.Renderer:ForceRefresh()
         if db.worldMapClarity and not Config:IsArtInstalled() then

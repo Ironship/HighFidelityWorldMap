@@ -69,10 +69,13 @@ Config.DEFAULTS = {
 
     -- Draws the three continent/world maps (Kalimdor, Eastern Kingdoms,
     -- Azeroth) from this addon's own capped hi-res tile grid instead of
-    -- Blizzard's stock art. Off by default: a continent map is many more
-    -- tiles than any single zone, and could slow down a weaker machine.
-    -- See HFWMF_NATIVE_ZONES' `continent` flag and GetNativeZone below.
+    -- Blizzard's stock art, one saved value per map type (Azeroth is the
+    -- World map; Kalimdor and Eastern Kingdoms are Continent maps). Off by
+    -- default: a continent map is many more tiles than any single zone, and
+    -- could slow down a weaker machine. See HFWMF_NATIVE_ZONES' `continent`
+    -- flag and GetNativeZone below.
     worldMapClarity = false,
+    continentMapClarity = false,
 
     -- Restores the original grayscale-until-explored look instead of this
     -- addon's usual full hi-res coverage. Off by default since it works
@@ -472,19 +475,23 @@ function Config:GetNativeZone(mapID, bg)
     local t = (bg and bg.tiles == "original")
         and self.NATIVE_ZONES_ORIGINAL or self.NATIVE_ZONES
     local entry = t[mapID]
-    if entry and entry.continent and not self:WorldMapClarityEnabled() then
+    if entry and entry.continent
+       and not self:MapClarityEnabled(self:ClassifyMapID(mapID)) then
         return nil
     end
     return entry
 end
 
---- Whether the capped continent maps (Kalimdor/Eastern Kingdoms/Azeroth)
---- draw from the Art addon's hi-res tile grid. Always false while that
---- addon is missing, whatever was saved. Zone maps always draw at native
---- resolution regardless.
+--- Whether the capped continent maps of *mapType* ("world" = Azeroth,
+--- "continent" = Kalimdor/Eastern Kingdoms) draw from the Art addon's
+--- hi-res tile grid. Always false while that addon is missing, whatever was
+--- saved. Zone maps always draw at native resolution regardless.
+---@param mapType string|nil
 ---@return boolean
-function Config:WorldMapClarityEnabled()
-    return (self.db and self.db.worldMapClarity and self:IsArtInstalled()) or false
+function Config:MapClarityEnabled(mapType)
+    local on = self.db and ((mapType == "world" and self.db.worldMapClarity)
+        or (mapType == "continent" and self.db.continentMapClarity))
+    return (on and self:IsArtInstalled()) or false
 end
 
 --- Whether this addon's tiles draw only over ground the player has
