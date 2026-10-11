@@ -237,11 +237,17 @@ end
 --- regardless of where the player actually is. Discarding it instead lets
 --- the rectangle test, and ultimately the manual depth slider, take over,
 --- same as any other place with no baked Z data at all.
+---@param unit string|nil  defaults to "player"; other units are dropped when
+---  they are in a different instance, whose coordinates mean something else.
 ---@return number|nil worldX, number|nil worldY
-local function PlayerWorldXY()
+local function PlayerWorldXY(unit)
     if not UnitPosition then return nil end
-    local ok, y, x = pcall(UnitPosition, "player")
+    local ok, y, x, _, instanceID = pcall(UnitPosition, unit or "player")
     if not ok or not x or not y then return nil end
+    if unit and unit ~= "player" then
+        local _, _, _, myInstance = UnitPosition("player")
+        if instanceID ~= myInstance then return nil end
+    end
     return x, y
 end
 
@@ -784,12 +790,13 @@ end
 --- edge to edge. Fargodeep's real WMO-local-coordinate art is rotated to
 --- true north (see CaveData.lua's projection block), so it's routed through
 --- ProjectPlayerPosition instead whenever the place carries one.
+---@param unit string|nil  defaults to "player"
 ---@return number|nil x, number|nil y  0..1 from the art's top-left
-function CaveTable:GetPlayerPosition(floorID)
+function CaveTable:GetPlayerPosition(floorID, unit)
     local floor = self:GetFloor(floorID)
     if not floor then return nil end
 
-    local worldX, worldY = PlayerWorldXY()
+    local worldX, worldY = PlayerWorldXY(unit)
     if not worldX then return nil end
 
     if floor.place.projection then

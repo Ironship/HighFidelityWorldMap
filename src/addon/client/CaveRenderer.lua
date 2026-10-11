@@ -149,6 +149,14 @@ local PIN_SIZE    = 26
 
 local PIN_UPDATE_INTERVAL = 0.05  -- 20fps is plenty for a map pin
 
+-- Other group members: a class-coloured dot, like the world map's, ringed in
+-- black. Each circle is a white square under the stock round portrait mask;
+-- the ring is a slightly bigger black one behind it.
+local GROUP_PIN_SIZE   = 7
+local GROUP_PIN_BORDER = 1  -- px of black showing past the fill, each side
+local GROUP_PIN_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+local GROUP_PIN_FALLBACK = { r = 0.62, g = 0.62, b = 0.62 }
+
 -- Floor picker (dropdown); see the "Floor picker" section below. Passed to
 -- UIDropDownMenu_SetWidth, which sizes the *visible* text/button area; the
 -- template's own frame ends up wider than this (see EnsureFloorPicker's
@@ -173,6 +181,13 @@ local content       -- clipping frame the tiles and the pin live in
 local canvasScale   -- child of content: zoomed/panned, holds tiles + pin
 local backdropTex   -- flat dark fill behind the tiles
 local playerPin
+local groupPins = {}  -- class-coloured dots for the rest of the group, grown on demand; each fill has its ring at .border
+local function HideGroupPins(from)
+    for i = from, #groupPins do
+        groupPins[i]:Hide()
+        groupPins[i].border:Hide()
+    end
+end
 local sliderCol     -- gutter frame, hidden on single-floor caves
 local sliderTrack   -- the notched track (a Slider, for real drag behaviour)
 local notches       -- { {tick=Texture, hit=Button}, ... }
@@ -2268,6 +2283,54 @@ local function UpdatePlayerPin()
     playerPin:Show()
 end
 
+--- Dots for every other group member whose position lands on the displayed
+--- floor. Z is unknowable for them (see PlayerWorldXY), so on the baked
+--- source "lands on the floor" is the footprint test alone.
+local function UpdateGroupPins()
+    local used = 0
+    local floorID = Config.caveCurrentFloorMapID or ns.Cave:GetCurrentFloorMapID()
+    local w, h = canvasScale:GetSize()
+    if floorID and w > 0 and h > 0 then
+        local prefix, count = "party", 4
+        if IsInRaid() then prefix, count = "raid", 40 end
+        for i = 1, count do
+            local unit = prefix .. i
+            if UnitExists(unit) and not UnitIsUnit(unit, "player") then
+                local x, y = ns.Cave:GetPlayerMapXY(floorID, unit)
+                if x and y and not (x == 0 and y == 0) then
+                    used = used + 1
+                    local pin = groupPins[used]
+                    if not pin then
+                        local function dot(sublevel, size, r, g, b)
+                            local t = canvasScale:CreateTexture(nil, "OVERLAY", nil, sublevel)
+                            t:SetColorTexture(r, g, b)
+                            t:SetSize(size, size)
+                            local mask = canvasScale:CreateMaskTexture()
+                            mask:SetTexture(GROUP_PIN_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+                            mask:SetAllPoints(t)
+                            t:AddMaskTexture(mask)
+                            return t
+                        end
+                        pin = dot(6, GROUP_PIN_SIZE, 1, 1, 1)
+                        pin.border = dot(5, GROUP_PIN_SIZE + 2 * GROUP_PIN_BORDER, 0, 0, 0)
+                        groupPins[used] = pin
+                    end
+                    local _, class = UnitClass(unit)
+                    local c = RAID_CLASS_COLORS[class] or GROUP_PIN_FALLBACK
+                    pin:SetVertexColor(c.r, c.g, c.b)
+                    pin:ClearAllPoints()
+                    pin:SetPoint("CENTER", canvasScale, "TOPLEFT", x * w, -(y * h))
+                    pin:Show()
+                    pin.border:ClearAllPoints()
+                    pin.border:SetPoint("CENTER", pin, "CENTER")
+                    pin.border:Show()
+                end
+            end
+        end
+    end
+    HideGroupPins(used + 1)
+end
+
 local pinAccum = 0
 local function OnWindowUpdate(_, elapsed)
     if not Config.caveOverlayActive then return end
@@ -2275,6 +2338,7 @@ local function OnWindowUpdate(_, elapsed)
     if pinAccum < PIN_UPDATE_INTERVAL then return end
     pinAccum = 0
     UpdatePlayerPin()
+    UpdateGroupPins()
 end
 
 -------------------------------------------------------------------------------
@@ -2772,6 +2836,7 @@ function CaveRenderer:HideCave()
     if not window then return end
     PoolReleaseAll()  -- also wipes continuousTileGroups and continuousPieceGroups
     if playerPin then playerPin:Hide() end
+    HideGroupPins(1)
     window:SetScript("OnUpdate", nil)
     window:Hide()
 end

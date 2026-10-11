@@ -216,8 +216,8 @@ ClientSource = {
         return C_Map.GetMapArtLayerTextures(floorMapID, layerIdx or 1)
     end,
 
-    PlayerPosition = function(floorMapID)
-        local pos = C_Map.GetPlayerMapPosition(floorMapID, "player")
+    PlayerPosition = function(floorMapID, unit)
+        local pos = C_Map.GetPlayerMapPosition(floorMapID, unit or "player")
         if not pos then return nil end
         return pos:GetXY()
     end,
@@ -305,8 +305,8 @@ BakedSource = {
         return ns.CaveTable:GetArtTextures(floorID)
     end,
 
-    PlayerPosition = function(floorID)
-        return ns.CaveTable:GetPlayerPosition(floorID)
+    PlayerPosition = function(floorID, unit)
+        return ns.CaveTable:GetPlayerPosition(floorID, unit)
     end,
 
     ContinuousDepth = function(floorID)
@@ -460,12 +460,13 @@ function Cave:GetArtTextures(floorMapID, layerIdx)
     return self:GetSource().ArtTextures(floorMapID, layerIdx)
 end
 
---- The player's normalised position within a floor's art, 0..1 from its
---- top-left, or nil where there is no fix in that floor's space.
+--- The player's (or, given *unit*, another unit's) normalised position within
+--- a floor's art, 0..1 from its top-left, or nil where there is no fix in
+--- that floor's space.
 ---@return number|nil x, number|nil y
-function Cave:GetPlayerMapXY(floorMapID)
+function Cave:GetPlayerMapXY(floorMapID, unit)
     if not floorMapID then return nil end
-    return self:GetSource().PlayerPosition(floorMapID)
+    return self:GetSource().PlayerPosition(floorMapID, unit)
 end
 
 --- Should CaveRenderer crossfade this floor's place continuously as the
