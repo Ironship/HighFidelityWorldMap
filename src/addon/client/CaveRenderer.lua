@@ -1795,12 +1795,11 @@ local function EnsureWindow()
     ResetView:HookFrame(window, function(_, button)
         if button ~= "RightButton" then return end
         PositionWindow()
-        -- Shift+right-click is the anti-lost gesture: same one the world map
-        -- already uses (ResetView), extended here to also snap the cave
-        -- window's own zoom/pan back to the fitted view.
+        -- Shift+right-click is the anti-lost gesture: snap the cave
+        -- window's own zoom/pan back to the fitted view. Only this view;
+        -- the world map is left alone.
         if IsShiftKeyDown() then
             ResetViewTransform()
-            ResetView:ResetToCurrentZone()
         end
     end, true)
 
