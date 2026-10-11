@@ -876,8 +876,9 @@ local function OnPollUpdate(_, elapsed)
     end
 
     -- GetMapID() is the visibility gate rather than IsShown(), which is
-    -- unreliable on this client.
-    if not WorldMapFrame:GetMapID() then
+    -- unreliable on this client. Keep Open opts out: the window outlives
+    -- the map, so a closed map is no reason to hide or stop updating it.
+    if not Config.db.caveKeepOpen and not WorldMapFrame:GetMapID() then
         if Config.caveOverlayActive then ns.CaveRenderer:HideCave() end
         ns.CaveRenderer:SetReopenAvailable(false)
         return

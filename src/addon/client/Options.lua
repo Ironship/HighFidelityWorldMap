@@ -371,6 +371,20 @@ local options = {
                         Config.db.caveRememberState = value
                     end,
                 },
+                caveKeepOpen = {
+                    order = 35,
+                    type = "toggle",
+                    name = "Keep open",
+                    desc = "Keeps the cave map open on its own when you "
+                        .. "close the world map.",
+                    disabled = function() return not (Config.db.enabled and Config.db.caveEnabled) end,
+                    get = function() return Config.db.caveKeepOpen end,
+                    set = function(_, value)
+                        Config.db.caveKeepOpen = value
+                        -- Re-parent an already-open window now.
+                        ns.CaveRenderer:Relayout()
+                    end,
+                },
                 caveAlpha = {
                     order = 40,
                     type = "range",

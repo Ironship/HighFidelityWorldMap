@@ -1218,7 +1218,8 @@ end
 -------------------------------------------------------------------------------
 -- Floor picker (dropdown)
 --
--- Top-right of the content frame, floating over the art itself rather than
+-- Top-right, in a strip above the art (LayoutWindow pads the art down by
+-- the picker's own height) rather than
 -- in the title bar (already carrying the area name and the close button) or
 -- the footer (already carrying the "Level X of Y" readout).
 --
@@ -1322,7 +1323,7 @@ local function EnsureFloorPicker()
     -- frame's true edges, so anchoring flush would leave the *visible*
     -- widget floating short of content's own right edge. This is a
     -- by-eye nudge, not a measured one; worth another look in-game.
-    dd:SetPoint("TOPRIGHT", content, "TOPRIGHT", 14, -2)
+    dd:SetPoint("BOTTOMRIGHT", content, "TOPRIGHT", 14, 0)
     -- Above content's own tiles: both are plain children of `window` and
     -- would otherwise share its default child level, which draw-order
     -- ties in creation order rather than anything this file controls.
@@ -1868,6 +1869,17 @@ local function LayoutWindow(floorMapID)
     -- right border by that gap.
     local gutter    = hasSlider and (SLIDER_COL_W + 2) or 0
 
+    -- Multi-floor places carry the floor picker above the art, not over it:
+    -- EnsureFloorPicker anchors the picker's BOTTOM to content's TOP, and
+    -- content is dropped by the picker's own height so the two meet.
+    -- Single-floor: no picker, no pad, art stays flush with the top.
+    local topPad = 0
+    if FloorCount() > 1 then
+        EnsureFloorPicker()
+        if floorPicker then topPad = floorPicker:GetHeight() end
+    end
+    content:ClearAllPoints()
+    content:SetPoint("TOPLEFT", aceWindow.content, "TOPLEFT", 0, -topPad)
     contentW, contentH = w, h
     content:SetSize(w, h)
     -- canvasScale tracks content's own size exactly, so RenderTiles and
@@ -1906,7 +1918,7 @@ local function LayoutWindow(floorMapID)
     aceWindow.content:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -17, bottomInset)
 
     aceWindow:SetWidth(w + gutter + ACE_FRAME_WIDTH_OVERHEAD)
-    aceWindow:SetHeight(h + ACE_FRAME_TOP_INSET + bottomInset)
+    aceWindow:SetHeight(h + topPad + ACE_FRAME_TOP_INSET + bottomInset)
     PositionWindow()
 
     if hasSlider then
@@ -2386,9 +2398,17 @@ function CaveRenderer:ShowCave(floorMapID)
     -- map's own strata is used rather than a fixed one so the window rides
     -- along when the client moves the map between strata (windowed vs.
     -- maximised), and a large level offset puts it over the map's children.
-    if window:GetParent() ~= WorldMapFrame then
-        window:SetParent(WorldMapFrame)
+    -- Keep Open: parented to UIParent instead, so closing the world map
+    -- doesn't take the window with it. Still anchored to the map (see
+    -- PositionWindow), which keeps its rect while hidden. A UIParent child
+    -- stops inheriting the map's scale, so that is applied by hand to keep
+    -- the window the same size either way.
+    local keepOpen = Config.db and Config.db.caveKeepOpen
+    local parent = keepOpen and UIParent or WorldMapFrame
+    if window:GetParent() ~= parent then
+        window:SetParent(parent)
     end
+    window:SetScale(keepOpen and WorldMapFrame:GetScale() or 1)
     window:SetFrameStrata(WorldMapFrame:GetFrameStrata())
     window:SetFrameLevel(WorldMapFrame:GetFrameLevel() + 800)
     PositionWindow()

@@ -40,9 +40,12 @@ Config.DEFAULTS = {
     -- caveLastVisible: true if the window's last state change was being
     -- shown; false if the player closed it. Only read when
     -- caveRememberState is on, but tracked unconditionally.
+    -- caveKeepOpen: the window stays up after the world map is closed
+    -- instead of closing with it.
     caveAutoOpen      = true,
     caveRememberState = false,
     caveLastVisible   = true,
+    caveKeepOpen      = false,
 
     -- Cave map depth window: the real-world elevation range a per-piece
     -- place's rooms (currently just Fargodeep Mine) stay visible within,
