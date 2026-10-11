@@ -14,6 +14,8 @@ Exploration is at the heart of WoW. To keep the spirit of mystery alive going in
 
 ![Fog of War](https://i.postimg.cc/0zY57ff8/fog-of-war.jpg)
 
+On the World and Continent maps a separate "Fog of War" checkbox (next to the World Map background in the settings) draws the high-fidelity map only over zones you have explored in full. Miss one area of a zone and the whole zone stays as the game draws it.
+
 ## Offers optional replacements for *all* maps
 
 Not just individual zones, continents too! With full control and various customization options. (Continent and World maps work out of the box at low resolution; the optional High Fidelity World Map: Art companion addon unlocks the High Resolution option.)
@@ -151,6 +153,8 @@ script directly from the cached zone DB:
 ```sh
 python src/generator/scripts/emit_cave_tiles.py
 ```
+
+Two more tables are not part of the full run; both feed the World/Continent Fog of War checkbox. `ZoneOverlays.lua` (how many exploration overlays each zone has) comes from `python src/generator/scripts/emit_zone_overlays.py`, which downloads three small DB2 tables. `ZoneShapes.lua` and `src/addon/client/ZoneMasks/` (one smoothed outline mask per zone, 6 MB, committed) come from `python src/generator/scripts/emit_zone_shapes.py`. It reads the area ID of every terrain chunk from the game's ADT files (about 1,700 downloads, a couple of minutes, cached as 512 bytes each), so the borders are the game's own and follow the stitched art. The masks sit outside `WorldMap/` because that folder is regenerated and gitignored.
 
 Useful flags include:
 
