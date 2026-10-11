@@ -1679,10 +1679,26 @@ end
 --- above don't disturb an existing anchor, but a fresh AceGUI Frame starts
 --- centred on UIParent (see ApplyStatus in AceGUIContainer-Frame.lua) and
 --- every LayoutWindow call is cheap insurance against that ever showing.
+local mapOpen = false
 local function PositionWindow()
     if not window then return end
     window:ClearAllPoints()
-    window:SetPoint("BOTTOMLEFT", WorldMapFrame, "BOTTOMRIGHT", PIN_GAP, 0)
+    if Config.db and Config.db.caveKeepOpen and not mapOpen then
+        -- Map closed, window kept open: take the map's slot (the map keeps
+        -- its rect while hidden), so the window's left edge is the map's.
+        window:SetPoint("BOTTOMLEFT", WorldMapFrame, "BOTTOMLEFT", 0, 0)
+    else
+        window:SetPoint("BOTTOMLEFT", WorldMapFrame, "BOTTOMRIGHT", PIN_GAP, 0)
+    end
+end
+
+--- Map opened/closed. Re-pins the window only while it is still anchored to
+--- the map; a dragged window (anchor rewritten to UIParent) stays put.
+function CaveRenderer:SetMapOpen(open)
+    mapOpen = open
+    if window and window:IsShown() and select(2, window:GetPoint()) == WorldMapFrame then
+        PositionWindow()
+    end
 end
 
 local function EnsureWindow()

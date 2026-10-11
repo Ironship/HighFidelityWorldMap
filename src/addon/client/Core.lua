@@ -66,10 +66,15 @@ function addon:OnEnable()
     end
 
     WorldMapFrame:HookScript("OnShow", function()
+        CaveRenderer:SetMapOpen(true)
         Config.lastMapID = nil
         Renderer:Refresh(true)
         Cave:UpdateState()
     end)
+    WorldMapFrame:HookScript("OnHide", function()
+        CaveRenderer:SetMapOpen(false)
+    end)
+    CaveRenderer:SetMapOpen(WorldMapFrame:IsShown() and true or false)
 
     Config.overlayFrame:SetScript("OnSizeChanged", function()
         Renderer:ScheduleRefresh()
