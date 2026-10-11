@@ -1715,9 +1715,17 @@ local function PanelSideAnchor(panel)
     return panel, "TOPRIGHT", 0, 0
 end
 
+local mapSeen = false  -- the map has been shown this session, so its scale is the real one
 local function PositionWindow()
     if not window then return end
     window:ClearAllPoints()
+    local pt = Config.db and Config.db.cavePlacement == "remember" and Config.db.caveWindowPoint
+    if pt then
+        local r = window:GetEffectiveScale() / UIParent:GetEffectiveScale()
+        pinnedTo = UIParent
+        window:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", pt.left / r, pt.top / r)
+        return
+    end
     local panel = Config.db and Config.db.caveKeepOpen and not mapOpen and RightmostPanel()
     if panel then
         -- Map closed: sit beside the open panel so it isn't covered,
@@ -1732,7 +1740,20 @@ local function PositionWindow()
         window:SetPoint("TOPLEFT", WorldMapFrame, "TOPLEFT", 0, 0)
     else
         pinnedTo = WorldMapFrame
-        window:SetPoint("TOPLEFT", WorldMapFrame, "TOPRIGHT", PIN_GAP, 0)
+        -- Inside the pane: bottom-right of the cave window sits on the
+        -- top-right of the side panel toggle's own button, same anchor the
+        -- reopen icon uses, so the window stacks straight above it. Fall
+        -- back to the pane's top-left corner if this client build has no
+        -- side panel toggle.
+        local sidePanelToggle = WorldMapFrame.SidePanelToggle
+        local openButton = sidePanelToggle and sidePanelToggle.OpenButton
+        if openButton then
+            pinnedTo = openButton
+            window:SetPoint("BOTTOMRIGHT", openButton, "TOPRIGHT", 0, 0)
+        else
+            local pane = WorldMapFrame.ScrollContainer or WorldMapFrame
+            window:SetPoint("TOPLEFT", pane, "TOPLEFT", PIN_GAP, -PIN_GAP)
+        end
     end
 end
 
@@ -1744,8 +1765,33 @@ function CaveRenderer:Repin()
     end
 end
 
+local STRATA_ORDER = { "BACKGROUND", "LOW", "MEDIUM", "HIGH", "DIALOG",
+    "FULLSCREEN", "FULLSCREEN_DIALOG", "TOOLTIP" }
+
+--- The window sits one strata above the map. Frame level alone can't keep
+--- it on top: clicking the map Raise()s it past any fixed level offset, and
+--- a kept-open window isn't the map's child, so nothing else would lift it
+--- back. A higher strata is immune to that. The map's strata can also
+--- change as it opens (windowed/maximised), hence the re-sync on show.
+local function SyncWindowLayer()
+    local mapStrata = WorldMapFrame:GetFrameStrata()
+    local strata = mapStrata
+    for i, s in ipairs(STRATA_ORDER) do
+        if s == mapStrata then strata = STRATA_ORDER[math.min(i + 1, #STRATA_ORDER)] break end
+    end
+    window:SetFrameStrata(strata)
+    window:SetFrameLevel(WorldMapFrame:GetFrameLevel() + 800)
+end
+
 function CaveRenderer:SetMapOpen(open)
     mapOpen = open
+    if open then
+        mapSeen = true
+        if window then
+            SyncWindowLayer()
+            C_Timer.After(0, function() if mapOpen then SyncWindowLayer() end end)
+        end
+    end
     self:Repin()
 end
 
@@ -1768,6 +1814,16 @@ local function EnsureWindow()
     -- inside the dialog itself.
     aceWindow:EnableResize(false)
     window:Hide()
+
+    -- Remember placement: the title bar is the drag handle (AceGUI's own
+    -- OnMouseUp has already stopped the move by the time this hook runs).
+    -- Stored in UIParent units so it survives the window's scale changing
+    -- between parents (see ShowCave).
+    aceWindow.titletext:GetParent():HookScript("OnMouseUp", function()
+        if Config.db.cavePlacement ~= "remember" then return end
+        local r = window:GetEffectiveScale() / UIParent:GetEffectiveScale()
+        Config.db.caveWindowPoint = { left = window:GetLeft() * r, top = window:GetTop() * r }
+    end)
 
     ApplyGameMenuChrome()
 
@@ -2508,9 +2564,19 @@ function CaveRenderer:ShowCave(floorMapID)
     if window:GetParent() ~= parent then
         window:SetParent(parent)
     end
-    window:SetScale(keepOpen and WorldMapFrame:GetScale() or 1)
-    window:SetFrameStrata(WorldMapFrame:GetFrameStrata())
-    window:SetFrameLevel(WorldMapFrame:GetFrameLevel() + 800)
+    -- Kept-open window before the map has ever been shown this session:
+    -- the hidden map's scale is still its unmanaged default, not the one
+    -- the client applies on first show, so the window would come up far too
+    -- large (most visible with Remember, which opens it at login). Use the
+    -- scale seen last time instead; Relayout corrects it on first show.
+    if mapOpen then
+        mapSeen = true
+        Config.db.caveMapScale = WorldMapFrame:GetScale()
+    end
+    local mapScale = mapSeen and WorldMapFrame:GetScale()
+        or Config.db.caveMapScale or WorldMapFrame:GetScale()
+    window:SetScale(keepOpen and mapScale or 1)
+    SyncWindowLayer()
     PositionWindow()
 
     -- Normally Cave:UpdateState has already built this, but ShowCave is also

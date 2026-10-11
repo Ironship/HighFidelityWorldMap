@@ -53,6 +53,13 @@ Config.DEFAULTS = {
     -- of them and most are one-room houses.
     caveOtherIndoors  = false,
 
+    -- cavePlacement: where the cave window sits by default.
+    --   "outside":  beside the world map's right edge (the original behaviour)
+    --   "inside":   in the map pane's top-left corner
+    --   "remember": wherever the player last dragged it (caveWindowPoint
+    --               below), falling back to "outside" until they have.
+    cavePlacement     = "outside",
+
     -- Cave map depth window: the real-world elevation range a per-piece
     -- place's rooms (currently just Fargodeep Mine) stay visible within,
     -- as two fractions (0..1) of that place's own [zMin, zMax] span.
@@ -113,9 +120,10 @@ Config.DEFAULTS = {
     showPlayerCoords = true,
     showMouseCoords  = true,
 }
--- The db also carries `caveWindowPoint` -- { point, relPoint, x, y, toMap }
--- -- written by CaveRenderer when the window is dragged. Deliberately not
--- in DEFAULTS: absent means "wherever the window opens by default".
+-- The db also carries `caveWindowPoint` -- { left, top }, the window's
+-- TOPLEFT in UIParent units -- written by CaveRenderer when the window is
+-- dragged under cavePlacement = "remember". Deliberately not in DEFAULTS:
+-- absent means "wherever the window opens by default".
 -- /hfwm cave reset clears it.
 
 --- Cave map backdrop opacity (the dark fill behind the art, not the window

@@ -411,6 +411,25 @@ local options = {
                         ns.CaveRenderer:Relayout()
                     end,
                 },
+                caveWindowPlacement = {
+                    order = 36,
+                    type = "select",
+                    name = "Default placement",
+                    desc = "Where the cave map opens. Remember reopens it "
+                        .. "wherever you last dragged it.",
+                    values = {
+                        inside = "Inside World Map Pane",
+                        outside = "Outside World Map Pane",
+                        remember = "Remember",
+                    },
+                    sorting = { "inside", "outside", "remember" },
+                    disabled = function() return not (Config.db.enabled and Config.db.caveEnabled) end,
+                    get = function() return Config.db.cavePlacement end,
+                    set = function(_, value)
+                        Config.db.cavePlacement = value
+                        ns.CaveRenderer:Relayout()
+                    end,
+                },
                 caveOtherIndoors = {
                     order = 37,
                     type = "toggle",

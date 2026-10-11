@@ -40,6 +40,7 @@ function Commands:Handle(msg)
             return
         elseif sub == "reset" then
             ns.CaveRenderer:HideCave()
+            db.caveWindowPoint = nil
             ns.Cave:Unsuppress()
             ns.Cave:UpdateState()
             P("Cave map reset.")
