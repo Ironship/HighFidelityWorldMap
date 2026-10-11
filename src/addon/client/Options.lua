@@ -375,7 +375,7 @@ local options = {
                     order = 40,
                     type = "range",
                     name = "Cave map opacity",
-                    desc = "Opacity of the dark background behind the cave map art. The window frame stays solid.",
+                    desc = "Opacity of the cave map window background. At 0% only the border and map elements are visible.",
                     min = 0, max = 1, step = 0.05, isPercent = true,
                     disabled = function() return not (Config.db.enabled and Config.db.caveEnabled) end,
                     get = function() return Config:CaveAlpha() end,

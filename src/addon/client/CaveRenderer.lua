@@ -179,7 +179,6 @@ local closeBtn      -- the x, in the top-right corner (Ace's own "Close"
                     -- button is hidden; see EnsureWindow)
 local content       -- clipping frame the tiles and the pin live in
 local canvasScale   -- child of content: zoomed/panned, holds tiles + pin
-local backdropTex   -- flat dark fill behind the tiles
 local playerPin
 local groupPins = {}  -- class-coloured dots for the rest of the group, grown on demand; each fill has its ring at .border
 local function HideGroupPins(from)
@@ -620,8 +619,8 @@ end
 local dialogFill   -- { file, tile, r, g, b, a } captured from GameMenuFrame
 local fillStrips   -- four textures: top, bottom, left, right of the art
 
---- Dialog fill around (never behind) the art area, so the cave opacity
---- setting can fade the art's dark backdrop alone.
+--- Dialog fill around the art area. Fades with the cave opacity setting,
+--- so at 0% only the border and elements remain.
 local function LayoutDialogFill()
     if not (dialogFill and content and window and aceWindow) then return end
     local body = aceWindow.content
@@ -643,9 +642,9 @@ local function LayoutDialogFill()
             if d.tile then tex:SetTexture(d.file, "REPEAT", "REPEAT") else tex:SetTexture(d.file) end
             tex:SetHorizTile(d.tile and true or false)
             tex:SetVertTile(d.tile and true or false)
-            tex:SetVertexColor(d.r, d.g, d.b, d.a)
+            tex:SetVertexColor(d.r, d.g, d.b, d.a * Config:CaveAlpha())
         else
-            tex:SetColorTexture(d.r, d.g, d.b, d.a)
+            tex:SetColorTexture(d.r, d.g, d.b, d.a * Config:CaveAlpha())
         end
         tex:ClearAllPoints()
         tex:SetPoint(r[1], r[2], r[3], r[4], r[5])
@@ -2003,10 +2002,7 @@ local function EnsureWindow()
     content:SetPoint("TOPLEFT", aceWindow.content, "TOPLEFT", 0, 0)
     if content.SetClipsChildren then content:SetClipsChildren(true) end
 
-    backdropTex = content:CreateTexture(nil, "BACKGROUND")
-    backdropTex:SetAllPoints(content)
     CaveRenderer:ApplyAlpha()
-    LayoutDialogFill()
 
     -- Zoom/pan canvas; see the "Zoom & pan" section above EnsureWindow.
     -- Sized to match `content` exactly (LayoutWindow keeps the two in sync);
@@ -2859,12 +2855,15 @@ function CaveRenderer:Relayout()
     end)
 end
 
---- Apply the opacity setting to an already-open window: fades only the dark
---- fill behind the art, never the dialog chrome.
+--- Apply the opacity setting to an already-open window: fades every
+--- background fill (dialog fill, AceGUI's own backdrop),
+--- never the borders or widgets.
 function CaveRenderer:ApplyAlpha()
-    if backdropTex then
-        backdropTex:SetColorTexture(0.05, 0.04, 0.03, Config:CaveAlpha())
+    local a = Config:CaveAlpha()
+    if window and window.SetBackdropColor then
+        window:SetBackdropColor(0, 0, 0, a)
     end
+    LayoutDialogFill()
 end
 
 --- Current height-window rectangle state, for /hfwm debug. Returns nil
