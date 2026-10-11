@@ -362,8 +362,9 @@ for _, mapType in ipairs(Config.MAP_TYPES) do
         name = " ",
         width = "relative",
         relWidth = mapType.key == "world" and 0.33 or 0.65,
-        -- World's row yields to the Fog of War checkbox below the same way.
-        hidden = (isZone or mapType.key == "world") and ZoneIsHybrid or nil,
+        -- World's and Continent's rows yield to their Fog of War checkbox
+        -- below the same way.
+        hidden = ZoneIsHybrid,
     }
 end
 mapBackgroundArgs.fogOfWarEnabled = {
@@ -409,26 +410,52 @@ mapBackgroundArgs.worldMapClarity = {
         ns.Renderer:ForceRefresh()
     end,
 }
--- World Map's second neighbour, between it and Map Resolution: the
--- World/Continent version of Fog of War. Same visibility rule as the Zone one
--- (Zone Map Hybrid), but its own saved value; Config:WorldFogOfWarEnabled()
--- enforces the rule in code, and a saved "on" picks back up when it holds.
+-- World Map's second neighbour, between it and Map Resolution: the World
+-- Map version of Fog of War. Same visibility rule as the Zone one (Zone Map
+-- Hybrid), but its own saved value; Config:WorldFogOfWarEnabled() enforces
+-- the rule in code, and a saved "on" picks back up when it holds.
 mapBackgroundArgs.worldFogOfWar = {
     order = MAP_TYPE_ORDER.world + 0.5,
     type = "toggle",
     width = "relative",
     relWidth = 0.3,
     name = "Fog of War",
-    desc = "On the World and Continent maps, only draws this addon's map "
-        .. "over zones you have fully explored. A zone with any area still "
-        .. "undiscovered stays as the game draws it. Only shown while the "
-        .. "Zone Map background is Hybrid, same as the zone Fog of War.",
+    desc = "On the World map, only draws this addon's map over zones you "
+        .. "have fully explored. A zone with any area still undiscovered "
+        .. "stays as the game draws it. Only shown while the Zone Map "
+        .. "background is Hybrid, same as the zone Fog of War.",
     hidden = function() return not ZoneIsHybrid() end,
     get = function() return Config.db.worldFogOfWar end,
     set = function(_, value)
         Config.db.worldFogOfWar = value
         ns.Renderer:ForceRefresh()
     end,
+}
+-- Continent Map's own Fog of War, same rule, separate saved value.
+mapBackgroundArgs.continentFogOfWar = {
+    order = MAP_TYPE_ORDER.continent + 1,
+    type = "toggle",
+    width = "relative",
+    relWidth = 0.3,
+    name = "Fog of War",
+    desc = "On the Continent maps, only draws this addon's map over zones "
+        .. "you have fully explored. A zone with any area still "
+        .. "undiscovered stays as the game draws it. Only shown while the "
+        .. "Zone Map background is Hybrid, same as the zone Fog of War.",
+    hidden = function() return not ZoneIsHybrid() end,
+    get = function() return Config.db.continentFogOfWar end,
+    set = function(_, value)
+        Config.db.continentFogOfWar = value
+        ns.Renderer:ForceRefresh()
+    end,
+}
+mapBackgroundArgs.continentFogFill = {
+    order = MAP_TYPE_ORDER.continent + 2,
+    type = "description",
+    name = " ",
+    width = "relative",
+    relWidth = 0.3,
+    hidden = function() return not ZoneIsHybrid() end,
 }
 -- Pads the Hybrid-only Zone row (0.32 + 0.3 + 0.3) past the wrap point.
 mapBackgroundArgs.fogFill = {
