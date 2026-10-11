@@ -18,7 +18,7 @@ __pycache__/
 .env
 
 # Ace3 libraries are fetched at build/dev time (see .pkgmeta's externals and
-# src/addon/dev/fetch-libs.sh) and are not committed.
-src/addon/Libs/*
+# src/addon/client/dev/fetch-libs.sh) and are not committed.
+src/addon/client/Libs/
 .act.hfwm-app-private-key.pem
 .act.secrets
