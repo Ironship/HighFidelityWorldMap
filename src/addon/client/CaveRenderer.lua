@@ -1670,10 +1670,11 @@ local function ContentPanUpdate()
     ApplyCanvasTransform()
 end
 
---- Pin the cave window's own bottom-left corner to the world map's own
---- bottom-right, so it reads as a panel attached to the map rather than a
---- free-floating dialog the user has to relocate before it's out of the
---- way. `window` is parented to WorldMapFrame (see ShowCave), so this
+--- Pin the cave window's own top-left corner to the world map's own
+--- top-right: the x side of the pin is unchanged (still beside the map),
+--- only the y alignment moves so the window's top edge sits level with
+--- the map's (and with a side panel's) top edge instead of its bottom.
+--- `window` is parented to WorldMapFrame (see ShowCave), so this
 --- anchor tracks the map for free the instant the map itself moves or
 --- resizes; it only has to be (re)applied here because SetWidth/SetHeight
 --- above don't disturb an existing anchor, but a fresh AceGUI Frame starts
@@ -1696,21 +1697,22 @@ local function RightmostPanel()
     return best
 end
 
---- Where the cave window's BOTTOMLEFT sits relative to a panel: beside the
+--- Where the cave window's TOPLEFT sits relative to a panel: beside the
 --- panel's right edge, except the character sheet's own mode tabs
 --- (Pet/Reputation/Currency...) extend past that edge and would be covered,
---- so anchor past the tabs themselves when they are shown.
+--- so anchor past the tabs themselves when they are shown. The anchor point
+--- is the tabs' TOPRIGHT, but the y offset lifts it back to the sheet's own
+--- top edge so the cave window's top is level with the sheet's, not the
+--- tabs strip's (which starts lower).
 local function PanelSideAnchor(panel)
     if panel == _G.CharacterFrame then
         local tabs = _G.CharacterFrameModeTabs
         if tabs and tabs:IsShown() then
-            -- x from the tabs' right edge, y still level with the panel's
-            -- own bottom (the tabs strip sits higher than the sheet).
-            return tabs, "BOTTOMRIGHT", PIN_GAP,
-                (panel:GetBottom() or 0) - (tabs:GetBottom() or 0)
+            return tabs, "TOPRIGHT", PIN_GAP,
+                (panel:GetTop() or 0) - (tabs:GetTop() or 0)
         end
     end
-    return panel, "BOTTOMRIGHT", 0, 0
+    return panel, "TOPRIGHT", 0, 0
 end
 
 local function PositionWindow()
@@ -1718,18 +1720,19 @@ local function PositionWindow()
     window:ClearAllPoints()
     local panel = Config.db and Config.db.caveKeepOpen and not mapOpen and RightmostPanel()
     if panel then
-        -- Map closed: sit beside the open panel so it isn't covered.
+        -- Map closed: sit beside the open panel so it isn't covered,
+        -- top edges level.
         local rel, point, x, y = PanelSideAnchor(panel)
         pinnedTo = rel
-        window:SetPoint("BOTTOMLEFT", rel, point, x, y)
+        window:SetPoint("TOPLEFT", rel, point, x, y)
     elseif Config.db and Config.db.caveKeepOpen and not mapOpen then
         -- Map closed, window kept open: take the map's slot (the map keeps
-        -- its rect while hidden), so the window's left edge is the map's.
+        -- its rect while hidden), so the window's top edge is the map's.
         pinnedTo = WorldMapFrame
-        window:SetPoint("BOTTOMLEFT", WorldMapFrame, "BOTTOMLEFT", 0, 0)
+        window:SetPoint("TOPLEFT", WorldMapFrame, "TOPLEFT", 0, 0)
     else
         pinnedTo = WorldMapFrame
-        window:SetPoint("BOTTOMLEFT", WorldMapFrame, "BOTTOMRIGHT", PIN_GAP, 0)
+        window:SetPoint("TOPLEFT", WorldMapFrame, "TOPRIGHT", PIN_GAP, 0)
     end
 end
 
