@@ -32,7 +32,7 @@
 --     and of whatever the world map underneath is doing. See the "Zoom &
 --     pan" section below.
 --
--- Multi-level caves get a vertical depth slider down the right-hand side,
+-- Multi-level caves get a vertical depth slider down the left-hand side,
 -- one notch per floor, top floor at the top. It's hand-built rather than
 -- borrowed from FrameXML: the stock slider templates are horizontal only
 -- and have no notion of discrete stops, and "between two floors" is a
@@ -229,12 +229,10 @@ local contentDrag
 local zoomAnchorX, zoomAnchorY
 local zoomAnchorCursorX, zoomAnchorCursorY
 
--- Floor picker (dropdown), top-right of the content frame; see the "Floor
+-- Floor picker (dropdown), top-left of the content frame; see the "Floor
 -- picker" section below. A real UIDropDownMenuTemplate frame, built lazily;
 -- `floorPickerUnavailable` is set once and for all if that template turns
 -- out not to exist on this client, so EnsureFloorPicker stops retrying.
-local floorPicker
-local floorPickerUnavailable
 
 -- cave-satellite-v2 Phase 2's height-window rectangle: a draggable/resizable
 -- overlay on the depth slider itself (see EnsureHeightWindow), replacing a
@@ -841,7 +839,7 @@ local function EnsureSlider()
         local floors = Config.caveAllFloors
         if not floors then return end
         local idx = FloorIndex(Config.caveCurrentFloorMapID) or 1
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine("Depth", 1, 1, 1)
         for i, f in ipairs(floors) do
             local on = (i == idx)
@@ -1119,7 +1117,7 @@ local function EnsureHeightWindow()
     end)
     windowBody:SetScript("OnUpdate", HeightWindowDragUpdate)
     windowBody:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine("Height window", 1, 1, 1)
         GameTooltip:AddLine("Drag to move the visible range up or down",
             0.5, 0.5, 0.5)
@@ -1160,7 +1158,7 @@ local function EnsureHeightWindow()
         BeginHeightWindowDrag("top")
     end)
     windowTopHandle:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine("Drag to widen or narrow the top of the "
             .. "visible range", 0.5, 0.5, 0.5)
         GameTooltip:Show()
@@ -1180,7 +1178,7 @@ local function EnsureHeightWindow()
         BeginHeightWindowDrag("bottom")
     end)
     windowBottomHandle:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine("Drag to widen or narrow the bottom of the "
             .. "visible range", 0.5, 0.5, 0.5)
         GameTooltip:Show()
@@ -1324,9 +1322,9 @@ local function EnsureFloorPicker()
     dd:ClearAllPoints()
     -- +14, not flush: the template's own end-cap art sits inset from the
     -- frame's true edges, so anchoring flush would leave the *visible*
-    -- widget floating short of content's own right edge. This is a
+    -- widget floating short of content's own left edge. This is a
     -- by-eye nudge, not a measured one; worth another look in-game.
-    dd:SetPoint("BOTTOMRIGHT", content, "TOPRIGHT", 14, 0)
+    dd:SetPoint("BOTTOMLEFT", content, "TOPLEFT", -14, 0)
     -- Above content's own tiles: both are plain children of `window` and
     -- would otherwise share its default child level, which draw-order
     -- ties in creation order rather than anything this file controls.
@@ -1895,11 +1893,11 @@ local function LayoutWindow(floorMapID)
     -- A single-floor place with active pieces (Echo Ridge Mine, e.g.) still
     -- gets the gutter: SyncSlider shows it for exactly that case too (see
     -- its own comment), and this must agree or the column it shows would
-    -- have no room reserved for it and overhang the window's right edge.
+    -- have no room reserved for it and overhang the window's left edge.
     local hasSlider = FloorCount() > 1 or piecesActive
     -- +2 for the gap sliderCol is anchored with below, so the gutter is wide
     -- enough to hold the whole column instead of letting it overhang the
-    -- right border by that gap.
+    -- left border by that gap.
     local gutter    = hasSlider and (SLIDER_COL_W + 2) or 0
 
     -- Multi-floor places carry the floor picker above the art, not over it:
@@ -1912,7 +1910,11 @@ local function LayoutWindow(floorMapID)
         if floorPicker then topPad = floorPicker:GetHeight() end
     end
     content:ClearAllPoints()
-    content:SetPoint("TOPLEFT", aceWindow.content, "TOPLEFT", 0, -topPad)
+    -- Shifted right by the gutter: the slider column sits to the *left* of
+    -- the art (see the sliderCol anchor below), so its room has to be
+    -- carved out of content's own left edge here rather than added past
+    -- the right one.
+    content:SetPoint("TOPLEFT", aceWindow.content, "TOPLEFT", gutter, -topPad)
     contentW, contentH = w, h
     content:SetSize(w, h)
     -- canvasScale tracks content's own size exactly, so RenderTiles and
@@ -1957,7 +1959,7 @@ local function LayoutWindow(floorMapID)
     if hasSlider then
         EnsureSlider()
         sliderCol:ClearAllPoints()
-        sliderCol:SetPoint("TOPLEFT", content, "TOPRIGHT", 2, 0)
+        sliderCol:SetPoint("TOPRIGHT", content, "TOPLEFT", -2, 0)
         -- Height set outright as well as anchored: LayoutHeightWindow needs the
         -- number this frame, and an anchor-derived size is not guaranteed to
         -- be readable yet.
