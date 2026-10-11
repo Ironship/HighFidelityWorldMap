@@ -121,14 +121,17 @@ local MIN_CONTENT  = 200
 local MAX_CONTENT  = 640
 
 -- Zoom range for the content area's own picture (see the "Zoom & pan"
--- section below). 1 is exactly the fit LayoutWindow already computes, the
--- whole cave visible and nothing cropped, so it doubles as "no zoom" and as
--- the floor no amount of zooming out can go past: there is nothing beyond
--- the fitted view to reveal. MAX_ZOOM is capped well short of the point
--- where the base layer's own tile resolution would stretch into an obvious
--- blurry blob, since this magnifies the art already drawn rather than
--- fetching a sharper source layer (see ArtLayer below).
-local MIN_ZOOM  = 1
+-- section below). FIT_ZOOM is exactly the fit LayoutWindow already computes:
+-- the whole cave visible and nothing cropped. MIN_ZOOM sits below that so
+-- the user can zoom out for the bigger picture even when the cave already
+-- fills the canvas; at those scales the canvas is smaller than the viewport
+-- and ClampPan just holds it centered, so there is no backdrop to reveal
+-- and no pan to lose. MAX_ZOOM is capped well short of the point where the
+-- base layer's own tile resolution would stretch into an obvious blurry
+-- blob, since this magnifies the art already drawn rather than fetching a
+-- sharper source layer (see ArtLayer below).
+local FIT_ZOOM  = 1
+local MIN_ZOOM  = 0.25
 local MAX_ZOOM  = 4
 -- Multiplicative step per wheel notch, so a handful of notches carries the
 -- user from MIN_ZOOM to MAX_ZOOM at a comfortable rate rather than a single
@@ -205,7 +208,7 @@ local statusbg      -- aceWindow.statustext's own parent frame (the pane
 -- for a pan drag in progress, the same hand-polled pattern as
 -- `heightWindowDrag` below (OnMouseDown to start, OnUpdate plus a live
 -- IsMouseButtonDown check to follow and to notice release).
-local zoomScale    = MIN_ZOOM
+local zoomScale    = FIT_ZOOM
 local panX, panY   = 0, 0
 local contentDrag
 
@@ -1512,18 +1515,33 @@ local function CursorOverArt()
     return not (list and list:IsShown() and list:IsMouseOver())
 end
 
---- Keep canvasScale from panning far enough that the flat backdrop shows
---- through inside the content viewport. At zoomScale 1 both bounds collapse
---- to 0: no pan is possible, which is correct, since there is nothing
---- beyond the fitted view to reveal.
+--- Keep canvasScale from being panned out of a sensible position: zoomed in
+--- (zoomScale > 1) the canvas is larger than the viewport,
+--- so it may not slide far enough to show the flat backdrop; zoomed out
+--- (zoomScale < 1) it is smaller, so it may slide anywhere that keeps it
+--- fully inside the viewport. Both cases are one range between 0 and the
+--- offset that puts the far edge flush, which also makes the range collapse
+--- to nothing at the exact fit (zoomScale 1), where there is no room to pan.
+--- panY grows upward (see ContentCursorXY), hence the opposite sign to panX.
 local function ClampPan()
-    local maxX = 0
-    local minX = contentW * (1 - zoomScale)
-    panX = math.max(minX, math.min(maxX, panX))
+    local a = contentW * (1 - zoomScale)
+    panX = math.max(math.min(0, a), math.min(math.max(0, a), panX))
 
-    local minY = 0
-    local maxY = contentH * (zoomScale - 1)
-    panY = math.max(minY, math.min(maxY, panY))
+    local b = contentH * (zoomScale - 1)
+    panY = math.max(math.min(0, b), math.min(math.max(0, b), panY))
+end
+
+--- Pins live on canvasScale, so zoomScale would magnify them along with the
+--- art. Divide it back out so they stay a constant on-screen size.
+local function ApplyPinScale()
+    local inv = 1 / zoomScale
+    if playerPin then playerPin:SetSize(PIN_SIZE * inv, PIN_SIZE * inv) end
+    local s = GROUP_PIN_SIZE * inv
+    local b = (GROUP_PIN_SIZE + 2 * GROUP_PIN_BORDER) * inv
+    for _, pin in ipairs(groupPins) do
+        pin:SetSize(s, s)
+        pin.border:SetSize(b, b)
+    end
 end
 
 --- Push zoomScale/panX/panY onto canvasScale, the only place either value
@@ -1533,12 +1551,24 @@ end
 local function ApplyCanvasTransform()
     if not canvasScale then return end
     canvasScale:SetScale(zoomScale)
+    ApplyPinScale()
     canvasScale:ClearAllPoints()
     -- SetPoint offsets are in the frame's *own* scale, so at zoomScale z an
     -- offset of n lands n*z away from the anchor. panX/panY are in content's
     -- (parent) units, so divide the scale back out.
     canvasScale:SetPoint("TOPLEFT", content, "TOPLEFT",
         panX / zoomScale, panY / zoomScale)
+end
+
+--- Reset to the fitted view: zoom 1, no pan. What HideCave leaves behind and
+--- what the shift+right-click reset on the window snaps to, so both mean
+--- exactly "the view a freshly opened cave starts with".
+local function ResetViewTransform()
+    zoomScale = FIT_ZOOM
+    panX, panY = 0, 0
+    contentDrag = nil
+    zoomAnchorX, zoomAnchorY = nil, nil
+    ApplyCanvasTransform()
 end
 
 --- Change zoom by `factor` (>1 in, <1 out), driving the picture toward
@@ -1765,7 +1795,11 @@ local function EnsureWindow()
     ResetView:HookFrame(window, function(_, button)
         if button ~= "RightButton" then return end
         PositionWindow()
+        -- Shift+right-click is the anti-lost gesture: same one the world map
+        -- already uses (ResetView), extended here to also snap the cave
+        -- window's own zoom/pan back to the fitted view.
         if IsShiftKeyDown() then
+            ResetViewTransform()
             ResetView:ResetToCurrentZone()
         end
     end, true)
@@ -2044,6 +2078,7 @@ local function UpdateGroupPins()
                         pin = dot(6, GROUP_PIN_SIZE, 1, 1, 1)
                         pin.border = dot(5, GROUP_PIN_SIZE + 2 * GROUP_PIN_BORDER, 0, 0, 0)
                         groupPins[used] = pin
+                        ApplyPinScale()
                     end
                     local _, class = UnitClass(unit)
                     local c = RAID_CLASS_COLORS[class] or GROUP_PIN_FALLBACK
@@ -2563,11 +2598,7 @@ function CaveRenderer:HideCave()
     -- panY for why ShowCave itself never resets these, but a closed (and
     -- possibly later reopened, possibly on a different cave entirely)
     -- window should not remember a zoom level from a previous visit.
-    zoomScale                    = MIN_ZOOM
-    panX, panY                   = 0, 0
-    contentDrag                  = nil
-    zoomAnchorX, zoomAnchorY     = nil, nil
-    ApplyCanvasTransform()
+    ResetViewTransform()
     if windowBody then windowBody:Hide() end
     if floorPicker then floorPicker:Hide() end
     if CloseDropDownMenus then pcall(CloseDropDownMenus) end
