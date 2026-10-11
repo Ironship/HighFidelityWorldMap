@@ -106,6 +106,12 @@ Config.DEFAULTS = {
     -- between all-SD and all-HD, without touching `enabled` above. On by
     -- default; turn off here for a cleaner map with one less button.
     toggleButtonEnabled = true,
+
+    -- The client's own Player and Cursor coordinate readouts on the world
+    -- map (Coords.lua), each toggled from Options. On by default, as the
+    -- client draws them; off hides that readout.
+    showPlayerCoords = true,
+    showMouseCoords  = true,
 }
 -- The db also carries `caveWindowPoint` -- { point, relPoint, x, y, toMap }
 -- -- written by CaveRenderer when the window is dragged. Deliberately not

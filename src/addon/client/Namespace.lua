@@ -29,6 +29,7 @@ ns.ZoomLevels  = {}
 ns.ResetView   = {}
 ns.KeepCentered = {}
 ns.ToggleButton = {}
+ns.Coords      = {}
 ns.ZoneFog = {}
 
 -- Convenience printer (accessible everywhere via ns.P)

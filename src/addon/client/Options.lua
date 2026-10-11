@@ -210,6 +210,7 @@ local options = {
                 Config.db.enabled = value
                 ns.Renderer:ForceRefresh()
                 ns.ToggleButton:Refresh()
+                ns.Coords:Refresh()
             end,
         },
         rememberMapZoomPan = {
@@ -260,6 +261,31 @@ local options = {
             get = function() return _G.GetCVar("mapFade") == "0" end,
             set = function(_, value)
                 _G.SetCVar("mapFade", value and "0" or "1")
+            end,
+        },
+
+        showPlayerCoords = {
+            order = 57,
+            type = "toggle",
+            name = "Show player coordinates",
+            desc = "Shows or hides the game's own player coordinates "
+                .. "on the world map.",
+            get = function() return Config.db.showPlayerCoords end,
+            set = function(_, value)
+                Config.db.showPlayerCoords = value
+                ns.Coords:Refresh()
+            end,
+        },
+        showMouseCoords = {
+            order = 58,
+            type = "toggle",
+            name = "Show mouse coordinates",
+            desc = "Shows or hides the game's own cursor coordinates "
+                .. "on the world map.",
+            get = function() return Config.db.showMouseCoords end,
+            set = function(_, value)
+                Config.db.showMouseCoords = value
+                ns.Coords:Refresh()
             end,
         },
 

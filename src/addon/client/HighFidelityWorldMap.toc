@@ -52,6 +52,7 @@ ZoomLevels.lua
 ResetView.lua
 KeepCentered.lua
 ToggleButton.lua
+Coords.lua
 Commands.lua
 Options.lua
 Core.lua

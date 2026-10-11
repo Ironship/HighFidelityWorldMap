@@ -27,6 +27,7 @@ local ZoomLevels    = ns.ZoomLevels
 local ResetView     = ns.ResetView
 local KeepCentered  = ns.KeepCentered
 local ToggleButton  = ns.ToggleButton
+local Coords       = ns.Coords
 local P             = ns.P
 
 --- Fires once, right after SavedVariables load. Same timing ADDON_LOADED
@@ -96,6 +97,7 @@ function addon:OnEnable()
     KeepCentered:Start()
     ResetView:Start()
     ToggleButton:Start()
+    Coords:Start()
 
     Commands:Register()
     -- After Commands, so a Lua error while probing the client's options

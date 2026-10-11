@@ -745,6 +745,9 @@ function Commands:Debug()
         print(("  BaseArt: %d layer(s) found, visible=%s  "
             .. "(|cff999999/hfwm baseart|r for detail)"):format(
             #ns.BaseArt:Describe(), tostring(ns.BaseArt.visible)))
+        local coordLines = ns.Coords:Describe()
+        print(("  map coords readouts: %d found"):format(#coordLines))
+        for _, line in ipairs(coordLines) do print("    " .. line) end
     end
 
     print("  overlayActive: " .. tostring(Config.overlayActive))
