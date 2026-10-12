@@ -47,7 +47,7 @@ from hfwm.geometry.coordinates import world_to_tile  # noqa: E402
 from hfwm.infra.http import download_casc  # noqa: E402
 
 ADDON = ROOT.parents[0] / "addon" / "client"
-OUT = ADDON / "ZoneShapes.lua"
+OUT = ADDON / "data" / "ZoneShapes.lua"
 MASK_DIR = ADDON / "ZoneMasks"  # not under WorldMap/, which is regenerated and gitignored
 AREA_CACHE = CACHE_ROOT / "adt_areas"
 

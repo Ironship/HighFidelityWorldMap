@@ -13,31 +13,31 @@
 # backslashed subdirectories, still finds it.
 embeds.xml
 
-# Generated data tables (src/generator writes them). Plain globals with no
-# dependency on the addon namespace, so they load first and Config.lua /
-# Namespace.lua can fold them in. The low-resolution map art (WorldMap\*.blp,
-# the world and continent maps) ships in this addon and is not listed: it is
-# read through its file path, see Config.FDID_BASE. The high-resolution art
-# is in the optional Art addon, see Config.HD_BASE.
-# FDIDMap.lua: FileDataID -> tile path, plus the HD continent layouts.
-# MinimapTiles.lua: where each of the client's minimap tiles sits on a zone
-# map. CaveTiles.lua: the same for cave and mine floors.
-FDIDMap.lua
-MinimapTiles.lua
-CaveTiles.lua
-# IndoorTiles.lua, IndoorData.lua: the same for every other indoor area
-# (buildings, houses), used only while Other indoors is on.
-IndoorTiles.lua
-# ZoneOverlays.lua, ZoneShapes.lua: how many exploration overlays each zone
-# has, and where each zone lies on the continent and World maps, for the
-# World/Continent Fog of War (ZoneFog.lua). ZoneOverlayTiles.lua: those
-# overlays' art, drawn on the native map when Fog of War is off
+# Generated data tables (src/generator writes them), under data/. Plain
+# globals with no dependency on the addon namespace, so they load first and
+# Config.lua / Namespace.lua can fold them in. The low-resolution map art
+# (WorldMap\*.blp, the world and continent maps) ships in this addon and is
+# not listed: it is read through its file path, see Config.FDID_BASE. The
+# high-resolution art is in the optional Art addon, see Config.HD_BASE.
+# data/FDIDMap.lua: FileDataID -> tile path, plus the HD continent layouts.
+# data/MinimapTiles.lua: where each of the client's minimap tiles sits on a
+# zone map. data/CaveTiles.lua: the same for cave and mine floors.
+data/FDIDMap.lua
+data/MinimapTiles.lua
+data/CaveTiles.lua
+# data/IndoorTiles.lua, data/IndoorData.lua: the same for every other indoor
+# area (buildings, houses), used only while Other indoors is on.
+data/IndoorTiles.lua
+# data/ZoneOverlays.lua, data/ZoneShapes.lua: how many exploration overlays
+# each zone has, and where each zone lies on the continent and World maps,
+# for the World/Continent Fog of War (ZoneFog.lua). data/ZoneOverlayTiles.lua:
+# those overlays' art, drawn on the native map when Fog of War is off
 # (Exploration.lua).
-ZoneOverlays.lua
-ZoneOverlayTiles.lua
-ZoneShapes.lua
-CaveData.lua
-IndoorData.lua
+data/ZoneOverlays.lua
+data/ZoneOverlayTiles.lua
+data/ZoneShapes.lua
+data/CaveData.lua
+data/IndoorData.lua
 Namespace.lua
 Config.lua
 TexturePool.lua

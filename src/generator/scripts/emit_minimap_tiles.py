@@ -25,7 +25,7 @@ from hfwm.geometry.coordinates import compute_crop_box  # noqa: E402
 from hfwm.pipeline.zone import _effective_tile_px  # noqa: E402
 
 CACHE = next(ROOT.glob(".cache-*"))
-OUT = ROOT.parents[0] / "addon" / "client" / "MinimapTiles.lua"
+OUT = ROOT.parents[0] / "addon" / "client" / "data" / "MinimapTiles.lua"
 
 
 def place_region(region, layer_w, layer_h, have):

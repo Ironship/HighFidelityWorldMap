@@ -49,7 +49,7 @@ from hfwm.caves.fetch import (  # noqa: E402
 from hfwm.caves.mines import MINES  # noqa: E402
 from hfwm.config.paths import WMO_TILE_CACHE_DIR  # noqa: E402
 
-OUT = ROOT.parent / "addon" / "client" / "CaveTiles.lua"
+OUT = ROOT.parent / "addon" / "client" / "data" / "CaveTiles.lua"
 MAX_GAP = 6      # px between neighbouring rooms' tiles that still count as one cave
 MIN_SHARED = 4   # px of shared edge needed for two rooms to count as neighbours
 GROW = 1.5      # px every single-tile room is grown on each side, at least

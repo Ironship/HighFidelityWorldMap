@@ -2,7 +2,7 @@
 
 The repository has two parts — ``src/generator/`` (this package) and
 ``src/addon/`` (the World of Warcraft addons it feeds). The generated Lua
-tables (``FDIDMap.lua``, ``CaveData.lua``) land in ``src/addon/client/``; the
+tables (``FDIDMap.lua``, ``CaveData.lua``) land in ``src/addon/client/data/``; the
 generated tiles land in two places: the low-resolution World and continent
 maps in ``src/addon/client/WorldMap/`` (shipped with the client, committed) and
 the high-resolution ``*HD`` maps in ``src/addon/art/WorldMap/``, the separate
@@ -57,10 +57,10 @@ PROVENANCE_FILE = CACHE_ROOT / "provenance.json"
 # ---------------------------------------------------------------------------
 # Generated addon content (addon-side)
 # ---------------------------------------------------------------------------
-FDID_MAP_FILE = ADDON_DIR / "FDIDMap.lua"
-CAVE_DATA_FILE = ADDON_DIR / "CaveData.lua"
-INDOOR_DATA_FILE = ADDON_DIR / "IndoorData.lua"
-INDOOR_TILES_FILE = ADDON_DIR / "IndoorTiles.lua"
+FDID_MAP_FILE = ADDON_DIR / "data" / "FDIDMap.lua"
+CAVE_DATA_FILE = ADDON_DIR / "data" / "CaveData.lua"
+INDOOR_DATA_FILE = ADDON_DIR / "data" / "IndoorData.lua"
+INDOOR_TILES_FILE = ADDON_DIR / "data" / "IndoorTiles.lua"
 WORLDMAP_DIR = ART_DIR / "WorldMap"
 LOWRES_WORLDMAP_DIR = ADDON_DIR / "WorldMap"
 

@@ -81,7 +81,7 @@ python src/generator/generateHFWM.py
 The generator writes the high-resolution art (`WorldMap/`) into
 `src/addon/art/`, the low-resolution art into `src/addon/client/WorldMap/`
 (`--lowres-dir`; commit it, it ships with the client) and the Lua tables
-(`FDIDMap.lua`, cave tile data) into `src/addon/client/`. Only the World,
+(`FDIDMap.lua`, cave tile data) into `src/addon/client/data/`. Only the World,
 Eastern Kingdoms and Kalimdor views are stitched; a full run takes about 40
 minutes. Downloads are cached under `src/generator/.cache-*/`. Pass `--no-caves`
 to skip `CaveData.lua` and `--skip-fdid-map` to skip `FDIDMap.lua`.
@@ -158,7 +158,7 @@ The `generate-world-map-assets` workflow builds and caches the art (`mapart-v3-<
 ## Notes
 
 - Generated cave tile data is a build artifact and is not normally committed.
-- `src/addon/client/FDIDMap.lua` and `src/addon/client/CaveData.lua` are part of the repo and are produced by the generator.
+- `src/addon/client/data/FDIDMap.lua` and `src/addon/client/data/CaveData.lua` are part of the repo and are produced by the generator.
 - `src/addon/client/WorldMap/` (the low-resolution art) is committed, like `FDIDMap.lua`: regenerate and commit it whenever the generator's output changes.
 - `src/addon/art/WorldMap/` (the high-resolution art) is generated and gitignored; only the Art release workflows build it.
 - `src/addon/client/Libs/` is fetched during local dev and CI; none of its contents are committed.

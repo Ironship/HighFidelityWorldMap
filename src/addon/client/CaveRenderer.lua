@@ -1267,7 +1267,7 @@ end
 -------------------------------------------------------------------------------
 -- Sized so the Dialog border's corner art doesn't overlap itself, with the
 local REOPEN_BTN_SIZE = 44
-local REOPEN_ICON_INSET = 10
+local REOPEN_ICON_INSET = 6
 --- How much the Dialog border art is shrunk on the reopen button: the same
 --- sprites the cave window gets, scaled down so the stroke is thinner.
 local REOPEN_BORDER_SCALE = 0.75
@@ -1320,11 +1320,13 @@ local function EnsureReopenButton()
     border:SetScale(REOPEN_BORDER_SCALE)
 
     local icon = btn:CreateTexture(nil, "ARTWORK")
+    -- Inset from the button edge: shrinks the icon just enough that the
+    -- Dialog border art stays visible around it.
     icon:SetPoint("TOPLEFT", btn, "TOPLEFT", REOPEN_ICON_INSET, -REOPEN_ICON_INSET)
     icon:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -REOPEN_ICON_INSET, REOPEN_ICON_INSET)
     icon:SetTexture("Interface\\Icons\\INV_Misc_Map02")
-    -- Trim the icon's own baked-in border padding slightly so it reads as a
-    -- button rather than a bare inventory icon.
+    -- Trim the icon's own baked-in border padding so it still reads full
+    -- within that smaller box.
     icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     btn.icon = icon
 
@@ -1903,10 +1905,13 @@ local function LayoutWindow(floorMapID)
     local mapW, mapH = WorldMapFrame:GetSize()
     if not mapW or mapW <= 0 then mapW, mapH = 1024, 768 end
 
+    -- Window scale preference (Options slider): a multiplier on the box the
+    -- fractions below compute, so the same setting works on every map size.
+    local scale = Config:CaveWindowScale()
     local maxW = math.max(MIN_CONTENT,
-        math.min(MAX_CONTENT, mapW * MAP_FRACTION_W))
+        math.min(MAX_CONTENT, mapW * MAP_FRACTION_W * scale))
     local maxH = math.max(MIN_CONTENT,
-        math.min(MAX_CONTENT, mapH * MAP_FRACTION_H))
+        math.min(MAX_CONTENT, mapH * MAP_FRACTION_H * scale))
 
     -- Fit inside the box, preserving aspect.
     local w, h = maxW, maxW / aspect

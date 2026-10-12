@@ -60,6 +60,11 @@ Config.DEFAULTS = {
     --               below), falling back to "outside" until they have.
     cavePlacement     = "outside",
 
+    -- caveWindowScale: multiplier (0.5..2) on the cave window's default size,
+    -- so the window can be made bigger or smaller than the map-fraction
+    -- sizing in CaveRenderer's LayoutWindow without changing where it sits.
+    caveWindowScale   = 1.0,
+
     -- Cave map depth window: the real-world elevation range a per-piece
     -- place's rooms (currently just Fargodeep Mine) stay visible within,
     -- as two fractions (0..1) of that place's own [zMin, zMax] span.
@@ -162,6 +167,14 @@ function Config:CaveHeightWindow()
     bottom = math.max(0, math.min(1, bottom))
     if top < bottom then top, bottom = bottom, top end
     return top, bottom
+end
+
+--- Cave window size multiplier, 0.5 (half the default size) to 2 (double).
+---@return number
+function Config:CaveWindowScale()
+    local s = self.db and self.db.caveWindowScale
+    if type(s) ~= "number" then s = self.DEFAULTS.caveWindowScale end
+    return math.max(0.5, math.min(2, s))
 end
 
 --- Persist new window bounds. Order-independent (swapped if `top < bottom`)

@@ -8,8 +8,8 @@ See ``hfwm/cli/main.py`` for the main orchestration logic.
 
 Output lands in ``../addon/``: the high-resolution tile art under
 ``art/WorldMap/``, the low-resolution tile art under ``client/WorldMap/``
-(it ships with the client), and ``client/FDIDMap.lua`` and
-``client/CaveData.lua``.
+(it ships with the client), and ``client/data/FDIDMap.lua`` and
+``client/data/CaveData.lua``.
 
 Usage (from ``src/generator/``):
     python generateHFWM.py [output_dir] [--zones Zone1,Zone2] [--dry-run]

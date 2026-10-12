@@ -458,6 +458,21 @@ local options = {
                         ns.CaveRenderer:ApplyAlpha()
                     end,
                 },
+                caveScale = {
+                    order = 45,
+                    type = "range",
+                    name = "Cave map window scale",
+                    desc = "Size of the cave map window, as a multiple of "
+                        .. "its default size. Applied the next time it "
+                        .. "opens or relayouts.",
+                    min = 0.5, max = 2, step = 0.05, isPercent = true,
+                    disabled = function() return not (Config.db.enabled and Config.db.caveEnabled) end,
+                    get = function() return Config:CaveWindowScale() end,
+                    set = function(_, value)
+                        Config.db.caveWindowScale = value
+                        ns.CaveRenderer:Relayout()
+                    end,
+                },
             },
         },
         hint = {

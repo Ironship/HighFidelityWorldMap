@@ -27,8 +27,8 @@ from hfwm.config.tiles import UI_MAP_TYPE_ZONE  # noqa: E402
 from hfwm.gamedata.tables import fetch_pinned_table  # noqa: E402
 
 CLIENT = ROOT.parents[0] / "addon" / "client"
-OUT = CLIENT / "ZoneOverlays.lua"
-OUT_TILES = CLIENT / "ZoneOverlayTiles.lua"
+OUT = CLIENT / "data" / "ZoneOverlays.lua"
+OUT_TILES = CLIENT / "data" / "ZoneOverlayTiles.lua"
 
 
 def zone_overlays():
