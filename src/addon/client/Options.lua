@@ -365,7 +365,7 @@ local options = {
                     order = 1,
                     type = "description",
                     name = "Opens a small window over the world map for "
-                        .. "caves, mines and dungeon interiors.\n",
+                        .. "caves and mines.\n",
                 },
                 caveEnabled = {
                     order = 10,
@@ -383,7 +383,7 @@ local options = {
                             ns.Cave:Unsuppress()
                             ns.Cave:UpdateState()
                         else
-                            ns.CaveRenderer:HideCave()
+                            ns.Cave:UpdateState()
                         end
                     end,
                 },
@@ -484,6 +484,38 @@ local options = {
                     set = function(_, value)
                         Config.db.caveWindowScale = value
                         ns.CaveRenderer:Relayout()
+                    end,
+                },
+            },
+        },
+        instance = {
+            order = 85,
+            type = "group",
+            inline = true,
+            name = "Instance map (beta)",
+            args = {
+                instanceDungeonEnabled = {
+                    order = 10,
+                    type = "toggle",
+                    name = "Dungeon",
+                    desc = "Shows the instance map inside dungeons.",
+                    disabled = function() return not Config.db.enabled end,
+                    get = function() return Config.db.instanceDungeonEnabled end,
+                    set = function(_, value)
+                        Config.db.instanceDungeonEnabled = value
+                        ns.Cave:UpdateState()
+                    end,
+                },
+                instanceRaidEnabled = {
+                    order = 20,
+                    type = "toggle",
+                    name = "Raid",
+                    desc = "Shows the instance map inside raids.",
+                    disabled = function() return not Config.db.enabled end,
+                    get = function() return Config.db.instanceRaidEnabled end,
+                    set = function(_, value)
+                        Config.db.instanceRaidEnabled = value
+                        ns.Cave:UpdateState()
                     end,
                 },
             },

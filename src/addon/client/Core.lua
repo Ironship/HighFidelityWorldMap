@@ -119,7 +119,7 @@ function addon:OnEnable()
         "InsecureActionButtonTemplate")
     keyBtn:RegisterForClicks("AnyDown")
     keyBtn:SetScript("OnClick", function()
-        if not (Config.db and Config.db.enabled and Config.db.caveEnabled) then
+        if not Cave:IsEnabledHere() then
             return
         end
         if CaveRenderer:IsShown() then

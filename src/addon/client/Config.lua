@@ -53,6 +53,11 @@ Config.DEFAULTS = {
     -- of them and most are one-room houses.
     caveOtherIndoors  = false,
 
+    -- Instance map: the same window inside dungeon ("party") and raid
+    -- instances, independent of caveEnabled. Off by default (beta).
+    instanceDungeonEnabled = false,
+    instanceRaidEnabled    = false,
+
     -- cavePlacement: where the cave window sits by default.
     --   "outside":  beside the world map's right edge (the original behaviour)
     --   "inside":   in the map pane's top-left corner

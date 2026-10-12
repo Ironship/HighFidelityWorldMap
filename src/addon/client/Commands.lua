@@ -25,8 +25,9 @@ function Commands:Handle(msg)
         -- itself per cave when dismissed, and without this the only way to
         -- get it back would be to walk out and back in.
         if sub == "show" or sub == "open" then
-            if not db.caveEnabled then
-                P("Cave map is off. |cff999999/hfwm cave on|r first.")
+            if not ns.Cave:IsEnabledHere() then
+                P("The map window is off here. Turn it on under Cave map "
+                    .. "or Instance map (beta) in Options.")
             elseif not ns.Cave:ForceShow() then
                 P("Nothing to show: you are not in a cave, or the world map "
                     .. "is already showing the one you are in.")
@@ -103,7 +104,7 @@ function Commands:Handle(msg)
             ns.Cave:UpdateState()
         else
             P("|cffff4444Cave map disabled|r")
-            ns.CaveRenderer:HideCave()
+            ns.Cave:UpdateState()
         end
         ns.Options:Refresh()
         return

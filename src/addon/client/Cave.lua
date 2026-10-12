@@ -411,6 +411,19 @@ local function SameMapGroup(a, b)
     return Cave:GetSource().SameGroup(a, b)
 end
 
+--- Is the window allowed where the player is standing? Dungeon and raid
+--- instances follow their own Instance map toggles; everywhere else follows
+--- the cave map's. The two never stand in for each other.
+---@return boolean
+function Cave:IsEnabledHere()
+    local db = Config.db
+    if not (db and db.enabled) then return false end
+    local instanceType = GetInstanceInfo and select(2, GetInstanceInfo())
+    if instanceType == "party" then return db.instanceDungeonEnabled and true or false end
+    if instanceType == "raid" then return db.instanceRaidEnabled and true or false end
+    return db.caveEnabled and true or false
+end
+
 --- True if the player is in a cave/micro/dungeon map *and* the world map is
 --- showing somewhere else entirely.
 ---
@@ -797,7 +810,7 @@ end
 --- map is showing. Safe to call as often as you like; it is a no-op when
 --- nothing has changed.
 function Cave:UpdateState()
-    if not Config.db or not Config.db.enabled or not Config.db.caveEnabled then
+    if not self:IsEnabledHere() then
         if Config.caveOverlayActive then ns.CaveRenderer:HideCave() end
         ns.CaveRenderer:SetReopenAvailable(false)
         return
@@ -897,7 +910,7 @@ local function OnPollUpdate(_, elapsed)
     if elapsedSincePoll < POLL_INTERVAL then return end
     elapsedSincePoll = 0
 
-    if not Config.db or not Config.db.enabled or not Config.db.caveEnabled then
+    if not Cave:IsEnabledHere() then
         return
     end
 

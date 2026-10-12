@@ -33,3 +33,5 @@ A slider on the side can be adjusted to change the slice of cave depth you are c
 ![Cave 2](https://i.postimg.cc/Mn7Z1DDc/cave-2.jpg)
 
 An optional **Other indoors** toggle extends the same window to buildings, houses and every other indoor area.
+
+The **Instance map (beta)** section's **Dungeon** and **Raid** toggles control the window inside dungeon and raid instances, independently of the cave map toggle. Both are off by default; with one off, nothing extra shows inside that kind of instance.
