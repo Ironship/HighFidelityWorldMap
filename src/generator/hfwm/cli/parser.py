@@ -118,6 +118,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--lowres-only",
+        action="store_true",
+        help=(
+            "Generate only the low-resolution maps that ship with the client "
+            "(and download only their tiles), skipping the HD maps. Minutes "
+            "instead of the ~40 minute full run"
+        ),
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Report the plan without downloading tiles or writing files",

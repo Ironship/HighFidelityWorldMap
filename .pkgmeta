@@ -7,8 +7,10 @@
 # src/addon/client/ to the top.
 #
 # src/addon/art/ (the high-resolution map art) is its own addon, built from
-# .pkgmeta-art; it is not part of this package. The low-resolution art is
-# src/addon/client/WorldMap/, committed, so it ships here as is.
+# .pkgmeta-art; it is not part of this package. The low-resolution art
+# (src/addon/client/WorldMap/) and the Fog of War zone masks
+# (src/addon/client/ZoneMasks/) are gitignored, built by CI's
+# generate-world-map-assets action and shipped here as built.
 
 package-as: HighFidelityWorldMap
 

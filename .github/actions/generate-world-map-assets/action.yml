@@ -1,30 +1,31 @@
 name: Generate world map assets
 description: >-
-  Produce the Art addon's content: the high-resolution World and continent
-  maps in src/addon/art/WorldMap/, reusing the cached copy when the generator has
-  not changed since it was last built.
+  Produce the generated map assets the two addons ship: the high-resolution
+  art in src/addon/art/WorldMap/ for the Art addon, the low-resolution art in
+  src/addon/client/WorldMap/ and the Fog of War zone masks in
+  src/addon/client/ZoneMasks/ for the client — reusing the cached copies when
+  the generator has not changed since they were last built.
 
-# The output is a pure function of the generator (src/generator/generateHFWM.py,
-# src/generator/hfwm/**, src/generator/requirements.txt), so that is the whole
-# cache key. A release that only touches Lua, docs or workflows hits the cache
-# and skips the ~40 minute build.
+# Three trees, each cached separately, keyed by what it depends on:
 #
-# One cache entry, mapart-v3-<hash>: src/addon/art/WorldMap, the
-# high-resolution World and continent maps only (zone and cave maps are drawn
-# from the game's own files), ~1 GB. FDIDMap.lua and CaveData.lua are the
-# client's, committed, and are not touched here (--skip-fdid-map --no-caves).
+#   art (mapart-v3-<hash>)      the HD World and continent maps, ~1 GB. A pure
+#                               function of the generator, so that is the key.
+#   lowres (maplow-v1-<hash>)   the low-resolution maps, ~23 MB. Same key as the
+#                               art: one generator run writes both.
+#   masks (zonemasks-v1-<hash>) the zone masks + ZoneShapes.lua, ~6 MB. Depends
+#                               on the generator and scripts/emit_zone_shapes.py
+#                               (outside hfwm/), so its own hash.
 #
-# The low-resolution maps (src/addon/client/WorldMap/) are the client addon's:
-# committed, not cached. The generator rewrites them on a cache miss, but
-# only the high-resolution tree is saved, and the client release workflows
-# never run this action. Regenerate and commit them after a generator change.
+# A release that only touches Lua, docs or workflows hits all three caches and
+# skips the ~40 minute build. Nothing the addons ship is committed anymore, so
+# every workflow that packages an addon runs this first, whatever it releases.
 #
 # GitHub scopes caches by ref: a run on a tag can read caches saved from the
-# default branch but not from any other tag. So the copy that *later* releases
-# restore has to be saved from main (see
-# .github/workflows/generate-world-map-assets.yml and release-addon-art.yml). A
-# copy saved from a tag still serves its own run, it just costs ~1 GB of the
-# repo's 10 GB cache quota and is invisible to every other tag.
+# default branch but not from any other tag. So the copies that *later* releases
+# restore have to be saved from main (see
+# .github/workflows/generate-world-map-assets.yml and the release workflows). A
+# copy saved from a tag still serves its own run, it just costs cache quota and
+# is invisible to every other tag.
 
 inputs:
   save:
@@ -34,10 +35,18 @@ inputs:
 
   bypass-cache:
     description: >-
-      Skip restoring the caches and regenerate the assets even when valid
-      cache entries already exist.
+      Skip restoring the caches and regenerate the assets even when valid cache
+      entries already exist.
     required: false
     default: "false"
+
+  art:
+    description: >-
+      Build the HD art (src/addon/art/WorldMap) too. Set to "false" by client
+      releases, which do not ship it: a miss then runs the minutes-long
+      --lowres-only pass instead of the full ~40 minute one.
+    required: false
+    default: "true"
 
 outputs:
   cache-hit:
@@ -46,6 +55,12 @@ outputs:
   art-key:
     description: "The art cache key, mapart-v3-<hash>. The hash identifies the generator build."
     value: ${{ steps.key.outputs.art-key }}
+  lowres-key:
+    description: "The low-res art cache key, maplow-v1-<hash>."
+    value: ${{ steps.key.outputs.lowres-key }}
+  masks-key:
+    description: "The zone mask cache key, zonemasks-v1-<hash>."
+    value: ${{ steps.key.outputs.masks-key }}
 
 runs:
   using: composite
@@ -55,6 +70,7 @@ runs:
       shell: bash
       env:
         HASH: ${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}
+        ZONES_HASH: ${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt', 'src/generator/scripts/emit_zone_shapes.py', 'src/generator/scripts/emit_zone_overlays.py') }}
       run: .github/scripts/world-map-assets-keys.sh >> "$GITHUB_OUTPUT"
 
     - name: Delete world map assets caches
@@ -62,46 +78,67 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-        ART_KEY: ${{ steps.key.outputs.art-key }}
+        KEYS: ${{ steps.key.outputs.art-key }} ${{ steps.key.outputs.lowres-key }} ${{ steps.key.outputs.masks-key }}
       run: .github/scripts/delete-world-map-assets-cache.sh
 
     - name: Restore world map art cache
       id: art
-      if: inputs.bypass-cache != 'true'
+      if: inputs.bypass-cache != 'true' && inputs.art == 'true'
       uses: actions/cache/restore@v5
       with:
         path: src/addon/art/WorldMap
         key: ${{ steps.key.outputs.art-key }}
 
+    - name: Restore low-res map cache
+      id: lowres
+      if: inputs.bypass-cache != 'true'
+      uses: actions/cache/restore@v5
+      with:
+        path: src/addon/client/WorldMap
+        key: ${{ steps.key.outputs.lowres-key }}
+
+    - name: Restore zone mask cache
+      id: masks
+      if: inputs.bypass-cache != 'true'
+      uses: actions/cache/restore@v5
+      with:
+        path: |
+          src/addon/client/ZoneMasks
+          src/addon/client/data/ZoneShapes.lua
+        key: ${{ steps.key.outputs.masks-key }}
+
     - name: Decide what to generate
       id: decide
       shell: bash
       env:
-        ART_HIT: ${{ steps.art.outputs.cache-hit }}
+        WANT_ART: ${{ inputs.art }}
         BYPASS: ${{ inputs.bypass-cache }}
+        ART_HIT: ${{ steps.art.outputs.cache-hit }}
+        LOWRES_HIT: ${{ steps.lowres.outputs.cache-hit }}
+        MASKS_HIT: ${{ steps.masks.outputs.cache-hit }}
       run: .github/scripts/decide-world-map-assets.sh >> "$GITHUB_OUTPUT"
 
     - name: Set up Python
-      if: steps.decide.outputs.generate == 'true'
+      if: steps.decide.outputs.python == 'true'
       uses: actions/setup-python@v6
       with:
         python-version: "3.12"
 
     - name: Install dependencies
-      if: steps.decide.outputs.generate == 'true'
+      if: steps.decide.outputs.python == 'true'
       shell: bash
       run: .github/scripts/install-python-deps.sh
 
     - name: Resolve game build
       id: pipeline
-      if: steps.decide.outputs.generate == 'true'
+      if: steps.decide.outputs.python == 'true'
       shell: bash
       run: python .github/scripts/resolve_game_build.py >> "$GITHUB_OUTPUT"
 
     # ~460 MB of DB2 exports, WDTs and minimap BLPs pulled from wago.tools.
-    # Only needed when the art itself has to be rebuilt.
+    # Only needed when something has to be built.
     - name: Restore pipeline cache
-      if: steps.decide.outputs.generate == 'true'
+      if: steps.decide.outputs.python == 'true'
       uses: actions/cache@v5
       with:
         path: ${{ steps.pipeline.outputs.cache_dir }}
@@ -109,21 +146,51 @@ runs:
         restore-keys: |
           casc-${{ steps.pipeline.outputs.build }}-
 
+    # A full run writes the HD art and, as a by-product, the low-res maps.
+    # HD skipped (client releases): the minutes-long low-res-only pass, which
+    # also skips Original/ re-downloads the full run already made.
     - name: Generate map art
-      if: steps.decide.outputs.generate == 'true'
+      if: steps.decide.outputs.art == 'true'
       shell: bash
       run: python src/generator/generateHFWM.py --no-caves --skip-fdid-map
+    - name: Generate low-res maps
+      if: steps.decide.outputs.art != 'true' && steps.decide.outputs.lowres == 'true'
+      shell: bash
+      run: python src/generator/generateHFWM.py --lowres-only --no-caves --skip-fdid-map
+
+    # emit_zone_shapes.py writes both the masks and the Lua table that places
+    # them, so the pair is restored or built (and cached) as one.
+    - name: Generate zone masks
+      if: steps.decide.outputs.masks == 'true'
+      shell: bash
+      run: python src/generator/scripts/emit_zone_shapes.py
 
     # Runs on cache hits too: a bad entry should fail here, not ship.
     - name: Verify world map assets
       shell: bash
+      env:
+        TREES: ${{ steps.decide.outputs.verify }}
       run: .github/scripts/verify-world-map-assets.sh
 
     # Only after verification, so a broken build is never cached. Saved only
     # if it was missing: saving an existing key just fails.
     - name: Save world map art cache
-      if: inputs.save == 'true' && steps.decide.outputs.generate == 'true' && steps.art.outputs.cache-hit != 'true'
+      if: inputs.save == 'true' && inputs.art == 'true' && steps.decide.outputs.art == 'true' && steps.art.outputs.cache-hit != 'true'
       uses: actions/cache/save@v5
       with:
         path: src/addon/art/WorldMap
         key: ${{ steps.key.outputs.art-key }}
+    - name: Save low-res map cache
+      if: inputs.save == 'true' && steps.decide.outputs.lowres == 'true' && steps.lowres.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: src/addon/client/WorldMap
+        key: ${{ steps.key.outputs.lowres-key }}
+    - name: Save zone mask cache
+      if: inputs.save == 'true' && steps.decide.outputs.masks == 'true' && steps.masks.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: |
+          src/addon/client/ZoneMasks
+          src/addon/client/data/ZoneShapes.lua
+        key: ${{ steps.key.outputs.masks-key }}

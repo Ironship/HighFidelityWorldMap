@@ -191,6 +191,9 @@ def main() -> None:
     _print_banner(args, output_dir, lowres_dir, passes, pass_notes)
 
     zone_db = load_zone_db(args.refresh, args.maid_field, args.zones)
+    if args.lowres_only:
+        # HD maps are the ones with native geometry (see zone_output_dir).
+        zone_db = {k: v for k, v in zone_db.items() if not v.get("native")}
     # Every zone's source tiles are downloaded (the client-tile placement
     # scripts read them from the cache), but only the World and Continent
     # maps are stitched.

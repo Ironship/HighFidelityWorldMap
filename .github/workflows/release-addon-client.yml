@@ -2,9 +2,10 @@ name: "Create Release: Client"
 
 # Creates an official tagged release of the client addon: the version tag, the
 # package and the GitHub Release with the zip attached. The package is the Lua
-# code, the generated tile tables and cave data, and the low-resolution map
-# art (committed under src/addon/client/WorldMap/). It does not include the
-# high-resolution art (the Art addon, "Create Release: Art") or a CHANGELOG. The package step
+# code, the generated tile tables and cave data, the low-resolution map art
+# and the Fog of War zone masks (built by the generate-world-map-assets action;
+# none of them are committed). It does not include the high-resolution art
+# (the Art addon, "Create Release: Art") or a CHANGELOG. The package step
 # itself uploads nowhere else; the last job then starts "Publish Client
 # Release to CurseForge" with the new tag. If that fails, re-run it on its own
 # and give it the tag.
@@ -88,8 +89,9 @@ jobs:
     needs: tag
     # tag is skipped on a pushed-tag release; that is fine. A failed tag job is not.
     if: ${{ !cancelled() && needs.tag.result != 'failure' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # A cache miss runs the minutes-long --lowres-only pass, plus the zone
+    # masks; a hit restores all three trees.
+    timeout-minutes: 60
     env:
       # Empty on a pushed-tag release, where the tag is the triggering ref.
       RELEASE_TAG: ${{ needs.tag.outputs.tag || github.ref_name }}
@@ -102,9 +104,24 @@ jobs:
           ref: ${{ needs.tag.outputs.tag }}
           fetch-depth: 0
 
-      # The packager ships src/addon/client/ as it is checked out, low-res
-      # art included. The Art addon (src/addon/art/) is its own package, see release-addon-art.yml.
-      #
+      # Builds the generated trees the client ships: the low-resolution maps
+      # and the Fog of War zone masks. The HD art is skipped (art: "false"), so
+      # a miss is a minutes-long --lowres-only run, not the ~40 minute full
+      # one. Saved only on a manual run (main); a pushed-tag run just reads.
+      - name: Generate world map assets
+        uses: ./.github/actions/generate-world-map-assets
+        with:
+          art: "false"
+          save: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
+
+      # The packager skips git-untracked paths, which includes gitignored ones,
+      # so the generated trees would be dropped from the zip. See
+      # release-addon-art.yml: --intent-to-add (-N) takes them off that list
+      # without committing anything. The Art addon (src/addon/art/) is its own
+      # package.
+      - name: Stage generated assets
+        run: git add -fN src/addon/client/WorldMap src/addon/client/ZoneMasks src/addon/client/data/ZoneShapes.lua
+
       # The packager would write a CHANGELOG.md into the package. A manual
       # changelog (see .pkgmeta) is read from the checkout instead, so it is
       # used for the upload but never ships.

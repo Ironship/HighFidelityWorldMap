@@ -38,6 +38,7 @@ jobs:
               - 'src/generator/**'
               - '.github/workflows/validate-changes.yml'
               - '.github/scripts/smoke-test.sh'
+              - 'src/generator/scripts/**'
 
   lua:
     name: Lint addon Lua

@@ -81,7 +81,8 @@ jobs:
     permissions:
       contents: read
       checks: write
-    timeout-minutes: 30
+    # A cache miss runs the minutes-long --lowres-only pass, plus the zone masks.
+    timeout-minutes: 60
 
     steps:
       - name: Checkout release tag
@@ -91,6 +92,20 @@ jobs:
           # release.sh walks back through tags to build the changelog.
           fetch-depth: 0
 
+      # Same generation as release-addon-client.yml, so the package is rebuilt
+      # exactly as the Release was: the low-res maps and zone masks, no HD art.
+      # This workflow only runs from main or a tag on main, so it can read
+      # (but not save) the main-scoped caches.
+      - name: Generate world map assets
+        uses: ./.github/actions/generate-world-map-assets
+        with:
+          art: "false"
+
+      # Same staging as release-addon-client.yml: the packager skips
+      # git-untracked paths, so the generated trees go on the intent-to-add
+      # list without being committed.
+      - name: Stage generated assets
+        run: git add -fN src/addon/client/WorldMap src/addon/client/ZoneMasks src/addon/client/data/ZoneShapes.lua
       # No CHANGELOG.md ships in the package: .pkgmeta points the packager at
       # this manual changelog, which it uploads but does not copy in.
       - name: Write release notes

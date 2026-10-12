@@ -1,24 +1,20 @@
 name: Generate World Map Assets
 
-# Runs the Python pipeline (src/generator/generateHFWM.py) that builds the Art
-# addon's content, the high-resolution World and continent maps (src/addon/art/WorldMap/), and
-# saves it to the Actions cache *from main*. That is the only scope a
-# tag-triggered release can read, so every release (Create Release: Art and
-# Publish Art Release to CurseForge) can reuse it instead of repeating the
-# ~40 minute generation. See .github/actions/generate-world-map-assets.
+# Runs the generate-world-map-assets action, which builds every generated tree
+# the addons ship — the HD art (src/addon/art/WorldMap/), the low-resolution
+# maps (src/addon/client/WorldMap/) and the Fog of War zone masks
+# (src/addon/client/ZoneMasks/) — and saves them to the Actions cache *from
+# main*. That is the only scope a tag-triggered release can read, so every
+# release reuses them instead of repeating the ~40 minute generation. See
+# .github/actions/generate-world-map-assets for the three cache entries and
+# their keys.
 #
-# One cache entry, the art (mapart-v3-<hash>, ~1 GB). The hash covers the
-# generator only (src/generator/generateHFWM.py, src/generator/hfwm/**,
-# src/generator/requirements.txt). A change that leaves those alone, such as an
-# addon Lua fix, docs or a workflow tweak, resolves to the same key, so a new
-# tag or manual release reuses the existing art without regenerating anything.
-#
-#   - weekly: GitHub evicts caches unused for 7 days; restoring the entry
-#     resets that clock. A miss here (evicted, or never built) regenerates it.
+#   - weekly: GitHub evicts caches unused for 7 days; a lookup here (a real
+#     restore on the weekly run) resets that clock. A miss regenerates.
 #   - manual: warm it on demand.
 #
-# A manual "Create Release: Art" run is on main, so it also saves what it
-# generates to the cache scope later releases read.
+# A manual run is on main, so it also saves what it generates to the cache
+# scope later releases read.
 
 on:
   schedule:
@@ -52,7 +48,7 @@ jobs:
     name: Check world map asset cache
     runs-on: ubuntu-latest
     outputs:
-      cache-hit: ${{ steps.art.outputs.cache-hit == 'true' }}
+      cache-hit: ${{ steps.decide.outputs.cache-hit == 'true' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -61,13 +57,14 @@ jobs:
         id: key
         env:
           HASH: ${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt') }}
+          ZONES_HASH: ${{ hashFiles('src/generator/generateHFWM.py', 'src/generator/hfwm/**/*.py', 'src/generator/requirements.txt', 'src/generator/scripts/emit_zone_shapes.py', 'src/generator/scripts/emit_zone_overlays.py') }}
         run: .github/scripts/world-map-assets-keys.sh >> "$GITHUB_OUTPUT"
 
-      # Only the weekly run downloads the ~1 GB art, to reset the eviction
-      # clock (a real restore: restoring an entry is what resets GitHub's
-      # 7-day clock). Otherwise (a release calling this, a manual warm-up) this
-      # only has to know the entry exists; the job that uses the art restores
-      # it itself, so downloading it here too just doubles the time.
+      # Only the weekly run downloads the assets, to reset the eviction clock
+      # (a real restore is what resets GitHub's 7-day clock). Otherwise (a
+      # release calling this, a manual warm-up) this only has to know the
+      # entries exist; the job that uses them restores them itself, so
+      # downloading them here too just doubles the time.
       - name: Restore world map art cache
         id: art
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.bypass-asset-cache }}
@@ -76,6 +73,34 @@ jobs:
           lookup-only: ${{ github.event_name != 'schedule' }}
           path: src/addon/art/WorldMap
           key: ${{ steps.key.outputs.art-key }}
+      - name: Restore low-res map cache
+        id: lowres
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.bypass-asset-cache }}
+        uses: actions/cache/restore@v5
+        with:
+          lookup-only: ${{ github.event_name != 'schedule' }}
+          path: src/addon/client/WorldMap
+          key: ${{ steps.key.outputs.lowres-key }}
+      - name: Restore zone mask cache
+        id: masks
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.bypass-asset-cache }}
+        uses: actions/cache/restore@v5
+        with:
+          lookup-only: ${{ github.event_name != 'schedule' }}
+          path: |
+            src/addon/client/ZoneMasks
+            src/addon/client/data/ZoneShapes.lua
+          key: ${{ steps.key.outputs.masks-key }}
+
+      # One decision from all three restore results, so a build only runs when
+      # at least one of the three trees is missing.
+      - name: Decide whether anything is missing
+        id: decide
+        env:
+          ART_HIT: ${{ steps.art.outputs.cache-hit }}
+          LOWRES_HIT: ${{ steps.lowres.outputs.cache-hit }}
+          MASKS_HIT: ${{ steps.masks.outputs.cache-hit }}
+        run: .github/scripts/decide-world-map-assets.sh >> "$GITHUB_OUTPUT"
 
   build:
     name: Generate and cache world map assets

@@ -37,11 +37,12 @@ from PIL import Image, ImageFilter
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from emit_zone_overlays import overlay_counts  # noqa: E402
-from hfwm.config.paths import CACHE_ROOT, WDT_CACHE_DIR  # noqa: E402
+from emit_zone_overlays import zone_overlays  # noqa: E402
+from hfwm.config.paths import CACHE_ROOT  # noqa: E402
 from hfwm.config.tiles import TILE_WORLD_SIZE, UI_MAP_TYPE_ZONE  # noqa: E402
 from hfwm.formats.blp import encode_blp2_bgra  # noqa: E402
 from hfwm.formats.wdt import parse_wdt_maid  # noqa: E402
+from hfwm.gamedata.db2 import _fetch_wdt  # noqa: E402
 from hfwm.gamedata.tables import fetch_pinned_table  # noqa: E402
 from hfwm.geometry.coordinates import world_to_tile  # noqa: E402
 from hfwm.infra.http import download_casc  # noqa: E402
@@ -126,9 +127,14 @@ def terrain_areas(need):
     """{map_id: 1024x1024 array of AreaIDs, one per chunk}, downloading as needed."""
     AREA_CACHE.mkdir(parents=True, exist_ok=True)
     jobs = []
+    wdt_fdids = {int(m["ID"]): int(m["WdtFileDataID"]) for m in fetch_pinned_table("Map")}
     for map_id, tiles in need.items():
-        wdt = next(WDT_CACHE_DIR.glob(f"{map_id}_*.wdt"))
-        grid = parse_wdt_maid(wdt.read_bytes(), MAID_FIELD_ROOT_ADT)
+        # Fetched here (cached by the generator's own downloader) so this runs
+        # without a prior generator run, as CI does when the art is cached.
+        wdt = _fetch_wdt(map_id, wdt_fdids[map_id])
+        if not wdt:
+            raise SystemExit(f"could not download the WDT of map {map_id}")
+        grid = parse_wdt_maid(wdt, MAID_FIELD_ROOT_ADT)
         jobs += [(map_id, r, c, grid[(r, c)]) for (r, c) in sorted(tiles) if (r, c) in grid]
     print(f"  {len(jobs)} terrain tiles ...", flush=True)
 
@@ -213,9 +219,11 @@ def map_box(g, box):
 def main():
     regions = load_regions()
     lookup = area_to_zone()
-    owners = {m: absorb_cities(lookup[np.minimum(a, len(lookup) - 1)], set(overlay_counts()))
+    # Which zones are "real" (have exploration overlays, so a mask is worth
+    # shipping) — only their UiMapIDs are needed.
+    real = set(zone_overlays())
+    owners = {m: absorb_cities(lookup[np.minimum(a, len(lookup) - 1)], real)
               for m, a in terrain_areas(tiles_needed(regions)).items()}
-    real = set(overlay_counts())
 
     MASK_DIR.mkdir(parents=True, exist_ok=True)
     masks = {}  # (terrain map, zone) -> chunk box
