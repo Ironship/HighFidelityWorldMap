@@ -163,8 +163,8 @@ local function CreatePopup()
     popup:SetScript("OnShow", syncPopup)
 
     -- Pin (top right): keeps the popup open when the mouse leaves it, and
-    -- through closing the map -- it is still a child of the map, so it
-    -- disappears with the map and is back when the map reopens, without
+    -- through closing the map -- it hangs off the map (or the map host under
+    -- the gamepad UI), so it disappears with the map and is back when the map reopens, without
     -- another right click. Turns into an X, which closes the popup and
     -- clears the pin. Session-only, not saved.
     local pinBtn = CreateFrame("Button", nil, popup)
@@ -310,7 +310,7 @@ local function CreateButton()
     -- plain, generic button skin with no borrowed artwork of its own to
     -- accidentally drag the "?" icon along with it.
     button = CreateFrameTry(
-        "Button", "HFWMForeverToggleButton", WorldMapFrame,
+        "Button", "HFWMForeverToggleButton", Config:MapWidgetParent(),
         "UIPanelButtonTemplate", "UIPanelButtonTemplate2")
 
     local sidePanelToggle = WorldMapFrame.SidePanelToggle
@@ -323,7 +323,7 @@ local function CreateButton()
     end
     button:SetSize(width, height)
 
-    button:SetFrameStrata(WorldMapFrame:GetFrameStrata())
+    if not Config.mapHost then button:SetFrameStrata(WorldMapFrame:GetFrameStrata()) end
     button:SetFrameLevel(WorldMapFrame:GetFrameLevel() + 10)
 
     -- Anchor to the actual map pane rather than the full WorldMapFrame, so

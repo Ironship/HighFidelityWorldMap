@@ -217,7 +217,7 @@ local levelDriver
 --- value".)
 function Exploration:ApplyLevels()
     if not levelDriver then
-        levelDriver = CreateFrame("Frame", nil, WorldMapFrame)  -- runs while the map is shown
+        levelDriver = CreateFrame("Frame", nil, Config:MapWidgetParent())  -- runs while the map is shown
         levelDriver:SetScript("OnUpdate", function()
             if UnderOverlay() then ForEachPin(TuckUnderOverlay) end
         end)

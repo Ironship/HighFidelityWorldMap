@@ -56,10 +56,12 @@ function addon:OnEnable()
     Config.overlayFrame:SetAllPoints(canvas)
     Config.overlayFrame:SetFrameLevel(canvas:GetFrameLevel() + 500)
     Config.overlayFrame:EnableMouse(false)
+    Config:InitMapHost()
 
     -- The cave map window is built lazily by CaveRenderer the first time a
-    -- cave is entered, parented to WorldMapFrame rather than the canvas so
-    -- it doesn't pan or zoom with the map under it.
+    -- cave is entered, parented to Config:MapWidgetParent() (WorldMapFrame, or
+    -- the gamepad-UI host) rather than the canvas so it doesn't pan or zoom
+    -- with the map under it.
 
     hooksecurefunc(WorldMapFrame, "OnMapChanged", function()
         Config.lastMapID = nil

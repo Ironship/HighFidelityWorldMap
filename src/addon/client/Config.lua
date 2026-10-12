@@ -588,6 +588,58 @@ function Config:IsGamepadUI()
             == Enum.InputDeviceInterfaceType.Gamepad
 end
 
+local STRATA_ORDER = { "BACKGROUND", "LOW", "MEDIUM", "HIGH", "DIALOG",
+    "FULLSCREEN", "FULLSCREEN_DIALOG", "TOOLTIP" }
+
+--- The frame strata one above *strata* (TOOLTIP stays TOOLTIP, unknown names
+--- come back unchanged).
+---@param strata string
+---@return string
+function Config:StrataAbove(strata)
+    for i, s in ipairs(STRATA_ORDER) do
+        if s == strata then return STRATA_ORDER[math.min(i + 1, #STRATA_ORDER)] end
+    end
+    return strata
+end
+
+--- Parent for HFWM's own widgets that sit on the world map. Under the gamepad
+--- UI, Blizzard's SmartNavigation and FrameControlsManager walk WorldMapFrame's
+--- children and run Blizzard binding code over whatever they find, so
+--- addon frames there taint that code. Those widgets hang off a host frame on
+--- UIParent instead (see InitMapHost). Otherwise the map itself, as before.
+---@return Frame
+function Config:MapWidgetParent()
+    return self.mapHost or WorldMapFrame
+end
+
+--- Make the host follow the map: shown with it, same scale, one strata above
+--- it (so a click that Raise()s the map never buries a widget; same trick the
+--- cave window uses).
+function Config:SyncMapHost()
+    local host = self.mapHost
+    if not host then return end
+    local scale = WorldMapFrame:GetScale()
+    if host:GetScale() ~= scale then host:SetScale(scale) end
+    local strata = self:StrataAbove(WorldMapFrame:GetFrameStrata())
+    if host:GetFrameStrata() ~= strata then host:SetFrameStrata(strata) end
+    host:SetShown(WorldMapFrame:IsShown())
+end
+
+--- Create the host, once, only when the gamepad UI may be in play. Must run
+--- before any module creates a widget and before Core's own OnShow/OnHide
+--- hooks are registered, so the host is already shown when they run.
+--- (Decided at load, like every other IsGamepadUI gate: /reload to switch.)
+function Config:InitMapHost()
+    if self.mapHost or not self:IsGamepadUI() then return end
+    local host = CreateFrame("Frame", "HFWMForeverMapHost", UIParent)
+    host:SetAllPoints(WorldMapFrame)
+    self.mapHost = host
+    self:SyncMapHost()
+    WorldMapFrame:HookScript("OnShow", function() Config:SyncMapHost() end)
+    WorldMapFrame:HookScript("OnHide", function() Config:SyncMapHost() end)
+    WorldMapFrame:HookScript("OnSizeChanged", function() Config:SyncMapHost() end)
+end
+
 --- Is the HD/SD slider (ToggleButton's right-click popup) below 100%? Then
 --- the overlay is drawn at that alpha over Blizzard's own stock map, left
 --- visible underneath, so the result is an exact HD/SD mix. Renderer's

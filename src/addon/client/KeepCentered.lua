@@ -119,10 +119,10 @@ local function OnUpdate(_, elapsed)
     end
 end
 
---- Wire up the per-frame check. Called once from Core.lua. The frame is a
---- child of the map, so OnUpdate only runs while the map is shown.
+--- Wire up the per-frame check. Called once from Core.lua. The frame
+--- hangs off the map (or the gamepad-UI host), so OnUpdate only runs while the map is shown.
 function KeepCentered:Start()
-    local f = CreateFrame("Frame", nil, WorldMapFrame)
+    local f = CreateFrame("Frame", nil, Config:MapWidgetParent())
     f:SetScript("OnUpdate", OnUpdate)
     -- Snap (no glide) to the player on reopen.
     f:SetScript("OnShow", function() lastX, lastY, snap, expX, expY, lastPanAt = nil, nil, true, nil, nil, -math.huge end)
@@ -144,10 +144,9 @@ end
 -- leave no Lua state behind. The cost: Blizzard's own currentScroll fields go
 -- stale, so its next stick/edge pan may start from the old position.
 -------------------------------------------------------------------------------
-local glide = CreateFrame("Frame", nil, WorldMapFrame)
-glide:Hide()
+local glide
 local glideX, glideY, glideMap, expH, expV
-glide:SetScript("OnUpdate", function(self, elapsed)
+local function GlideOnUpdate(self, elapsed)
     local sc = WorldMapFrame.ScrollContainer
     local child = sc.Child
     local h, v = sc:GetHorizontalScroll(), sc:GetVerticalScroll()
@@ -169,7 +168,7 @@ glide:SetScript("OnUpdate", function(self, elapsed)
     expH, expV = sc:GetHorizontalScroll(), sc:GetVerticalScroll()
     -- Clamped at a map edge: the target is unreachable, stop.
     if expH == h and expV == v then self:Hide() end
-end)
+end
 
 --- Slide the map so the player's arrow ends up at the view's centre, zoom
 --- untouched. Does nothing when the player has no position on the map shown.
@@ -180,5 +179,9 @@ function KeepCentered:CenterOnPlayer()
     glideX, glideY = pos:GetXY()
     if not glideX then return end
     glideMap, expH, expV = mapID, nil, nil
+    if not glide then
+        glide = CreateFrame("Frame", nil, Config:MapWidgetParent())
+        glide:SetScript("OnUpdate", GlideOnUpdate)
+    end
     glide:Show()
 end

@@ -1,0 +1,120 @@
+name: Bug report
+description: Something in the addon, Art addon or generator is broken
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Before filing, check the **Why do some parts of the map look wrong** FAQ in the README: the game's minimap art has real seams and gaps, and those are not addon bugs. If that is what you see, pick *Map art* below.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Where is the problem?
+      options:
+        - Addon (HighFidelityWorldMap)
+        - Art addon (HighFidelityWorldMap_Art_Forever)
+        - Generator (src/generator)
+        - Map art (seam, gap or wrong tile)
+        - Build, release or CI
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: map-view
+    attributes:
+      label: Map view affected
+      options:
+        - World
+        - Continent
+        - Zone
+        - Cave or mine
+        - Other indoors
+        - Not map-related (UI, options, commands)
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: art-addon
+    attributes:
+      label: Is the Art addon installed?
+      description: The High Resolution option needs it. Without it, only low-resolution art is used.
+      options:
+        - "Yes"
+        - "No"
+    validations:
+      required: true
+
+  - type: input
+    id: game-build
+    attributes:
+      label: Game build
+      description: Run `/run print(GetBuildInfo())` in game and paste the result.
+      placeholder: "e.g. 1.60.1.69913, 12345, ..."
+    validations:
+      required: true
+
+  - type: input
+    id: addon-version
+    attributes:
+      label: Addon version
+      description: The version from the CurseForge file name or the release tag you installed.
+      placeholder: "e.g. v1.1.1"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you saw. Screenshots help a lot.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the zone, cave or continent, and whether you toggled HD/SD, Fog of War or Other indoors.
+      placeholder: |
+        1. Open the world map (M)
+        2. Select Elwynn Forest
+        3. Click HD
+        4. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: lua-errors
+    attributes:
+      label: Lua errors
+      description: Paste any error text from BugSack/BugGrabber or the default error popup. Write "none" if there are none.
+      render: text
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and found no duplicate.
+          required: true
+        - label: I reproduced this with HighFidelityWorldMap as the only map addon enabled (or it is not a map-addon conflict).
+          required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Anything else, such as a comparison screenshot against the default map.

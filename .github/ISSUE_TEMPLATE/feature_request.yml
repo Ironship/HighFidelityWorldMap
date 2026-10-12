@@ -1,0 +1,46 @@
+name: Feature request
+description: Suggest a new feature or an improvement to an existing one
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Where would this live?
+      options:
+        - Addon (HighFidelityWorldMap)
+        - Art addon (HighFidelityWorldMap_Art_Forever)
+        - Generator (src/generator)
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation you are in, not only the solution you want.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What the feature should do, and where it should appear in the map UI.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other ways to get the same result, including other addons.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and found no duplicate.
+          required: true

@@ -1275,14 +1275,14 @@ local REOPEN_BORDER_SCALE = 0.75
 local function EnsureReopenButton()
     if reopenBtn then return end
 
-    local btn = CreateFrame("Button", "HFWMForeverCaveReopenButton", WorldMapFrame)
+    local btn = CreateFrame("Button", "HFWMForeverCaveReopenButton", Config:MapWidgetParent())
     btn:SetSize(REOPEN_BTN_SIZE, REOPEN_BTN_SIZE)
     btn:EnableMouse(true)
 
     -- Anchored the same way the cave window itself is layered: the map's own
     -- strata, well above its children, so it isn't a click behind the map's
     -- own furniture.
-    btn:SetFrameStrata(WorldMapFrame:GetFrameStrata())
+    if not Config.mapHost then btn:SetFrameStrata(WorldMapFrame:GetFrameStrata()) end
     btn:SetFrameLevel(WorldMapFrame:GetFrameLevel() + 800)
 
     -- Bottom of this icon sits on top of the side panel toggle's open
@@ -1674,21 +1674,13 @@ function CaveRenderer:Repin()
     end
 end
 
-local STRATA_ORDER = { "BACKGROUND", "LOW", "MEDIUM", "HIGH", "DIALOG",
-    "FULLSCREEN", "FULLSCREEN_DIALOG", "TOOLTIP" }
-
 --- The window sits one strata above the map. Frame level alone can't keep
 --- it on top: clicking the map Raise()s it past any fixed level offset, and
 --- a kept-open window isn't the map's child, so nothing else would lift it
 --- back. A higher strata is immune to that. The map's strata can also
 --- change as it opens (windowed/maximised), hence the re-sync on show.
 local function SyncWindowLayer()
-    local mapStrata = WorldMapFrame:GetFrameStrata()
-    local strata = mapStrata
-    for i, s in ipairs(STRATA_ORDER) do
-        if s == mapStrata then strata = STRATA_ORDER[math.min(i + 1, #STRATA_ORDER)] break end
-    end
-    window:SetFrameStrata(strata)
+    window:SetFrameStrata(Config:StrataAbove(WorldMapFrame:GetFrameStrata()))
     window:SetFrameLevel(WorldMapFrame:GetFrameLevel() + 800)
 end
 
@@ -2515,7 +2507,7 @@ function CaveRenderer:ShowCave(floorMapID)
     -- stops inheriting the map's scale, so that is applied by hand to keep
     -- the window the same size either way.
     local keepOpen = Config.db and Config.db.caveKeepOpen
-    local parent = keepOpen and UIParent or WorldMapFrame
+    local parent = keepOpen and UIParent or Config:MapWidgetParent()
     if window:GetParent() ~= parent then
         window:SetParent(parent)
     end
