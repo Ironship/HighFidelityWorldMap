@@ -177,6 +177,20 @@ local function DrawExploredPiece(
         return 0
     end
 
+    -- Leatrix Maps' and MapUtils' "show unexplored areas" add their own
+    -- reveal textures to this same pin, tinted (vertex colour or
+    -- desaturation); Blizzard's own explored ones never are. A tinted one
+    -- is unexplored ground: draw the HD art under it with the same tint,
+    -- one sublevel below the explored pieces (as both addons layer theirs),
+    -- and leave filled/pieceTex alone so the explored-only passes after
+    -- this still fill every explored cell it overlaps. Untinted ones (tint
+    -- turned off in those addons) reveal in full, as those addons do.
+    -- Alpha is ignored: HidePins zeroes it on every one of these textures,
+    -- explored or not, so it says nothing about the tint.
+    local r, g, b = blizTex:GetVertexColor()
+    local desat = blizTex:IsDesaturated() and true or false
+    local tinted = desat or r < 1 or g < 1 or b < 1
+
     local texLeft, texTop = blizTex:GetLeft(), blizTex:GetTop()
     local texRight, texBottom = blizTex:GetRight(), blizTex:GetBottom()
     if not (texLeft and texTop and texRight and texBottom
@@ -316,8 +330,14 @@ local function DrawExploredPiece(
                     tex:AddMaskTexture(mask)
 
                     piecesDrawn = piecesDrawn + 1
-                    if filled then filled[row * cols + col] = true end
-                    if pieceTex then pieceTex[row * cols + col] = tex end
+                    if tinted then
+                        tex:SetDrawLayer("ARTWORK", 1)
+                        tex:SetVertexColor(r, g, b, 1)
+                        tex:SetDesaturated(desat)
+                    else
+                        if filled then filled[row * cols + col] = true end
+                        if pieceTex then pieceTex[row * cols + col] = tex end
+                    end
                 end
             end
         end

@@ -16,6 +16,8 @@ function Pool:Acquire()
         tex = Config.overlayFrame:CreateTexture(nil, "ARTWORK", nil, 2)
     end
     tex:SetVertexColor(1, 1, 1, 1)
+    tex:SetDesaturated(false)
+    tex:SetDrawLayer("ARTWORK", 2)  -- Fog of War's tinted pieces sit at 1
     tex:Show()
     activeTextures[#activeTextures + 1] = tex
     return tex
