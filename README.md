@@ -25,7 +25,9 @@ This kind of visual eyesore is just… how it actually looks on the minimap, I'm
 
 This happens a lot throughout the game, and so I do actually want to go through and fix each issue by hand eventually. This will make its way into the companion "art" addon as a secondary selectable map.
 
-Cave map controller support coming soon.
+### Gamepad
+
+With the native Gamepad UI on, while the map and a cave window are open: L1/R1 step the floor up/down, L2/R2 zoom out/in, R3 resets the view. "Toggle cave window" (Key Bindings > High Fidelity World Map) can be put on any pad button.
 
 # Features
 
