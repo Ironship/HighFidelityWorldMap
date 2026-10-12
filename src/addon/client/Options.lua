@@ -73,9 +73,8 @@ local function FogDesc(base, mapTypeKey)
             or base .. HYBRID_ONLY
     end
 end
-local FOG_ZONE_DESC = "Brings back the grayscale fog over unexplored ground. "
-    .. "Off by default. That grayscale look IS Blizzard's own map art, "
-    .. "which only Hybrid leaves showing through."
+local FOG_ZONE_DESC = "Fog of war hides unexplored areas on the map, and "
+    .. "fills them in as you progress and explore."
 local FOG_WORLD_DESC = "On the World map, only draws this addon's map over "
     .. "zones you have fully explored. A zone with any area still "
     .. "undiscovered stays as the game draws it."
@@ -189,6 +188,29 @@ do
         return checkbox
     end, 1)
 end
+-- Same StaticPopup pattern as HFWM_ART_URL above: confirmation before a
+-- destructive action. ResetProfile resets the current profile in place and
+-- fires OnProfileReset (-> Config:RefreshProfile); the rest is state that
+-- RefreshProfile doesn't cover. mapFade is a game CVar, not in the profile.
+StaticPopupDialogs["HFWM_RESET_SETTINGS"] = {
+    text = "Reset all High Fidelity World Map settings to their defaults?\n"
+        .. "Any unsaved changes will be lost.",
+    button1 = ACCEPT,
+    button2 = CANCEL,
+    OnAccept = function()
+        _G.SetCVar("mapFade", "1")
+        Config.dbObj:ResetProfile()
+        ns.ToggleButton:Refresh()
+        ns.Coords:Refresh()
+        ns.KeepCentered:Refresh()
+        ns.CaveRenderer:ApplyAlpha()
+        ns.CaveRenderer:Relayout()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
 
 local options = {
     type = "group",
@@ -216,7 +238,7 @@ local options = {
         rememberMapZoomPan = {
             order = 40,
             type = "toggle",
-            name = "Remember map zoom and pan",
+            name = "Remember zoom+pan",
             desc = "Keeps the world map at the zoom and pan you left it "
                 .. "at, instead of resetting to your current zone on "
                 .. "reopen.",
@@ -231,7 +253,7 @@ local options = {
             type = "toggle",
             name = "Additional zoom levels",
             desc = "Lets the world map zoom eight steps closer than the "
-                .. "client's own maximum. Off by default.",
+                .. "client's own maximum.",
             get = function() return Config.db.additionalZoomLevels end,
             set = function(_, value)
                 Config.db.additionalZoomLevels = value
@@ -243,31 +265,31 @@ local options = {
             type = "toggle",
             name = "Keep Centered",
             desc = "Pans the world map as you move so your arrow stays "
-                .. "in the center of it. Off by default.",
+                .. "in the center of it.",
             get = function() return Config.db.keepCentered end,
             set = function(_, value)
                 Config.db.keepCentered = value
                 ns.KeepCentered:Refresh()
             end,
         },
-        disableMapFade = {
+        fadeWhenMoving = {
             order = 56,
             type = "toggle",
-            name = "Disable map fade",
-            desc = "Stops the world map going see-through while you "
-                .. "move (the mapFade console variable). Reads and "
-                .. "writes the game setting directly; turning this off "
-                .. "sets mapFade back to 1.",
-            get = function() return _G.GetCVar("mapFade") == "0" end,
+            name = "Fade when moving",
+            desc = "Fades the map when you start moving for you to see the "
+                .. "3d world more. Don't wanna buttpull anything!",
+            -- Inverted from the mapFade console variable: checked (the
+            -- default) means the game's own fade-while-moving stays on.
+            get = function() return _G.GetCVar("mapFade") ~= "0" end,
             set = function(_, value)
-                _G.SetCVar("mapFade", value and "0" or "1")
+                _G.SetCVar("mapFade", value and "1" or "0")
             end,
         },
 
         showPlayerCoords = {
             order = 57,
             type = "toggle",
-            name = "Show player coordinates",
+            name = "Player Coordinates",
             desc = "Shows or hides the game's own player coordinates "
                 .. "on the world map.",
             get = function() return Config.db.showPlayerCoords end,
@@ -279,7 +301,7 @@ local options = {
         showMouseCoords = {
             order = 58,
             type = "toggle",
-            name = "Show mouse coordinates",
+            name = "Mouse Coordinates",
             desc = "Shows or hides the game's own cursor coordinates "
                 .. "on the world map.",
             get = function() return Config.db.showMouseCoords end,
@@ -292,14 +314,10 @@ local options = {
         toggleButtonEnabled = {
             order = 72,
             type = "toggle",
-            name = "HD/SD map toggle button",
-            desc = "Adds a small button to the world map's top-right "
-                .. "corner for switching between the high-fidelity "
-                .. "overlay and Blizzard's own map, just for the current "
-                .. "map session -- it does not touch \"Enable\" "
-                .. "above, so the cave map and everything else "
-                .. "stay on. Turn off for a cleaner map with one less "
-                .. "button.",
+            name = "HD/SD Toggle",
+            desc = "Adds a small red button to the top-right corner of the "
+                .. "world map pane to switch between hfwm and vanilla map "
+                .. "tiles",
             get = function() return Config.db.toggleButtonEnabled end,
             set = function(_, value)
                 Config.db.toggleButtonEnabled = value
@@ -315,15 +333,6 @@ local options = {
             -- Cave map since it matters more.
             name = "Map Background",
             args = {
-                intro = {
-                    order = 1,
-                    type = "description",
-                    name = "What draws behind and in place of this addon's "
-                        .. "own tiles. Zone Map, Continent Map and World "
-                        .. "Map can each override the Global Background "
-                        .. "below; leave one at \"Use Global\" to just "
-                        .. "follow it.\n",
-                },
                 globalBackground = {
                     order = 10,
                     type = "select",
@@ -351,8 +360,7 @@ local options = {
                     order = 1,
                     type = "description",
                     name = "Opens a small window over the world map for "
-                        .. "caves, mines and dungeon interiors, which the "
-                        .. "zone map can't show.\n",
+                        .. "caves, mines and dungeon interiors.\n",
                 },
                 caveEnabled = {
                     order = 10,
@@ -538,7 +546,7 @@ mapBackgroundArgs.fogOfWarEnabled = {
 -- World/Continent Map's neighbour: Kalimdor / Eastern Kingdoms / Azeroth
 -- resolution, one saved boolean per map type (Config.db.worldMapClarity /
 -- continentMapClarity; `/hfwm clarity` sets both), so "high" is true and
--- "low" is false (the default).
+-- "low" is false (high is the default, when the Art addon is present).
 local function ResolutionOption(mapTypeKey, dbKey, what)
     return {
         order = MAP_TYPE_ORDER[mapTypeKey] + 1,
@@ -547,8 +555,7 @@ local function ResolutionOption(mapTypeKey, dbKey, what)
         relWidth = 0.32,
         name = "Map Resolution",
         desc = "How sharply " .. what .. " drawn. High Resolution draws "
-            .. "at much higher detail but may render slower. Low Resolution "
-            .. "is the default.",
+            .. "at much higher detail but may render slower.",
         dialogControl = RESOLUTION_DROPDOWN,
         values = { high = "High Resolution (slow)", low = "Low Resolution (fast)" },
         sorting = { "high", "low" },
@@ -630,15 +637,25 @@ Options.optionsTable = options
 
 local LOGO = "Interface\\AddOns\\" .. addonName .. "\\Assets\\logo_lowres.dxt5.blp"
 
---- Replace the panel's title text with the logo (512x128 source, shown at 4:1).
---- Title is hidden via alpha, not cleared: AceConfigDialog re-sets its text
---- on every redraw.
+--- Replace the panel's title text with the logo (512x128 source, shown at 4:1)
+--- and dock a "Reset to Defaults" button opposite it, top-right, vertically
+--- centered on the logo. Title is hidden via alpha, not cleared:
+--- AceConfigDialog re-sets its text on every redraw.
 local function ShowLogo(frame)
     frame.obj.label:SetAlpha(0)
     local logo = frame:CreateTexture(nil, "OVERLAY")
     logo:SetTexture(LOGO)
     logo:SetSize(144, 36)
     logo:SetPoint("TOPLEFT", 10, -4)
+
+    local button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    button:SetText("Reset to Defaults")
+    button:SetSize(140, 22)
+    -- -11: vertically centered on the logo (TOPLEFT -4, height 36).
+    button:SetPoint("TOPRIGHT", -10, -11)
+    button:SetScript("OnClick", function()
+        StaticPopup_Show("HFWM_RESET_SETTINGS")
+    end)
 end
 
 --- Register the options table and hook it into the client's own options
@@ -665,10 +682,14 @@ function Options:Init()
     self.clientRegistered = ok
     if ok and blizFrame then ShowLogo(blizFrame) end
 end
-
---- Open the options, wherever they ended up living.
+--- Open the options, wherever they ended up living. The standalone window
+--- gets the same logo + Reset to Defaults treatment as the client's own
+--- options panel.
 function Options:Open()
-    LibStub("AceConfigDialog-3.0"):Open(addonName)
+    local AceConfigDialog = LibStub("AceConfigDialog-3.0")
+    AceConfigDialog:Open(addonName)
+    local frame = AceConfigDialog.OpenFrames[addonName]
+    if frame then ShowLogo(frame) end
 end
 
 --- Push a live setting change (from a slash command, say) out to any open

@@ -10,7 +10,7 @@ Config.DEFAULTS = {
     enabled       = true,
     -- HD/SD blend (ToggleButton's slider), remembered per map type.
     alphas        = { zone = 1.0, continent = 1.0, world = 1.0 },
-    mapBackground = "ocean",  -- see Config.BACKGROUNDS below
+    mapBackground = "hybrid",  -- see Config.BACKGROUNDS below
 
     -- Per-map-type overrides of mapBackground above (now labelled "Global
     -- Background" in Options, since these three exist). "global" (the
@@ -25,7 +25,7 @@ Config.DEFAULTS = {
     -- somewhere the map above it has nothing to show (caves, mines, micro
     -- dungeons). On by default; turn it off from Options or /hfwm cave off.
     caveEnabled = true,
-    caveAlpha   = 0,
+    caveAlpha   = 1,
 
     -- How the cave window decides to show itself, as opposed to whether
     -- the feature exists at all (caveEnabled above).
@@ -58,12 +58,12 @@ Config.DEFAULTS = {
     --   "inside":   in the map pane's top-left corner
     --   "remember": wherever the player last dragged it (caveWindowPoint
     --               below), falling back to "outside" until they have.
-    cavePlacement     = "outside",
+    cavePlacement     = "inside",
 
     -- caveWindowScale: multiplier (0.5..2) on the cave window's default size,
     -- so the window can be made bigger or smaller than the map-fraction
     -- sizing in CaveRenderer's LayoutWindow without changing where it sits.
-    caveWindowScale   = 1.0,
+    caveWindowScale   = 0.75,
 
     -- Cave map depth window: the real-world elevation range a per-piece
     -- place's rooms (currently just Fargodeep Mine) stay visible within,
@@ -84,34 +84,31 @@ Config.DEFAULTS = {
 
     -- Appends 8 extra, closer zoom steps onto the world map so the
     -- native-resolution zone art this addon ships can be zoomed into past
-    -- Blizzard's own ceiling. Off by default: it changes how far the
-    -- built-in zoom control reaches. See ZoomLevels.lua.
-    additionalZoomLevels = false,
+    -- Blizzard's own ceiling. On by default. See ZoomLevels.lua.
+    additionalZoomLevels = true,
 
     -- Draws the three continent/world maps (Kalimdor, Eastern Kingdoms,
-    -- Azeroth) from this addon's own capped hi-res tile grid instead of
-    -- Blizzard's stock art, one saved value per map type (Azeroth is the
-    -- World map; Kalimdor and Eastern Kingdoms are Continent maps). Off by
-    -- default: a continent map is many more tiles than any single zone, and
-    -- could slow down a weaker machine. See HFWMF_NATIVE_ZONES' `continent`
-    -- flag and GetNativeZone below.
-    worldMapClarity = false,
-    continentMapClarity = false,
+    -- Azeroth) from the Art addon's hi-res tile grid instead of the low
+    -- resolution set, one saved value per map type (Azeroth is the World
+    -- map; Kalimdor and Eastern Kingdoms are Continent maps). On by
+    -- default, but Config:MapClarityEnabled forces low resolution while the
+    -- Art addon is missing or disabled, so no install is left without art.
+    -- See HFWMF_NATIVE_ZONES' `continent` flag and GetNativeZone below.
+    worldMapClarity = true,
+    continentMapClarity = true,
 
-    -- Restores the original grayscale-until-explored look instead of this
-    -- addon's usual full hi-res coverage. Off by default since it works
-    -- against the addon's whole point. With it on, ground stays grayscale
-    -- until C_MapExplorationInfo says the player has explored it, then
-    -- switches to this addon's tiles cropped to Blizzard's own reveal
-    -- shape. See Renderer's Activate() and DrawExploredPiece.
-    fogOfWarEnabled = false,
+    -- Fog of War on the Zone map: ground stays grayscale until explored,
+    -- then switches to this addon's tiles cropped to Blizzard's own reveal
+    -- shape. Only takes effect while the Zone Map background is Hybrid
+    -- (the default). See Renderer's Activate() and DrawExploredPiece.
+    fogOfWarEnabled = true,
 
     -- The "Fog of War" checkboxes beside the World Map and Continent Map
     -- dropdowns (Options), each offered under the same condition as
     -- fogOfWarEnabled above and saved separately. On: that map draws this
     -- addon's tiles only over zones explored in full. See ZoneFog.lua.
-    worldFogOfWar = false,
-    continentFogOfWar = false,
+    worldFogOfWar = true,
+    continentFogOfWar = true,
 
     -- The "sd"/"hd" button ToggleButton.lua docks in the world map's
     -- top-right corner, for flipping the HD/SD blend (`alpha` above)
