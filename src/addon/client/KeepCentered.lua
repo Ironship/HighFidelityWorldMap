@@ -50,7 +50,9 @@ local TAU = 0.035
 local EPSILON = 1e-4
 
 local function OnUpdate(_, elapsed)
-    if not Config.db.keepCentered then return end
+    -- Off under the gamepad UI: its per-frame InstantPanAndZoom taints the
+    -- scroll container (see MapMemory's Enabled).
+    if not Config.db.keepCentered or Config:IsGamepadUI() then return end
 
     local sc = WorldMapFrame.ScrollContainer
     local mapID = WorldMapFrame:GetMapID()
@@ -117,10 +119,10 @@ local function OnUpdate(_, elapsed)
     end
 end
 
---- Wire up the per-frame check. Called once from Core.lua. The frame is a
---- child of the map, so OnUpdate only runs while the map is shown.
+--- Wire up the per-frame check. Called once from Core.lua. The frame
+--- hangs off the map (or the gamepad-UI host), so OnUpdate only runs while the map is shown.
 function KeepCentered:Start()
-    local f = CreateFrame("Frame", nil, WorldMapFrame)
+    local f = CreateFrame("Frame", nil, Config:MapWidgetParent())
     f:SetScript("OnUpdate", OnUpdate)
     -- Snap (no glide) to the player on reopen.
     f:SetScript("OnShow", function() lastX, lastY, snap, expX, expY, lastPanAt = nil, nil, true, nil, nil, -math.huge end)
@@ -129,4 +131,57 @@ end
 --- Forget the last position so the next frame glides to the player.
 function KeepCentered:Refresh()
     lastX, lastY = nil, nil
+end
+
+-------------------------------------------------------------------------------
+-- One-shot slide to the player (gamepad hold-R3, ToggleButton.lua)
+--
+-- Moves the view with the ScrollFrame widget calls only (SetHorizontalScroll/
+-- SetVerticalScroll), never InstantPanAndZoom: that writes Lua fields on
+-- Blizzard's ScrollContainer (currentScrollX, ...), and under the gamepad UI
+-- those tainted fields end up in Blizzard's binding code (see the
+-- ADDON_ACTION_FORBIDDEN SetPreferredGamepadInteractTarget). Widget calls
+-- leave no Lua state behind. The cost: Blizzard's own currentScroll fields go
+-- stale, so its next stick/edge pan may start from the old position.
+-------------------------------------------------------------------------------
+local glide
+local glideX, glideY, glideMap, expH, expV
+local function GlideOnUpdate(self, elapsed)
+    local sc = WorldMapFrame.ScrollContainer
+    local child = sc.Child
+    local h, v = sc:GetHorizontalScroll(), sc:GetVerticalScroll()
+    -- Map changed, or the user moved the view themselves: let go.
+    if WorldMapFrame:GetMapID() ~= glideMap or (expH and (h ~= expH or v ~= expV)) then
+        self:Hide()
+        return
+    end
+    -- Player and view centre in screen pixels, then back to scroll units.
+    local ce, se = child:GetEffectiveScale(), sc:GetEffectiveScale()
+    local cx, cy = sc:GetCenter()
+    local dx = ((child:GetLeft() + glideX * child:GetWidth()) * ce) / se - cx
+    local dy = ((child:GetTop() - glideY * child:GetHeight()) * ce) / se - cy
+    if dx * dx + dy * dy < 0.25 then self:Hide() return end
+    local a = 1 - math.exp(-elapsed / TAU)
+    -- Scrolling right/down moves the content left/up.
+    sc:SetHorizontalScroll(h + dx * a)
+    sc:SetVerticalScroll(v - dy * a)
+    expH, expV = sc:GetHorizontalScroll(), sc:GetVerticalScroll()
+    -- Clamped at a map edge: the target is unreachable, stop.
+    if expH == h and expV == v then self:Hide() end
+end
+
+--- Slide the map so the player's arrow ends up at the view's centre, zoom
+--- untouched. Does nothing when the player has no position on the map shown.
+function KeepCentered:CenterOnPlayer()
+    local mapID = WorldMapFrame:GetMapID()
+    local pos = mapID and C_Map.GetPlayerMapPosition(mapID, "player")
+    if not (pos and WorldMapFrame.ScrollContainer) then return end
+    glideX, glideY = pos:GetXY()
+    if not glideX then return end
+    glideMap, expH, expV = mapID, nil, nil
+    if not glide then
+        glide = CreateFrame("Frame", nil, Config:MapWidgetParent())
+        glide:SetScript("OnUpdate", GlideOnUpdate)
+    end
+    glide:Show()
 end

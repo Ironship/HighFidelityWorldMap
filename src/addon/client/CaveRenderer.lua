@@ -1275,14 +1275,14 @@ local REOPEN_BORDER_SCALE = 0.75
 local function EnsureReopenButton()
     if reopenBtn then return end
 
-    local btn = CreateFrame("Button", "HFWMForeverCaveReopenButton", WorldMapFrame)
+    local btn = CreateFrame("Button", "HFWMForeverCaveReopenButton", Config:MapWidgetParent())
     btn:SetSize(REOPEN_BTN_SIZE, REOPEN_BTN_SIZE)
     btn:EnableMouse(true)
 
     -- Anchored the same way the cave window itself is layered: the map's own
     -- strata, well above its children, so it isn't a click behind the map's
     -- own furniture.
-    btn:SetFrameStrata(WorldMapFrame:GetFrameStrata())
+    if not Config.mapHost then btn:SetFrameStrata(WorldMapFrame:GetFrameStrata()) end
     btn:SetFrameLevel(WorldMapFrame:GetFrameLevel() + 800)
 
     -- Bottom of this icon sits on top of the side panel toggle's open
@@ -1508,13 +1508,15 @@ end
 --- the wrong content: each one just asks "where does zoomAnchorX land at
 --- this new scale" and answers it fresh.
 ---@param factor number
-local function ZoomBy(factor)
+---@param centered boolean|nil  anchor on the window's centre, not the cursor (gamepad has no cursor over the art)
+local function ZoomBy(factor, centered)
     if not content or not canvasScale then return end
     if contentW <= 0 or contentH <= 0 then return end
     local newScale = math.max(MIN_ZOOM, math.min(MAX_ZOOM, zoomScale * factor))
     if newScale == zoomScale then return end
 
-    local cx, cy = ContentCursorXY()
+    local cx, cy
+    if centered then cx, cy = contentW / 2, -contentH / 2 else cx, cy = ContentCursorXY() end
     -- Only re-sample the anchor if the cursor moved since it was last set;
     -- see the module comment above zoomAnchorX.
     if not zoomAnchorX
@@ -1672,26 +1674,59 @@ function CaveRenderer:Repin()
     end
 end
 
-local STRATA_ORDER = { "BACKGROUND", "LOW", "MEDIUM", "HIGH", "DIALOG",
-    "FULLSCREEN", "FULLSCREEN_DIALOG", "TOOLTIP" }
-
 --- The window sits one strata above the map. Frame level alone can't keep
 --- it on top: clicking the map Raise()s it past any fixed level offset, and
 --- a kept-open window isn't the map's child, so nothing else would lift it
 --- back. A higher strata is immune to that. The map's strata can also
 --- change as it opens (windowed/maximised), hence the re-sync on show.
 local function SyncWindowLayer()
-    local mapStrata = WorldMapFrame:GetFrameStrata()
-    local strata = mapStrata
-    for i, s in ipairs(STRATA_ORDER) do
-        if s == mapStrata then strata = STRATA_ORDER[math.min(i + 1, #STRATA_ORDER)] break end
-    end
-    window:SetFrameStrata(strata)
+    window:SetFrameStrata(Config:StrataAbove(WorldMapFrame:GetFrameStrata()))
     window:SetFrameLevel(WorldMapFrame:GetFrameLevel() + 800)
+end
+
+-------------------------------------------------------------------------------
+-- Gamepad
+--
+-- Native gamepad UI only, and only while the map is open with the cave window
+-- up (a kept-open window must not hold these buttons during play: shoulders
+-- and triggers are the action-bar modifiers). Plain override bindings onto
+-- addon-owned buttons, never Blizzard's gamepad binding stack: driving that
+-- from addon code is what taints it. Pan is left to the map cursor's sticks;
+-- zoom is about the window centre. Closing/reopening is the "Toggle cave
+-- window" key binding (Bindings.xml), assignable to a pad button.
+-------------------------------------------------------------------------------
+local PAD_ACTIONS = {
+    PADLSHOULDER = function() StepFloor(-1) end,  -- up a floor
+    PADRSHOULDER = function() StepFloor(1) end,   -- down a floor
+    PADLTRIGGER  = function() ZoomBy(1 / ZOOM_STEP, true) end,
+    PADRTRIGGER  = function() ZoomBy(ZOOM_STEP, true) end,
+    PADRSTICK    = function() ResetViewTransform() end,
+}
+local padOwner
+
+local function SyncGamepadBindings()
+    if InCombatLockdown() then return end  -- retried on PLAYER_REGEN_ENABLED
+    if not padOwner then
+        padOwner = CreateFrame("Frame")
+        padOwner:SetScript("OnEvent", SyncGamepadBindings)
+        padOwner:RegisterEvent("PLAYER_REGEN_ENABLED")
+        for key, fn in pairs(PAD_ACTIONS) do
+            local btn = CreateFrame("Button", "HFWMForeverPad" .. key, padOwner)
+            btn:RegisterForClicks("AnyDown")
+            btn:SetScript("OnClick", fn)
+        end
+    end
+    ClearOverrideBindings(padOwner)
+    if mapOpen and window and window:IsShown() and Config:IsGamepadUI() then
+        for key in pairs(PAD_ACTIONS) do
+            SetOverrideBindingClick(padOwner, false, key, "HFWMForeverPad" .. key)
+        end
+    end
 end
 
 function CaveRenderer:SetMapOpen(open)
     mapOpen = open
+    SyncGamepadBindings()
     if open then
         mapSeen = true
         if window then
@@ -1721,6 +1756,8 @@ local function EnsureWindow()
     -- inside the dialog itself.
     aceWindow:EnableResize(false)
     window:Hide()
+    window:HookScript("OnShow", SyncGamepadBindings)
+    window:HookScript("OnHide", SyncGamepadBindings)
 
     -- Remember placement: the title bar is the drag handle (AceGUI's own
     -- OnMouseUp has already stopped the move by the time this hook runs).
@@ -2470,7 +2507,7 @@ function CaveRenderer:ShowCave(floorMapID)
     -- stops inheriting the map's scale, so that is applied by hand to keep
     -- the window the same size either way.
     local keepOpen = Config.db and Config.db.caveKeepOpen
-    local parent = keepOpen and UIParent or WorldMapFrame
+    local parent = keepOpen and UIParent or Config:MapWidgetParent()
     if window:GetParent() ~= parent then
         window:SetParent(parent)
     end

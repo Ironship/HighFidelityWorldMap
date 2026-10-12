@@ -478,6 +478,15 @@ function Commands:Handle(msg)
         describe("highlight", reference.GetHighlightTexture and reference:GetHighlightTexture())
         describe("disabled", reference.GetDisabledTexture and reference:GetDisabledTexture())
         return
+    elseif cmd == "padzoom" then
+        self:PadZoomDebug()
+        return
+    elseif cmd == "taint" then
+        self:TaintDebug()
+        return
+    elseif cmd == "legend" then
+        self:LegendDebug()
+        return
     elseif cmd == "debug" then
         self:Debug()
         return
@@ -867,6 +876,152 @@ function Commands:Debug()
         print(("  tex[1]: texture=%s  shown=%s  alpha=%.2f  w=%.0f h=%.0f"):format(
             tostring(texFile), tostring(tex:IsShown()), tex:GetAlpha(),
             tex:GetWidth(), tex:GetHeight()))
+    end
+end
+
+--- /hfwm padzoom: why the gamepad map zoom might not move. Prints a state
+--- snapshot (including which fields are tainted, and by whom), then samples
+--- the scroll container for 10 s -- hold the right stick during it.
+function Commands:PadZoomDebug()
+    local sc, wmf = WorldMapFrame.ScrollContainer, WorldMapFrame
+    local function out(fmt, ...) print("|cff33ccffpadzoom|r " .. fmt:format(...)) end
+    local function sec(tbl, key)
+        local ok, by = issecurevariable(tbl, key)
+        return ok and "secure" or ("TAINTED by " .. tostring(by))
+    end
+    local levels = sc.zoomLevels
+    local n = levels and #levels or 0
+    local style = C_InputInterfaceStyle and C_InputInterfaceStyle.GetCurrentStyle()
+    out("build: HFWM %s  IsGamepadUI=%s  rawStyle=%s  mapShown=%s",
+        tostring(C_AddOns.GetAddOnMetadata("HighFidelityWorldMap", "Version")),
+        tostring(Config.IsGamepadUI and Config:IsGamepadUI()), tostring(style),
+        tostring(wmf:IsShown()))
+    out("focus: currentFocus=%s isMapFocused=%s softCursorShown=%s zoomSpeedCVar=%s",
+        tostring(wmf.currentFocus), tostring(wmf.IsMapFocused and wmf:IsMapFocused()),
+        tostring(SoftCursor and SoftCursor:IsShown()), tostring(GetCVar("GamepadMapZoomSpeed")))
+    out("zoom: gamepadZoom=%s speed=%s cur=%s target=%s zoomTarget=%s base=%s levels=%d first=%s last=%s",
+        tostring(sc.gamepadZoom), tostring(sc.gamepadZoomSpeed), tostring(sc.currentScale),
+        tostring(sc.targetScale), tostring(sc.zoomTarget), tostring(sc.baseScale), n,
+        tostring(n > 0 and levels[1].scale), tostring(n > 0 and levels[n].scale))
+    for _, k in ipairs({ "currentScale", "targetScale", "zoomTarget", "baseScale", "zoomLevels",
+        "gamepadZoom", "gamepadZoomSpeed", "OnUpdate", "SetZoomTarget", "InstantPanAndZoom",
+        "GamepadZoom", "SetGamepadZoom", "CreateZoomLevels" }) do
+        out("  sc.%s: %s", k, sec(sc, k))
+    end
+    if n > 0 then
+        out("  zoomLevels[1]: %s   zoomLevels[%d]: %s", sec(levels, 1), n, sec(levels, n))
+        out("  zoomLevels[%d].scale: %s", n, sec(levels[n], "scale"))
+    end
+    for _, k in ipairs({ "GamepadZoom", "currentFocus", "OnMapChanged", "ScrollContainer" }) do
+        out("  WorldMapFrame.%s: %s", k, sec(wmf, k))
+    end
+    out("sampling 10 s: hold the right stick now (lines print only on change)")
+
+    local t, acc, last = 0, 0, ""
+    local f = CreateFrame("Frame")
+    f:SetScript("OnUpdate", function(self, dt)
+        t, acc = t + dt, acc + dt
+        if t > 10 then self:SetScript("OnUpdate", nil) out("sampling done") return end
+        if acc < 0.1 then return end
+        acc = 0
+        local ok, line = pcall(function()
+            return ("gz=%s zooming=%s cur=%.4f tgt=%.4f max=%.4f"):format(
+                tostring(sc.gamepadZoom), tostring(sc:IsGamepadZooming()),
+                sc.currentScale or -1, sc.targetScale or -1,
+                sc.zoomLevels[#sc.zoomLevels].scale)
+        end)
+        line = ok and line or ("ERR " .. tostring(line))
+        if line ~= last then last = line out("t=%.1f %s", t, line) end
+    end)
+end
+
+--- /hfwm legend: dump WorldMapFooterInputLegend (its fields, methods,
+--- children) so the HD/SD pad hint can be written against the real API.
+function Commands:LegendDebug()
+    local function out(fmt, ...) print("|cff33ccfflegend|r " .. fmt:format(...)) end
+    local function keys(t, filter)
+        local ks = {}
+        for k, v in pairs(t) do
+            k = tostring(k)
+            if not filter or filter(k:lower()) then ks[#ks + 1] = k .. "=" .. type(v) end
+        end
+        table.sort(ks)
+        return table.concat(ks, " ")
+    end
+    local L = WorldMapFrame.WorldMapFooterinputLegend
+    local pad = _G.HFWMForeverPadToggle
+    out("IsGamepadUI=%s padBtn=%s mapShown=%s PADRSTICK->%s", tostring(Config:IsGamepadUI()),
+        tostring(pad ~= nil), tostring(WorldMapFrame:IsShown()), tostring(GetBindingAction("PADRSTICK", true)))
+    local function vis(f) return f and ("shown=%s visible=%s alpha=%.2f"):format(tostring(f:IsShown()), tostring(f:IsVisible()), f:GetEffectiveAlpha()) or "nil" end
+    out("focus: currentFocus=%s IsMapFocused=%s softCursorShown=%s",
+        tostring(WorldMapFrame.currentFocus),
+        tostring(WorldMapFrame.IsMapFocused and WorldMapFrame:IsMapFocused()),
+        tostring(_G.SoftCursor and _G.SoftCursor:IsShown()))
+    out("worldMap legend: %s", vis(L))
+    out("questLog legend: %s", vis(WorldMapFrame.QuestLogFooterinputLegend))
+    out("questDetails legend: %s", vis(WorldMapFrame.QuestDetailsFooterinputLegend))
+    -- Focus moves once chat closes, so also sample 15 s and print on change.
+    local t, last = 0, nil
+    local f = CreateFrame("Frame")
+    f:SetScript("OnUpdate", function(self, dt)
+        t = t + dt
+        if t > 15 then self:SetScript("OnUpdate", nil) out("sampling done") return end
+        local wm = WorldMapFrame.WorldMapFooterinputLegend
+        local line = ("focus=%s IsMapFocused=%s soft=%s wmLegend=%s/%s qlLegend=%s qdLegend=%s PADRSTICK->%s"):format(
+            tostring(WorldMapFrame.currentFocus),
+            tostring(WorldMapFrame.IsMapFocused and WorldMapFrame:IsMapFocused()),
+            tostring(_G.SoftCursor and _G.SoftCursor:IsShown()),
+            tostring(wm and wm:IsShown()), tostring(wm and wm:IsVisible()),
+            tostring(WorldMapFrame.QuestLogFooterinputLegend and WorldMapFrame.QuestLogFooterinputLegend:IsVisible()),
+            tostring(WorldMapFrame.QuestDetailsFooterinputLegend and WorldMapFrame.QuestDetailsFooterinputLegend:IsVisible()),
+            tostring(GetBindingAction("PADRSTICK", true)))
+        if line ~= last then last = line out("t=%.1f %s", t, line) end
+    end)
+    -- Prove whether the bound key actually reaches our button.
+    if pad and not pad.hfwmProbe then
+        pad.hfwmProbe = true
+        pad:HookScript("OnClick", function() out("pad button OnClick fired") end)
+        out("probe installed: press R3 on the map now")
+    end
+    out("WorldMapFrame pad/footer fields: %s", keys(WorldMapFrame, function(k)
+        return k:find("pad") or k:find("footer") or k:find("focus") or k:find("button")
+    end))
+    if _G.GamepadPersistentInputLegendMixin then
+        out("GamepadPersistentInputLegendMixin: %s", keys(_G.GamepadPersistentInputLegendMixin))
+    end
+    if _G.GamepadPersistentInputLegendEntryMixin then
+        out("GamepadPersistentInputLegendEntryMixin: %s", keys(_G.GamepadPersistentInputLegendEntryMixin))
+    end
+    if not L then out("WorldMapFooterinputLegend missing") return end
+    out("legend %s shown=%s parent=%s", L:GetObjectType(), tostring(L:IsShown()),
+        tostring(L:GetParent() and L:GetParent():GetName()))
+    out("legend fields: %s", keys(L))
+    for i, child in ipairs({ L:GetChildren() }) do
+        out("child %d: %s shown=%s text=%s", i, child:GetObjectType(), tostring(child:IsShown()),
+            tostring(child.GetText and child:GetText()))
+        out("  fields: %s", keys(child))
+    end
+end
+
+--- /hfwm taint: list the keys on the map's frames that addon code has
+--- written (issecurevariable false). Run it after the ADDON_ACTION_FORBIDDEN
+--- error is seen: whatever Blizzard reads from here taints its later calls.
+function Commands:TaintDebug()
+    local function out(fmt, ...) print("|cff33ccfftaint|r " .. fmt:format(...)) end
+    local sc = WorldMapFrame.ScrollContainer
+    local targets = {
+        WorldMapFrame = WorldMapFrame, ScrollContainer = sc, Child = sc and sc.Child,
+        WorldMapFooterinputLegend = WorldMapFrame.WorldMapFooterinputLegend,
+        SidePanelToggle = WorldMapFrame.SidePanelToggle,
+    }
+    for name, t in pairs(targets) do
+        local bad = {}
+        for k in pairs(t) do
+            local ok, by = issecurevariable(t, k)
+            if not ok then bad[#bad + 1] = tostring(k) .. "<-" .. tostring(by) end
+        end
+        table.sort(bad)
+        out("%s: %s", name, #bad > 0 and table.concat(bad, " ") or "clean")
     end
 end
 

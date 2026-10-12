@@ -240,7 +240,10 @@ local options = {
             type = "toggle",
             name = "Additional zoom levels",
             desc = "Lets the world map zoom eight steps closer than the "
-                .. "client's own maximum.",
+                .. "client's own maximum.\n\n|cffff8800Does not currently work "
+                .. "with the Gamepad UI: its map code uses a different "
+                .. "Blizzard API, and adding zoom levels there causes "
+                .. "taint.|r",
             get = function() return Config.db.additionalZoomLevels end,
             set = function(_, value)
                 Config.db.additionalZoomLevels = value
