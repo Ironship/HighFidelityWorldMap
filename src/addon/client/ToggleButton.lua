@@ -266,7 +266,7 @@ local function CreateButton()
     -- extra width. Fall back to WorldMapFrame on clients that lack the
     -- ScrollContainer field for some reason.
     local mapPane = WorldMapFrame.ScrollContainer or WorldMapFrame
-    button:SetPoint("TOPRIGHT", mapPane, "TOPRIGHT", -2, 0)
+    button:SetPoint("TOPRIGHT", mapPane, "TOPRIGHT", -2, 2)
 
     -- Small gold dot (the stock yellow status indicator) centred on the
     -- button's top-left corner while the blend is strictly between 0% and
