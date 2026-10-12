@@ -5,9 +5,9 @@
 -- Background plus a per-map-type override each for Zone/Continent/World),
 -- the cave map section, and a profiles tab (AceDBOptions-3.0).
 --
--- AceConfigDialog handles the rest: registering into the client's Interface
--- Options (AddToBlizOptions) and drawing the standalone window /hfwm
--- options opens, across every client flavour this addon supports.
+-- AceConfigDialog handles the rest: drawing the client's Interface Options
+-- page (registered by RegisterClientPanel below) and the standalone window
+-- /hfwm options opens, across every client flavour this addon supports.
 -------------------------------------------------------------------------------
 local addonName, ns = ...
 local Options = ns.Options
@@ -658,6 +658,41 @@ local function ShowLogo(frame)
     end)
 end
 
+--- AceConfigDialog:AddToBlizOptions, minus one line: on clients without
+--- C_SettingsUtil.OpenSettingsPanel (Forever) it overwrites the Blizzard
+--- category's ID with the panel name. That addon write taints the Settings
+--- panel, so closing it with the gamepad UI on gets blocked
+--- (ADDON_ACTION_FORBIDDEN SetPreferredGamepadInteractTarget). Nothing here
+--- opens the panel by name, so the client's own ID is kept. The widget is
+--- still listed in AceConfigDialog.BlizOptions so NotifyChange redraws it.
+--- Returns the canvas frame the first time, nil after that.
+local panelGroup
+local function RegisterClientPanel(AceConfigDialog)
+    if panelGroup then return nil end
+    local group = LibStub("AceGUI-3.0"):Create("BlizOptionsGroup")
+    group:SetTitle(PANEL_TITLE)
+    group:SetUserData("appName", addonName)
+    group:SetCallback("OnShow", function(widget)
+        AceConfigDialog:Open(addonName, widget)
+    end)
+    group:SetCallback("OnHide", function(widget)
+        AceConfigDialog:Close(addonName)  -- the standalone window, as upstream does
+        C_Timer.After(0, function()
+            if not widget.frame:IsVisible() then widget:ReleaseChildren() end
+        end)
+    end)
+
+    local category = Settings.RegisterCanvasLayoutCategory(group.frame, PANEL_TITLE)
+    group:SetName(category.ID)
+    Settings.RegisterAddOnCategory(category)
+
+    AceConfigDialog.BlizOptions[addonName] = AceConfigDialog.BlizOptions[addonName] or {}
+    AceConfigDialog.BlizOptions[addonName][addonName] = group
+    AceConfigDialog.BlizOptionsIDMap[PANEL_TITLE] = category.ID
+    panelGroup = group
+    return group.frame
+end
+
 --- Register the options table and hook it into the client's own options
 --- UI. Safe to call more than once.
 function Options:Init()
@@ -676,9 +711,7 @@ function Options:Init()
     local AceConfigDialog = LibStub("AceConfigDialog-3.0")
     -- Standalone window only; the client's options panel sets its own size.
     AceConfigDialog:SetDefaultSize(addonName, 700, 650)
-    local ok, blizFrame = pcall(
-        AceConfigDialog.AddToBlizOptions, AceConfigDialog,
-        addonName, PANEL_TITLE)
+    local ok, blizFrame = pcall(RegisterClientPanel, AceConfigDialog)
     self.clientRegistered = ok
     if ok and blizFrame then ShowLogo(blizFrame) end
 end

@@ -840,11 +840,30 @@ end
 ---@param unit string|nil  defaults to "player"
 ---@return number|nil x, number|nil y  0..1 from the art's top-left
 function CaveTable:GetPlayerPosition(floorID, unit)
-    local floor = self:GetFloor(floorID)
-    if not floor then return nil end
-
     local worldX, worldY = PlayerWorldXY(unit)
     if not worldX then return nil end
+    return self:WorldToFloor(floorID, worldX, worldY)
+end
+
+--- The player's corpse on *floorID*, nil when there is none or it isn't on
+--- this floor's footprint. The baked floors aren't UiMaps, so the corpse is
+--- read off the outdoor zone the player is in and lifted back to world space;
+--- the vector's x is UnitPosition's first return (world Y), as PlayerWorldXY.
+---@return number|nil x, number|nil y  0..1 from the art's top-left
+function CaveTable:GetCorpsePosition(floorID)
+    local zoneMapID = C_Map.GetBestMapForUnit("player")
+    local pos = zoneMapID and C_DeathInfo.GetCorpseMapPosition(zoneMapID)
+    if not pos then return nil end
+    local _, worldPos = C_Map.GetWorldPosFromMapPos(zoneMapID, pos)
+    if not worldPos then return nil end
+    local worldY, worldX = worldPos:GetXY()
+    return self:WorldToFloor(floorID, worldX, worldY)
+end
+
+---@return number|nil x, number|nil y  0..1 from the art's top-left
+function CaveTable:WorldToFloor(floorID, worldX, worldY)
+    local floor = self:GetFloor(floorID)
+    if not floor then return nil end
 
     if floor.place.projection then
         return ProjectPlayerPosition(floor.place.projection, worldX, worldY)

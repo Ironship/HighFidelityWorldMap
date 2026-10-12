@@ -143,6 +143,11 @@ local ZOOM_ANCHOR_EPSILON = 1.5
 local PIN_TEXTURE = "Interface\\Minimap\\MinimapArrow"
 local PIN_SIZE    = 26
 
+-- The world map's own corpse pin (CorpsePinTemplate): POIIcons' tombstone.
+local CORPSE_TEXTURE   = "Interface\\Minimap\\POIIcons"
+local CORPSE_TEXCOORDS = { 0.56640625, 0.6328125, 0.001953125, 0.03515625 }
+local CORPSE_PIN_SIZE  = 24
+
 local PIN_UPDATE_INTERVAL = 0.05  -- 20fps is plenty for a map pin
 
 -- Other group members: a class-coloured dot, like the world map's, ringed in
@@ -176,6 +181,7 @@ local closeBtn      -- the x, in the top-right corner (Ace's own "Close"
 local content       -- clipping frame the tiles and the pin live in
 local canvasScale   -- child of content: zoomed/panned, holds tiles + pin
 local playerPin
+local corpsePin
 local groupPins = {}  -- class-coloured dots for the rest of the group, grown on demand; each fill has its ring at .border
 local function HideGroupPins(from)
     for i = from, #groupPins do
@@ -1441,6 +1447,7 @@ end
 local function ApplyPinScale()
     local inv = 1 / zoomScale
     if playerPin then playerPin:SetSize(PIN_SIZE * inv, PIN_SIZE * inv) end
+    if corpsePin then corpsePin:SetSize(CORPSE_PIN_SIZE * inv, CORPSE_PIN_SIZE * inv) end
     local s = GROUP_PIN_SIZE * inv
     local b = (GROUP_PIN_SIZE + 2 * GROUP_PIN_BORDER) * inv
     for _, pin in ipairs(groupPins) do
@@ -1647,6 +1654,11 @@ local function PositionWindow()
         -- its rect while hidden), so the window's top edge is the map's.
         pinnedTo = WorldMapFrame
         window:SetPoint("TOPLEFT", WorldMapFrame, "TOPLEFT", 0, 0)
+    elseif Config.db and Config.db.cavePlacement ~= "inside" then
+        -- Outside the pane (also "remember" before any drag): top-left of
+        -- the cave window on the map's top-right, beside the map frame.
+        pinnedTo = WorldMapFrame
+        window:SetPoint("TOPLEFT", WorldMapFrame, "TOPRIGHT", PIN_GAP, 0)
     else
         pinnedTo = WorldMapFrame
         -- Inside the pane: bottom-right of the cave window sits on the
@@ -1852,6 +1864,13 @@ local function EnsureWindow()
     playerPin:SetTexture(PIN_TEXTURE)
     playerPin:SetSize(PIN_SIZE, PIN_SIZE)
     playerPin:Hide()
+
+    -- Below the player arrow and the group dots (sublevels 5-7).
+    corpsePin = canvasScale:CreateTexture(nil, "OVERLAY", nil, 4)
+    corpsePin:SetTexture(CORPSE_TEXTURE)
+    corpsePin:SetTexCoord(unpack(CORPSE_TEXCOORDS))
+    corpsePin:SetSize(CORPSE_PIN_SIZE, CORPSE_PIN_SIZE)
+    corpsePin:Hide()
 
     PositionWindow()
     ResetView:HookFrame(window, function(_, button)
@@ -2164,6 +2183,22 @@ local function UpdateGroupPins()
     HideGroupPins(used + 1)
 end
 
+--- The player's corpse, on the displayed floor (same footprint test as the
+--- group dots, for the same reason: no Z to say which floor it's on).
+local function UpdateCorpsePin()
+    if not UnitIsDeadOrGhost("player") then corpsePin:Hide() return end
+    local floorID = Config.caveCurrentFloorMapID or ns.Cave:GetCurrentFloorMapID()
+    local x, y = ns.Cave:GetCorpseMapXY(floorID)
+    local w, h = canvasScale:GetSize()
+    if not x or not y or (x == 0 and y == 0) or w <= 0 or h <= 0 then
+        corpsePin:Hide()
+        return
+    end
+    corpsePin:ClearAllPoints()
+    corpsePin:SetPoint("CENTER", canvasScale, "TOPLEFT", x * w, -(y * h))
+    corpsePin:Show()
+end
+
 local pinAccum = 0
 local function OnWindowUpdate(_, elapsed)
     if not Config.caveOverlayActive then return end
@@ -2172,6 +2207,7 @@ local function OnWindowUpdate(_, elapsed)
     pinAccum = 0
     UpdatePlayerPin()
     UpdateGroupPins()
+    UpdateCorpsePin()
 end
 
 -------------------------------------------------------------------------------
@@ -2683,6 +2719,7 @@ function CaveRenderer:HideCave()
     if not window then return end
     PoolReleaseAll()  -- also wipes continuousTileGroups and continuousPieceGroups
     if playerPin then playerPin:Hide() end
+    if corpsePin then corpsePin:Hide() end
     HideGroupPins(1)
     window:SetScript("OnUpdate", nil)
     window:Hide()

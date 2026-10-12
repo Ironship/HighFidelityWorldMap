@@ -222,6 +222,12 @@ ClientSource = {
         return pos:GetXY()
     end,
 
+    CorpsePosition = function(floorMapID)
+        local pos = C_DeathInfo.GetCorpseMapPosition(floorMapID)
+        if not pos then return nil end
+        return pos:GetXY()
+    end,
+
     --- C_Map has no notion of floors sharing a baked canvas: every real
     --- dungeon floor is its own distinct art layer, so the client source
     --- never offers continuous crossfade.
@@ -307,6 +313,10 @@ BakedSource = {
 
     PlayerPosition = function(floorID, unit)
         return ns.CaveTable:GetPlayerPosition(floorID, unit)
+    end,
+
+    CorpsePosition = function(floorID)
+        return ns.CaveTable:GetCorpsePosition(floorID)
     end,
 
     ContinuousDepth = function(floorID)
@@ -467,6 +477,14 @@ end
 function Cave:GetPlayerMapXY(floorMapID, unit)
     if not floorMapID then return nil end
     return self:GetSource().PlayerPosition(floorMapID, unit)
+end
+
+--- The player's corpse within a floor's art, same space as GetPlayerMapXY;
+--- nil when there is no corpse on that floor.
+---@return number|nil x, number|nil y
+function Cave:GetCorpseMapXY(floorMapID)
+    if not floorMapID then return nil end
+    return self:GetSource().CorpsePosition(floorMapID)
 end
 
 --- Should CaveRenderer crossfade this floor's place continuously as the

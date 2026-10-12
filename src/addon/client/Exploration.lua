@@ -257,11 +257,14 @@ function Exploration:SetVisible(visible)
                 end
             end
         end
-        if Config:IsGamepadUI() then
+        if Config:IsGamepadUI() or InCombatLockdown() then
             -- Gamepad UI: RefreshAllDataProviders / RemoveAllData called from
             -- addon code run every provider tainted, and the pins, pools and
             -- scroll state they write then taint Blizzard's gamepad focus and
             -- binding flows. Pins are only hidden/shown here, never rebuilt.
+            -- Combat: the refresh reacquires pins, and AcquirePin calls the
+            -- combat-protected SetPassThroughButtons from our tainted stack
+            -- (ADDON_ACTION_BLOCKED).
         elseif WorldMapFrame.RefreshAllDataProviders then
             WorldMapFrame:RefreshAllDataProviders()
         elseif WorldMapFrame.dataProviders then
@@ -324,7 +327,7 @@ function Exploration:EnumerateOverlayTextures()
 
     HookDPs()
 
-    if Config:IsGamepadUI() then
+    if Config:IsGamepadUI() or InCombatLockdown() then
         -- see SetVisible: no refresh from addon code; reads what is there.
     elseif WorldMapFrame.RefreshAllDataProviders then
         WorldMapFrame:RefreshAllDataProviders()
