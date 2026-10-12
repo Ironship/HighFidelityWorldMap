@@ -67,6 +67,7 @@ function addon:OnEnable()
     end
 
     WorldMapFrame:HookScript("OnShow", function()
+        Config.caveEscHidden = false
         CaveRenderer:SetMapOpen(true)
         Config.lastMapID = nil
         Renderer:Refresh(true)
@@ -76,6 +77,22 @@ function addon:OnEnable()
         CaveRenderer:SetMapOpen(false)
     end)
     CaveRenderer:SetMapOpen(WorldMapFrame:IsShown() and true or false)
+    -- ESC, when no other panes are open, reaches the game menu. The cave
+    -- window slots in ahead of it there -- the same place in the close
+    -- order the Toggle Game Menu key works through: if the cave window is
+    -- the last pane standing, ESC closes it (and does not open the menu,
+    -- one press one action). With other panes up, the client closes those
+    -- first and the game menu (this hook) never fires.
+    if GameMenuFrame then
+        GameMenuFrame:HookScript("OnShow", function()
+            if not CaveRenderer:IsShown() then return end
+            HideUIPanel(GameMenuFrame)
+            -- Just hide it: no suppression and no Remember State write, so
+            -- reopening the map brings the window back as it was.
+            Config.caveEscHidden = true
+            CaveRenderer:HideCave()
+        end)
+    end
     -- Character sheet and other side panels: the kept-open cave window
     -- moves aside rather than sit under them.
     hooksecurefunc("ShowUIPanel", function() CaveRenderer:Repin() end)

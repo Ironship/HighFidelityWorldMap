@@ -795,6 +795,7 @@ function Cave:UpdateState()
         -- the first leave-and-return.
         Config.caveSuppressedKey = nil
         Config.caveDecidedKey    = nil
+        Config.caveEscHidden     = false
         if Config.caveOverlayActive then ns.CaveRenderer:HideCave() end
         ns.CaveRenderer:SetReopenAvailable(false)
         return
@@ -841,6 +842,10 @@ function Cave:UpdateState()
     end
 
     ns.CaveRenderer:SetReopenAvailable(false)
+
+    -- Hidden by ESC: stay down (no reopen icon either) until the world map
+    -- is next shown, which clears the flag.
+    if Config.caveEscHidden then return end
 
     -- Follow the player between floors, unless they have taken the depth
     -- slider off automatic.
