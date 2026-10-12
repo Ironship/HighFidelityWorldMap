@@ -251,7 +251,12 @@ function Exploration:SetVisible(visible)
                 end
             end
         end
-        if WorldMapFrame.RefreshAllDataProviders then
+        if Config:IsGamepadUI() then
+            -- Gamepad UI: RefreshAllDataProviders / RemoveAllData called from
+            -- addon code run every provider tainted, and the pins, pools and
+            -- scroll state they write then taint Blizzard's gamepad focus and
+            -- binding flows. Pins are only hidden/shown here, never rebuilt.
+        elseif WorldMapFrame.RefreshAllDataProviders then
             WorldMapFrame:RefreshAllDataProviders()
         elseif WorldMapFrame.dataProviders then
             for dp in next, WorldMapFrame.dataProviders do
@@ -265,7 +270,7 @@ function Exploration:SetVisible(visible)
         -- a pin we could not reach above.  No-op once flags are cleared.
         ForEachPin(RestoreMouse, true)
     else
-        if WorldMapFrame.dataProviders then
+        if WorldMapFrame.dataProviders and not Config:IsGamepadUI() then
             for dp in next, WorldMapFrame.dataProviders do
                 if IsExplorationDP(dp) and dp.RemoveAllData then
                     dp:RemoveAllData()
@@ -313,7 +318,9 @@ function Exploration:EnumerateOverlayTextures()
 
     HookDPs()
 
-    if WorldMapFrame.RefreshAllDataProviders then
+    if Config:IsGamepadUI() then
+        -- see SetVisible: no refresh from addon code; reads what is there.
+    elseif WorldMapFrame.RefreshAllDataProviders then
         WorldMapFrame:RefreshAllDataProviders()
     elseif WorldMapFrame.dataProviders then
         for dp in next, WorldMapFrame.dataProviders do

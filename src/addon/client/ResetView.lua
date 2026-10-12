@@ -24,7 +24,7 @@ local C_Map          = _G.C_Map
 --- Reset the world map's zoom/pan to the fitted view of the map currently shown.
 local function ResetMapView()
     local sc = WorldMapFrame.ScrollContainer
-    if not sc then return end
+    if not sc or ns.Config:IsGamepadUI() then return end  -- see MapMemory's Enabled
 
     -- zoomLevels[1] is always the loosest (fit-to-frame) step on the
     -- ladder -- see ZoomLevels.lua's own read of the *last* entry for the
@@ -57,6 +57,7 @@ local function PlayerZoneMapID()
 end
 
 local function SnapToCurrentZone()
+    if ns.Config:IsGamepadUI() then return end  -- SetMapID from addon code; see MapMemory's Enabled
     local mapID = PlayerZoneMapID()
     if mapID and WorldMapFrame:GetMapID() ~= mapID then
         pcall(WorldMapFrame.SetMapID, WorldMapFrame, mapID)

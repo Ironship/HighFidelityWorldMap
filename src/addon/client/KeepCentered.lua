@@ -50,7 +50,9 @@ local TAU = 0.035
 local EPSILON = 1e-4
 
 local function OnUpdate(_, elapsed)
-    if not Config.db.keepCentered then return end
+    -- Off under the gamepad UI: its per-frame InstantPanAndZoom taints the
+    -- scroll container (see MapMemory's Enabled).
+    if not Config.db.keepCentered or Config:IsGamepadUI() then return end
 
     local sc = WorldMapFrame.ScrollContainer
     local mapID = WorldMapFrame:GetMapID()

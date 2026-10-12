@@ -1508,13 +1508,15 @@ end
 --- the wrong content: each one just asks "where does zoomAnchorX land at
 --- this new scale" and answers it fresh.
 ---@param factor number
-local function ZoomBy(factor)
+---@param centered boolean|nil  anchor on the window's centre, not the cursor (gamepad has no cursor over the art)
+local function ZoomBy(factor, centered)
     if not content or not canvasScale then return end
     if contentW <= 0 or contentH <= 0 then return end
     local newScale = math.max(MIN_ZOOM, math.min(MAX_ZOOM, zoomScale * factor))
     if newScale == zoomScale then return end
 
-    local cx, cy = ContentCursorXY()
+    local cx, cy
+    if centered then cx, cy = contentW / 2, -contentH / 2 else cx, cy = ContentCursorXY() end
     -- Only re-sample the anchor if the cursor moved since it was last set;
     -- see the module comment above zoomAnchorX.
     if not zoomAnchorX
@@ -1690,8 +1692,49 @@ local function SyncWindowLayer()
     window:SetFrameLevel(WorldMapFrame:GetFrameLevel() + 800)
 end
 
+-------------------------------------------------------------------------------
+-- Gamepad
+--
+-- Native gamepad UI only, and only while the map is open with the cave window
+-- up (a kept-open window must not hold these buttons during play: shoulders
+-- and triggers are the action-bar modifiers). Plain override bindings onto
+-- addon-owned buttons, never Blizzard's gamepad binding stack: driving that
+-- from addon code is what taints it. Pan is left to the map cursor's sticks;
+-- zoom is about the window centre. Closing/reopening is the "Toggle cave
+-- window" key binding (Bindings.xml), assignable to a pad button.
+-------------------------------------------------------------------------------
+local PAD_ACTIONS = {
+    PADLSHOULDER = function() StepFloor(-1) end,  -- up a floor
+    PADRSHOULDER = function() StepFloor(1) end,   -- down a floor
+    PADLTRIGGER  = function() ZoomBy(1 / ZOOM_STEP, true) end,
+    PADRTRIGGER  = function() ZoomBy(ZOOM_STEP, true) end,
+    PADRSTICK    = function() ResetViewTransform() end,
+}
+local padOwner
+
+local function SyncGamepadBindings()
+    if InCombatLockdown() then return end  -- retried on PLAYER_REGEN_ENABLED
+    if not padOwner then
+        padOwner = CreateFrame("Frame")
+        padOwner:SetScript("OnEvent", SyncGamepadBindings)
+        padOwner:RegisterEvent("PLAYER_REGEN_ENABLED")
+        for key, fn in pairs(PAD_ACTIONS) do
+            local btn = CreateFrame("Button", "HFWMForeverPad" .. key, padOwner)
+            btn:RegisterForClicks("AnyDown")
+            btn:SetScript("OnClick", fn)
+        end
+    end
+    ClearOverrideBindings(padOwner)
+    if mapOpen and window and window:IsShown() and Config:IsGamepadUI() then
+        for key in pairs(PAD_ACTIONS) do
+            SetOverrideBindingClick(padOwner, false, key, "HFWMForeverPad" .. key)
+        end
+    end
+end
+
 function CaveRenderer:SetMapOpen(open)
     mapOpen = open
+    SyncGamepadBindings()
     if open then
         mapSeen = true
         if window then
@@ -1721,6 +1764,8 @@ local function EnsureWindow()
     -- inside the dialog itself.
     aceWindow:EnableResize(false)
     window:Hide()
+    window:HookScript("OnShow", SyncGamepadBindings)
+    window:HookScript("OnHide", SyncGamepadBindings)
 
     -- Remember placement: the title bar is the drag handle (AceGUI's own
     -- OnMouseUp has already stopped the move by the time this hook runs).

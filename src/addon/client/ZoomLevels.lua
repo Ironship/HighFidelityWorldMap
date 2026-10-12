@@ -51,12 +51,11 @@ local function Enabled()
     return Config.db and Config.db.additionalZoomLevels
 end
 
---- Post-hook target for ScrollContainer:CreateZoomLevels(). Appends
---- EXTRA_STEPS further levels onto whatever ladder Blizzard just rebuilt,
---- each further zoomed in than the last, all pointing at the same layer
---- index Blizzard's own final level used.
----@param sc table the ScrollContainer instance (its own `self`)
-local function ExtendZoomLevels(sc)
+--- Blizzard's last zoom level and the step ratio to continue it with, or
+--- nil when extra levels don't apply to the map being shown.
+---@param sc table the ScrollContainer
+---@return table|nil lastLevel, number|nil ratio
+local function LadderTail(sc)
     if not Enabled() then return end
 
     -- Continent and world maps only have art worth zooming into when High
@@ -76,7 +75,25 @@ local function ExtendZoomLevels(sc)
         local r = lastLevel.scale / levels[lastIdx - 1].scale
         if r > 1 then ratio = r end
     end
+    return lastLevel, ratio
+end
 
+--- Post-hook target for ScrollContainer:CreateZoomLevels(). Appends
+--- EXTRA_STEPS further levels onto whatever ladder Blizzard just rebuilt,
+--- each further zoomed in than the last, all pointing at the same layer
+--- index Blizzard's own final level used.
+---@param sc table the ScrollContainer instance (its own `self`)
+local function ExtendZoomLevels(sc)
+    -- Off under the gamepad UI: any entry added to Blizzard's zoomLevels is
+    -- tainted, the map's own focus/binding flows then read it (via
+    -- GetScaleForMaxZoom) and run tainted, and the stick-zoom binding stops
+    -- firing. Verified with /hfwm padzoom: gamepadZoom stays 0. The stick
+    -- gets its extra range from PadZoom below instead.
+    if Config:IsGamepadUI() then return end
+    local lastLevel, ratio = LadderTail(sc)
+    if not lastLevel then return end
+
+    local levels = sc.zoomLevels
     local scale = lastLevel.scale
     for _ = 1, EXTRA_STEPS do
         scale = scale * ratio
@@ -84,6 +101,80 @@ local function ExtendZoomLevels(sc)
             scale = scale,
             layerIndex = lastLevel.layerIndex,
         }
+    end
+end
+
+-------------------------------------------------------------------------------
+-- Gamepad (native Gamepad UI) zoom past Blizzard's last step
+--
+-- Blizzard's stick zoom (ScrollContainer:OnUpdate) is continuous and clamps
+-- at the ladder's last entry. The ladder can't be extended under the Gamepad
+-- UI (see ExtendZoomLevels), so the ladder is left alone and this takes the
+-- zoom over only while it is beyond that last step: once the stick pushes at
+-- the top, Blizzard's own zoom velocity is parked here and applied with
+-- InstantPanAndZoom (the same call Blizzard's OnUpdate makes, zoom centred on
+-- the map cursor), up to the ceiling the mouse ladder would reach. Coming
+-- back down, control returns to Blizzard the moment the scale is back at its
+-- last step. Below that point nothing here runs, so Blizzard's own zoom is
+-- untouched.
+-------------------------------------------------------------------------------
+local EPS = 1e-4
+local padVel = 0  -- stick zoom velocity (scale units / s) while this owns the zoom
+
+--- Park Blizzard's zoom velocity here when it is pushing at, or past, the
+--- last step.
+local function PadTakeOver(sc)
+    if not Config:IsGamepadUI() then return end
+    local v, scale = sc.gamepadZoom, sc.currentScale
+    if not v or v == 0 or not scale then return end
+    local last = LadderTail(sc)
+    if not last then return end
+    if scale > last.scale + EPS or (v > 0 and scale >= last.scale - EPS) then
+        padVel = v
+        sc.gamepadZoom = 0
+    end
+end
+
+--- After every stick callback (SetGamepadZoom / GamepadZoom, the latter also
+--- from ClearBindings): a release (0) ends our zoom too.
+local function PadOnStick(sc)
+    if sc.gamepadZoom == 0 then padVel = 0 end
+    PadTakeOver(sc)
+end
+
+local function PadUpdate(_, elapsed)
+    local sc = WorldMapFrame.ScrollContainer
+    if not Config:IsGamepadUI() then padVel = 0 return end
+    PadTakeOver(sc)
+    if padVel == 0 then return end
+
+    local scale = sc.currentScale
+    local last, ratio = LadderTail(sc)
+    if not (scale and last) then return end
+
+    local ceiling = last.scale * ratio ^ EXTRA_STEPS
+    -- Blizzard's velocity is linear in scale, so over this much longer range
+    -- it would crawl. Make it proportional to the current scale instead
+    -- (constant relative speed), with gain 1 exactly at Blizzard's last step
+    -- so the speed carries on from where Blizzard's own zoom left off with
+    -- no jump. Raise/lower the multiplier to taste.
+    local gain = scale / last.scale
+    local new = math.min(ceiling, scale + padVel * gain * elapsed)
+    local release = new <= last.scale + EPS
+    if release then new = last.scale end
+
+    -- Same cursor-centred pan Blizzard's OnUpdate computes for its zoom.
+    local ok = pcall(function()
+        local cx, cy = sc:GetGamepadCursorPosition()
+        local nx = sc:NormalizeHorizontalSize(cx / scale - sc.Child:GetLeft())
+        local ny = sc:NormalizeVerticalSize(sc.Child:GetTop() - cy / scale)
+        sc:InstantPanAndZoom(new, nx, ny)
+    end)
+    if release or not ok then
+        -- Back at Blizzard's last step (or something went wrong): hand the
+        -- stick's velocity back so its own zoom carries on from here.
+        sc.gamepadZoom = ok and padVel or 0
+        padVel = 0
     end
 end
 
@@ -95,7 +186,7 @@ end
 --- shorter the view is left zoomed past the new maximum: snap it back.
 function ZoomLevels:Refresh()
     local sc = WorldMapFrame.ScrollContainer
-    if not (sc and sc.CreateZoomLevels) then return end
+    if not (sc and sc.CreateZoomLevels) or Config:IsGamepadUI() then return end
     pcall(sc.CreateZoomLevels, sc)
 
     local levels = sc.zoomLevels
@@ -115,4 +206,12 @@ function ZoomLevels:Start()
         return  -- no zoom-ladder API on this client at all; nothing to extend
     end
     hooksecurefunc(sc, "CreateZoomLevels", ExtendZoomLevels)
+
+    if sc.SetGamepadZoom and sc.GamepadZoom then
+        hooksecurefunc(sc, "SetGamepadZoom", PadOnStick)
+        hooksecurefunc(sc, "GamepadZoom", PadOnStick)
+        local f = CreateFrame("Frame", nil, WorldMapFrame)
+        f:SetScript("OnUpdate", PadUpdate)
+        f:SetScript("OnHide", function() padVel = 0 end)
+    end
 end

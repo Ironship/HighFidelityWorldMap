@@ -478,6 +478,9 @@ function Commands:Handle(msg)
         describe("highlight", reference.GetHighlightTexture and reference:GetHighlightTexture())
         describe("disabled", reference.GetDisabledTexture and reference:GetDisabledTexture())
         return
+    elseif cmd == "padzoom" then
+        self:PadZoomDebug()
+        return
     elseif cmd == "debug" then
         self:Debug()
         return
@@ -868,6 +871,62 @@ function Commands:Debug()
             tostring(texFile), tostring(tex:IsShown()), tex:GetAlpha(),
             tex:GetWidth(), tex:GetHeight()))
     end
+end
+
+--- /hfwm padzoom: why the gamepad map zoom might not move. Prints a state
+--- snapshot (including which fields are tainted, and by whom), then samples
+--- the scroll container for 10 s -- hold the right stick during it.
+function Commands:PadZoomDebug()
+    local sc, wmf = WorldMapFrame.ScrollContainer, WorldMapFrame
+    local function out(fmt, ...) print("|cff33ccffpadzoom|r " .. fmt:format(...)) end
+    local function sec(tbl, key)
+        local ok, by = issecurevariable(tbl, key)
+        return ok and "secure" or ("TAINTED by " .. tostring(by))
+    end
+    local levels = sc.zoomLevels
+    local n = levels and #levels or 0
+    local style = C_InputInterfaceStyle and C_InputInterfaceStyle.GetCurrentStyle()
+    out("build: HFWM %s  IsGamepadUI=%s  rawStyle=%s  mapShown=%s",
+        tostring(C_AddOns.GetAddOnMetadata("HighFidelityWorldMap", "Version")),
+        tostring(Config.IsGamepadUI and Config:IsGamepadUI()), tostring(style),
+        tostring(wmf:IsShown()))
+    out("focus: currentFocus=%s isMapFocused=%s softCursorShown=%s zoomSpeedCVar=%s",
+        tostring(wmf.currentFocus), tostring(wmf.IsMapFocused and wmf:IsMapFocused()),
+        tostring(SoftCursor and SoftCursor:IsShown()), tostring(GetCVar("GamepadMapZoomSpeed")))
+    out("zoom: gamepadZoom=%s speed=%s cur=%s target=%s zoomTarget=%s base=%s levels=%d first=%s last=%s",
+        tostring(sc.gamepadZoom), tostring(sc.gamepadZoomSpeed), tostring(sc.currentScale),
+        tostring(sc.targetScale), tostring(sc.zoomTarget), tostring(sc.baseScale), n,
+        tostring(n > 0 and levels[1].scale), tostring(n > 0 and levels[n].scale))
+    for _, k in ipairs({ "currentScale", "targetScale", "zoomTarget", "baseScale", "zoomLevels",
+        "gamepadZoom", "gamepadZoomSpeed", "OnUpdate", "SetZoomTarget", "InstantPanAndZoom",
+        "GamepadZoom", "SetGamepadZoom", "CreateZoomLevels" }) do
+        out("  sc.%s: %s", k, sec(sc, k))
+    end
+    if n > 0 then
+        out("  zoomLevels[1]: %s   zoomLevels[%d]: %s", sec(levels, 1), n, sec(levels, n))
+        out("  zoomLevels[%d].scale: %s", n, sec(levels[n], "scale"))
+    end
+    for _, k in ipairs({ "GamepadZoom", "currentFocus", "OnMapChanged", "ScrollContainer" }) do
+        out("  WorldMapFrame.%s: %s", k, sec(wmf, k))
+    end
+    out("sampling 10 s: hold the right stick now (lines print only on change)")
+
+    local t, acc, last = 0, 0, ""
+    local f = CreateFrame("Frame")
+    f:SetScript("OnUpdate", function(self, dt)
+        t, acc = t + dt, acc + dt
+        if t > 10 then self:SetScript("OnUpdate", nil) out("sampling done") return end
+        if acc < 0.1 then return end
+        acc = 0
+        local ok, line = pcall(function()
+            return ("gz=%s zooming=%s cur=%.4f tgt=%.4f max=%.4f"):format(
+                tostring(sc.gamepadZoom), tostring(sc:IsGamepadZooming()),
+                sc.currentScale or -1, sc.targetScale or -1,
+                sc.zoomLevels[#sc.zoomLevels].scale)
+        end)
+        line = ok and line or ("ERR " .. tostring(line))
+        if line ~= last then last = line out("t=%.1f %s", t, line) end
+    end)
 end
 
 --- Register /hfwm and /hfwmforever through AceConsole-3.0.

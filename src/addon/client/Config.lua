@@ -578,6 +578,16 @@ function Config:WorldFogOfWarEnabled(mapID)
     return false
 end
 
+--- Is the client's native gamepad UI (Options > Gamepad > Enable Gamepad UI)
+--- the active input style? Same test Blizzard's own InputUtil makes. False
+--- on any client without the API.
+---@return boolean
+function Config:IsGamepadUI()
+    return C_InputInterfaceStyle ~= nil
+        and C_InputInterfaceStyle.GetCurrentStyle()
+            == Enum.InputDeviceInterfaceType.Gamepad
+end
+
 --- Is the HD/SD slider (ToggleButton's right-click popup) below 100%? Then
 --- the overlay is drawn at that alpha over Blizzard's own stock map, left
 --- visible underneath, so the result is an exact HD/SD mix. Renderer's
