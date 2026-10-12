@@ -49,11 +49,6 @@ local AceGUI       = LibStub("AceGUI-3.0")
 -------------------------------------------------------------------------------
 -- Geometry
 -------------------------------------------------------------------------------
---- The square a small standalone frame's corner ornaments are drawn in
---- (see StyleBox, still used by the reopen icon): below roughly twice this
---- in either dimension, opposite corners would cross over each other, so
---- StyleBox skips the ornate border below that floor instead.
-local BORDER_ART   = 32
 --- AceGUI-3.0's "Frame" container widget (see EnsureWindow) reserves a
 --- fixed amount of its own chrome -- title bar, status bar, border --
 --- around the content region it hands back via `.content`. Mirrored here
@@ -402,106 +397,6 @@ end
 -- Small widget helpers
 -------------------------------------------------------------------------------
 
---- The game's own dialog-box border: the thick ornate gold-scroll frame
---- used on every popup dialog, the Game Menu, and confirmation windows.
---- The "metal border" look, not the thin tooltip hairline this used to
---- point at. Same two file names FrameXML has used since vanilla:
---- Interface\DialogFrame\UI-DialogBox-Border (edge) and
---- Interface\DialogFrame\UI-DialogBox-Background (tiled backing). Built
---- from those exact file paths rather than an assumed global, since unlike
---- the tooltip backdrop this one isn't reliably exposed as a ready-made
---- global table on every client.
-local DIALOG_BACKDROP = {
-    bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-    tile     = true,
-    tileSize = 32,
-    edgeSize = 32,
-    insets   = { left = 11, right = 12, top = 12, bottom = 11 },
-}
-
---- Bronze/gold hand-drawn fallback for a client old enough to lack
---- BackdropTemplate entirely (pre-8.0). Kept only so nothing goes fully
---- borderless on such a client; not the default treatment any more.
-local BORDER_BRONZE = { 0.45, 0.34, 0.16, 1 }
-local BORDER_GOLD    = { 0.80, 0.64, 0.32, 1 }
-
-local function StyleBoxFallback(frame, r, g, b, a)
-    local bg = frame:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints(frame)
-    bg:SetColorTexture(r or 0.07, g or 0.055, b or 0.03, a or 0.94)
-
-    for _, edge in ipairs({
-        -- side1, side2, width, height, inward-x, inward-y (for the inner
-        -- hairline, one pixel toward the frame's centre from the outer line)
-        { "TOPLEFT", "TOPRIGHT", nil, 1, 0, -1 },
-        { "BOTTOMLEFT", "BOTTOMRIGHT", nil, 1, 0, 1 },
-        { "TOPLEFT", "BOTTOMLEFT", 1, nil, 1, 0 },
-        { "TOPRIGHT", "BOTTOMRIGHT", 1, nil, -1, 0 },
-    }) do
-        local outer = frame:CreateTexture(nil, "BORDER", nil, 0)
-        outer:SetColorTexture(unpack(BORDER_BRONZE))
-        outer:SetPoint(edge[1], frame, edge[1])
-        outer:SetPoint(edge[2], frame, edge[2])
-        if edge[3] then outer:SetWidth(edge[3]) end
-        if edge[4] then outer:SetHeight(edge[4]) end
-
-        local inner = frame:CreateTexture(nil, "BORDER", nil, 1)
-        inner:SetColorTexture(unpack(BORDER_GOLD))
-        inner:SetPoint(edge[1], frame, edge[1], edge[5], edge[6])
-        inner:SetPoint(edge[2], frame, edge[2], edge[5], edge[6])
-        if edge[3] then inner:SetWidth(edge[3]) end
-        if edge[4] then inner:SetHeight(edge[4]) end
-    end
-    return bg
-end
-
---- Give `frame` the game's own ornate dialog border (DIALOG_BACKDROP), or,
---- lacking BackdropTemplate entirely, the hand-drawn StyleBoxFallback.
----
---- Used only by the reopen icon now: the cave window gets Forever's
---- GameMenuFrame chrome instead (see ApplyGameMenuChrome).
----
---- DIALOG_BACKDROP's edgeSize (32px) is art sized for a whole window. On a
---- frame smaller than roughly twice that in either dimension, opposite
---- corners cross over each other and there is nothing left for a straight
---- edge to span -- exactly what the reopen icon's border hit before this
---- guard existed -- so below that floor this skips straight to
---- StyleBoxFallback's hairline instead, which has no minimum size and is
---- still the same BORDER_GOLD used everywhere else here.
----
---- A frame with no width/height yet (not yet laid out) is treated as
---- "plenty of room" rather than failing the size check.
-local function StyleBox(frame, r, g, b, a)
-    local w, h = frame:GetWidth(), frame:GetHeight()
-    local sizeKnown = w and w > 0 and h and h > 0
-    local roomForOrnateBorder = (not sizeKnown)
-        or (w >= BORDER_ART * 2 and h >= BORDER_ART * 2)
-
-    if roomForOrnateBorder then
-        if not frame.SetBackdrop and BackdropTemplateMixin then
-            Mixin(frame, BackdropTemplateMixin)
-        end
-        if frame.SetBackdrop then
-            local backdrop, borderColor = DIALOG_BACKDROP, BORDER_GOLD
-            if WorldMapFrame and WorldMapFrame.GetBackdrop then
-                local ok, live = pcall(WorldMapFrame.GetBackdrop, WorldMapFrame)
-                if ok and live then
-                    backdrop = live
-                    local okColor, br, bgc, bb, ba =
-                        pcall(WorldMapFrame.GetBackdropBorderColor, WorldMapFrame)
-                    borderColor = (okColor and br) and { br, bgc, bb, ba } or { 1, 1, 1, 1 }
-                end
-            end
-            frame:SetBackdrop(backdrop)
-            frame:SetBackdropColor(r or 0.05, g or 0.05, b or 0.05, a or 0.9)
-            frame:SetBackdropBorderColor(unpack(borderColor))
-            return frame
-        end
-    end
-    return StyleBoxFallback(frame, r, g, b, a)
-end
-
 local ACE_HEADER_FDID = 131080  -- Interface\DialogFrame\UI-DialogBox-Header, as AceGUI-3.0 sets it
 local DIALOG_FILL = "Interface\\DialogFrame\\UI-DialogBox-Background"  -- DialogBorderTemplate's Bg
 
@@ -601,11 +496,6 @@ function CaveRenderer:DebugPan()
         shown = content:IsShown(), visible = content:IsVisible(),
     }
 end
-
--- Exposed so other modules (currently ToggleButton) can give their own
--- small buttons the exact same gold-trimmed look as the cave window and
--- its reopen icon, instead of duplicating this border logic.
-CaveRenderer.StyleBox = StyleBox
 
 --- CreateFrame against the first template that actually exists. Same reason
 --- as in Options.lua: CreateFrame *errors* on an unknown template rather than
@@ -1375,11 +1265,10 @@ end
 -- in the bottom-right of the map, above the side-panel toggle's open
 -- button, and reappears whenever Cave.lua has a cave available but closed.
 -------------------------------------------------------------------------------
-local REOPEN_BTN_SIZE = 28
--- How far the icon art sits inside the button's edge, so StyleBox's border
--- (drawn on the button itself, behind the icon) actually shows instead of
--- being covered edge-to-edge by the icon texture.
-local REOPEN_ICON_INSET = 4
+-- Sized so the Dialog border's corner art (32px-ish) doesn't overlap itself,
+-- with the icon inset to sit inside that border.
+local REOPEN_BTN_SIZE = 44
+local REOPEN_ICON_INSET = 10
 
 local function EnsureReopenButton()
     if reopenBtn then return end
@@ -1406,13 +1295,16 @@ local function EnsureReopenButton()
         btn:SetPoint("BOTTOMRIGHT", WorldMapFrame, "BOTTOMRIGHT", -8, 40)
     end
 
-    -- Same trim the cave window itself gets (StyleBox), sized down: at this
-    -- button's fixed 28x28, StyleBox's own size guard steers it to the
-    -- hairline variant rather than the full corner art, so it comes out as
-    -- a clean thin gold edge instead of overlapping corner pieces. Same
-    -- colour and same function as the window, just the size-appropriate
-    -- path through it.
-    StyleBox(btn, 0.06, 0.05, 0.03, 0.95)
+    -- Same chrome as the cave window itself (ApplyGameMenuChrome): the
+    -- Dialog nine-slice border over the tiled dialog fill.
+    local fill = btn:CreateTexture(nil, "BACKGROUND", nil, -8)
+    fill:SetTexture(DIALOG_FILL, "REPEAT", "REPEAT")
+    fill:SetHorizTile(true)
+    fill:SetVertTile(true)
+    fill:SetPoint("TOPLEFT", 7, -7)
+    fill:SetPoint("BOTTOMRIGHT", -7, 7)
+    local border = CreateFrame("Frame", nil, btn, "DialogBorderNoCenterTemplate")
+    border:SetAllPoints(btn)
 
     local icon = btn:CreateTexture(nil, "ARTWORK")
     icon:SetPoint("TOPLEFT", btn, "TOPLEFT", REOPEN_ICON_INSET, -REOPEN_ICON_INSET)
