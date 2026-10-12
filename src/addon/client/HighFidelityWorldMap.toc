@@ -30,8 +30,11 @@ CaveTiles.lua
 IndoorTiles.lua
 # ZoneOverlays.lua, ZoneShapes.lua: how many exploration overlays each zone
 # has, and where each zone lies on the continent and World maps, for the
-# World/Continent Fog of War (ZoneFog.lua).
+# World/Continent Fog of War (ZoneFog.lua). ZoneOverlayTiles.lua: those
+# overlays' art, drawn on the native map when Fog of War is off
+# (Exploration.lua).
 ZoneOverlays.lua
+ZoneOverlayTiles.lua
 ZoneShapes.lua
 CaveData.lua
 IndoorData.lua

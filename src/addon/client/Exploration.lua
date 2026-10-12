@@ -11,6 +11,12 @@
 -- an invisible sheet that eats every click on the map, so zone clicks,
 -- drag-panning and pin tooltips all stop working.  Pins are pooled, so a
 -- forced-on flag also survives release and comes back on the next acquire.
+--
+-- Fog of War off, Hybrid zone map, HD/SD blend: the HD map shows the whole
+-- zone, so the native art underneath must too, or "SD" looks different from
+-- HD. Blizzard's pin only draws the overlays the player has explored, so
+-- RevealUnexplored (hooked onto its RefreshOverlays) draws the rest from the
+-- baked ZoneOverlayTiles.lua, the same way other fog-removal addons do.
 -------------------------------------------------------------------------------
 local addonName, ns = ...
 local Exploration = ns.Exploration
@@ -54,6 +60,66 @@ local function IsExplorationDP(dp)
     return type(tmpl) == "string" and tmpl:find("Exploration") and true or false
 end
 
+local ZONE_OVERLAYS = HFWMF_ZONE_OVERLAY_TILES or {}
+
+--- Should the native map show every overlay of *mapID*, explored or not?
+--- Yes while the zone map is being drawn by this addon with Fog of War off
+--- and the native art shows under the HD overlay (the HD/SD blend): HD shows
+--- the whole zone then, so the native art must too.
+local function Revealing(mapID)
+    return Config.db and Config.db.enabled and Config.overlayActive
+        and Config:IsMixing() and not Config:FogOfWarEnabled()
+        and Config:ClassifyMapID(mapID) == "zone"
+        and Config:GetClientZone(mapID) ~= nil
+end
+
+--- After Blizzard's pin has drawn the explored overlays, draw the rest: the
+--- same loop as MapExplorationPinMixin:RefreshOverlays, over the baked list
+--- of every overlay, skipping the geometry the client already gave us.
+--- Textures come from the pin's own overlayTexturePool, so the pin's next
+--- RemoveAllData releases them like any of its own.
+local function RevealUnexplored(pin, fullUpdate)
+    local mapID = WorldMapFrame:GetMapID()
+    local all = ZONE_OVERLAYS[mapID]
+    if not all or not Revealing(mapID) then return end
+
+    local layerIndex = WorldMapFrame:GetCanvasContainer():GetCurrentLayerIndex()
+    local layer = C_Map.GetMapArtLayers(mapID)[layerIndex]
+    local tileW, tileH = layer.tileWidth, layer.tileHeight
+
+    local explored = {}
+    for _, t in ipairs(C_MapExplorationInfo.GetExploredMapTextures(mapID) or {}) do
+        explored[t.offsetX .. "," .. t.offsetY .. "," .. t.textureWidth .. "," .. t.textureHeight] = true
+    end
+
+    for _, o in ipairs(all) do
+        local offX, offY, w, h, cols, fdids = unpack(o)
+        if not explored[offX .. "," .. offY .. "," .. w .. "," .. h] then
+            local rows = math.ceil(#fdids / cols)
+            for j = 1, rows do
+                local pixH = j < rows and tileH or (h % tileH ~= 0 and h % tileH or tileH)
+                local fileH = 16
+                if j < rows then fileH = tileH else while fileH < pixH do fileH = fileH * 2 end end
+                for k = 1, cols do
+                    local pixW = k < cols and tileW or (w % tileW ~= 0 and w % tileW or tileW)
+                    local fileW = 16
+                    if k < cols then fileW = tileW else while fileW < pixW do fileW = fileW * 2 end end
+                    local tex = pin.overlayTexturePool:Acquire()
+                    tex:SetSize(pixW, pixH)
+                    tex:SetTexCoord(0, pixW / fileW, 0, pixH / fileH)
+                    tex:SetPoint("TOPLEFT", offX + tileW * (k - 1), -(offY + tileH * (j - 1)))
+                    tex:SetTexture(fdids[(j - 1) * cols + k], nil, nil, "TRILINEAR")
+                    tex:SetDrawLayer("ARTWORK", 0)
+                    tex:Show()
+                    if fullUpdate then pin.textureLoadGroup:AddTexture(tex) end
+                end
+            end
+        end
+    end
+end
+
+local hookedPins = {}
+
 local function HookDPs()
     if not WorldMapFrame.dataProviders then return end
     for dp in next, WorldMapFrame.dataProviders do
@@ -69,6 +135,13 @@ local function HookDPs()
                     Exploration:HidePins()
                 end
             end)
+        end
+        -- Map changes and zoom-layer changes call the pin's RefreshOverlays
+        -- directly, bypassing RefreshAllData, so hook the pin itself.
+        local pin = dp.pin
+        if pin and not hookedPins[pin] and pin.RefreshOverlays and pin.overlayTexturePool then
+            hookedPins[pin] = true
+            hooksecurefunc(pin, "RefreshOverlays", RevealUnexplored)
         end
     end
 end

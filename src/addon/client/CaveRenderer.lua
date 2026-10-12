@@ -1265,10 +1265,12 @@ end
 -- in the bottom-right of the map, above the side-panel toggle's open
 -- button, and reappears whenever Cave.lua has a cave available but closed.
 -------------------------------------------------------------------------------
--- Sized so the Dialog border's corner art (32px-ish) doesn't overlap itself,
--- with the icon inset to sit inside that border.
+-- Sized so the Dialog border's corner art doesn't overlap itself, with the
 local REOPEN_BTN_SIZE = 44
 local REOPEN_ICON_INSET = 10
+--- How much the Dialog border art is shrunk on the reopen button: the same
+--- sprites the cave window gets, scaled down so the stroke is thinner.
+local REOPEN_BORDER_SCALE = 0.75
 
 local function EnsureReopenButton()
     if reopenBtn then return end
@@ -1296,15 +1298,26 @@ local function EnsureReopenButton()
     end
 
     -- Same chrome as the cave window itself (ApplyGameMenuChrome): the
-    -- Dialog nine-slice border over the tiled dialog fill.
+    -- Dialog nine-slice border over the tiled dialog fill, scaled down so
+    -- the window-weighted stroke reads thinner at button size. The border
+    -- frame is sized up by 1/scale -- and to at least twice the corner
+    -- art's own width, so opposite corners never cross -- before scaling,
+    -- so the shrunken art still covers the button. The fill's 7px window
+    -- inset (LayoutDialogFill) shrinks with the same factor.
     local fill = btn:CreateTexture(nil, "BACKGROUND", nil, -8)
     fill:SetTexture(DIALOG_FILL, "REPEAT", "REPEAT")
     fill:SetHorizTile(true)
     fill:SetVertTile(true)
-    fill:SetPoint("TOPLEFT", 7, -7)
-    fill:SetPoint("BOTTOMRIGHT", -7, 7)
+    local inset = 7 * REOPEN_BORDER_SCALE
+    fill:SetPoint("TOPLEFT", inset, -inset)
+    fill:SetPoint("BOTTOMRIGHT", -inset, inset)
     local border = CreateFrame("Frame", nil, btn, "DialogBorderNoCenterTemplate")
-    border:SetAllPoints(btn)
+    local corner = border.TopLeftCorner and border.TopLeftCorner:GetWidth() or 32
+    local size = math.max(REOPEN_BTN_SIZE / REOPEN_BORDER_SCALE, corner * 2)
+    border:ClearAllPoints()
+    border:SetPoint("CENTER")
+    border:SetSize(size, size)
+    border:SetScale(REOPEN_BORDER_SCALE)
 
     local icon = btn:CreateTexture(nil, "ARTWORK")
     icon:SetPoint("TOPLEFT", btn, "TOPLEFT", REOPEN_ICON_INSET, -REOPEN_ICON_INSET)
