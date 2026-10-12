@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - docs/DESCRIPTION.md
+      - docs/FEATURES.md
       - docs/BUILDING.md
       - .github/scripts/generate_readme.py
       - .github/scripts/commit-readme.sh

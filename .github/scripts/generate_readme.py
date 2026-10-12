@@ -3,6 +3,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DESCRIPTION_PATH = REPO_ROOT / "docs" / "DESCRIPTION.md"
+FEATURES_PATH = REPO_ROOT / "docs" / "FEATURES.md"
 BUILDING_PATH = REPO_ROOT / "docs" / "BUILDING.md"
 README_PATH = REPO_ROOT / "README.md"
 
@@ -15,8 +16,9 @@ def read_text(path: Path) -> str:
 
 def main() -> None:
     description = read_text(DESCRIPTION_PATH)
+    features = read_text(FEATURES_PATH)
     building = read_text(BUILDING_PATH)
-    README_PATH.write_text(f"{description}\n\n{building}\n", encoding="utf-8")
+    README_PATH.write_text(f"{description}\n\n{features}\n\n{building}\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
