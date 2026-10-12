@@ -212,6 +212,14 @@ local function CreatePopup()
     end)
 end
 
+--- Slide the blend all the way to the other end (button label's meaning),
+--- with the slider following if it's open. Leaves Config.db.enabled (and
+--- therefore the cave map) alone.
+local function Toggle()
+    ApplyAlpha(HDShowing() and 0 or 1)
+    if syncPopup and popup and popup:IsShown() then syncPopup() end
+end
+
 local function OnClick(_, mouseButton)
     if mouseButton == "RightButton" then
         -- A pinned popup is closed with its X, not toggled from here.
@@ -220,12 +228,69 @@ local function OnClick(_, mouseButton)
         popup:SetShown(not popup:IsShown())
         return
     end
-    -- Leaves Config.db.enabled (and therefore the cave map) completely
-    -- alone. The button reads "SD" while HD is showing at all, and "HD"
-    -- when it isn't; clicking slides the blend all the way to the other
-    -- end, with the slider following if it's open.
-    ApplyAlpha(HDShowing() and 0 or 1)
-    if syncPopup and popup and popup:IsShown() then syncPopup() end
+    Toggle()
+end
+
+-------------------------------------------------------------------------------
+-- Gamepad UI: right stick click (R3) while the map is open. Released within
+-- HOLD_SECONDS it toggles HD/SD; held that long it slides the map to centre
+-- the player instead (fires at the mark, release then does nothing). Plain override
+-- binding onto an addon-owned button (same approach as CaveRenderer's pad
+-- keys), never Blizzard's gamepad binding stack.
+-------------------------------------------------------------------------------
+local PAD_KEY = "PADRSTICK"
+local HOLD_SECONDS = 1
+local padOwner, holdTimer
+-- The footer legend of each pane the map's gamepad focus can sit on: the map
+-- itself, the objectives (quest log) and a quest's details. Each is up only
+-- while its pane has focus.
+local LEGENDS = { "WorldMapFooterinputLegend", "QuestLogFooterinputLegend", "QuestDetailsFooterinputLegend" }
+local padApplied = false  -- what SyncPad last set up
+
+--- Does a pane of the map have gamepad focus right now? That is the state in
+--- which its footer legend is up, so the legends' visibility is the test.
+local function PadWanted()
+    if not (button and button:IsShown() and WorldMapFrame:IsShown() and Config:IsGamepadUI()) then
+        return false
+    end
+    for _, name in ipairs(LEGENDS) do
+        local legend = WorldMapFrame[name]
+        if legend and legend:IsVisible() then return true end
+    end
+    return false
+end
+
+local function SyncPad()
+    local want = PadWanted()
+    padApplied = want
+    if InCombatLockdown() then return end  -- retried on PLAYER_REGEN_ENABLED
+    if not padOwner then
+        padOwner = CreateFrame("Frame")
+        padOwner:SetScript("OnEvent", SyncPad)
+        padOwner:RegisterEvent("PLAYER_REGEN_ENABLED")
+        local btn = CreateFrame("Button", "HFWMForeverPadToggle", padOwner)
+        btn:RegisterForClicks("AnyDown", "AnyUp")
+        btn:SetScript("OnClick", function(_, _, down)
+            if down then
+                if holdTimer then holdTimer:Cancel() end
+                holdTimer = C_Timer.NewTimer(HOLD_SECONDS, function()
+                    holdTimer = nil
+                    ns.KeepCentered:CenterOnPlayer()
+                end)
+            elseif holdTimer then  -- released before the mark: a tap
+                holdTimer:Cancel()
+                holdTimer = nil
+                Toggle()
+            end
+        end)
+    end
+    ClearOverrideBindings(padOwner)
+    if not want and holdTimer then holdTimer:Cancel() holdTimer = nil end  -- release can't arrive any more
+    if want then
+        -- Priority: with map focus, Blizzard's own pad stack binds PADRSTICK
+        -- (InputFunctionBindingButton_PADRSTICK) and would otherwise win.
+        SetOverrideBindingClick(padOwner, true, PAD_KEY, "HFWMForeverPadToggle")
+    end
 end
 
 -- Fallback size when WorldMapFrame.SidePanelToggle.OpenButton isn't around
@@ -295,6 +360,20 @@ end
 function ToggleButton:Start()
     self:Refresh()
 
+    -- The legends are shown/hidden by the map's focus moves, in the middle of
+    -- Blizzard's own focus/binding code. Nothing of ours runs there: no hook
+    -- on the legends or on the map's Focus*/Unfocus* methods (a
+    -- hooksecurefunc wrapper on WorldMapFrame's UnfocusGamepad made
+    -- FrameControlsManager fail calling it, "attempt to call a nil value",
+    -- and addon code inside that chain risks tainting the protected
+    -- SetPreferredGamepadInteractTarget it ends in). Instead a frame of ours
+    -- (on UIParent, so it also sees the map close) notices the change on the
+    -- next frame.
+    local poll = CreateFrame("Frame")
+    poll:SetScript("OnUpdate", function()
+        if PadWanted() ~= padApplied then SyncPad() end
+    end)
+
     -- Keep the label (and, if the Options toggle changed while the map was
     -- closed, the button's very existence) in sync on every reopen, not
     -- just this button's own clicks.
@@ -311,6 +390,7 @@ function ToggleButton:Start()
     -- Close the opacity popup with the map, unless it's pinned: a pinned one
     -- is left "shown", so it hides with the map and returns when it reopens.
     WorldMapFrame:HookScript("OnHide", function()
+        -- (the pad binding follows the map closing via the poll above)
         if popup and not pinned then popup:Hide() end
     end)
 end
@@ -331,4 +411,5 @@ function ToggleButton:Refresh()
         button:Hide()
     end
     UpdateLabel()
+    SyncPad()
 end

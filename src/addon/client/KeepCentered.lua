@@ -132,3 +132,53 @@ end
 function KeepCentered:Refresh()
     lastX, lastY = nil, nil
 end
+
+-------------------------------------------------------------------------------
+-- One-shot slide to the player (gamepad hold-R3, ToggleButton.lua)
+--
+-- Moves the view with the ScrollFrame widget calls only (SetHorizontalScroll/
+-- SetVerticalScroll), never InstantPanAndZoom: that writes Lua fields on
+-- Blizzard's ScrollContainer (currentScrollX, ...), and under the gamepad UI
+-- those tainted fields end up in Blizzard's binding code (see the
+-- ADDON_ACTION_FORBIDDEN SetPreferredGamepadInteractTarget). Widget calls
+-- leave no Lua state behind. The cost: Blizzard's own currentScroll fields go
+-- stale, so its next stick/edge pan may start from the old position.
+-------------------------------------------------------------------------------
+local glide = CreateFrame("Frame", nil, WorldMapFrame)
+glide:Hide()
+local glideX, glideY, glideMap, expH, expV
+glide:SetScript("OnUpdate", function(self, elapsed)
+    local sc = WorldMapFrame.ScrollContainer
+    local child = sc.Child
+    local h, v = sc:GetHorizontalScroll(), sc:GetVerticalScroll()
+    -- Map changed, or the user moved the view themselves: let go.
+    if WorldMapFrame:GetMapID() ~= glideMap or (expH and (h ~= expH or v ~= expV)) then
+        self:Hide()
+        return
+    end
+    -- Player and view centre in screen pixels, then back to scroll units.
+    local ce, se = child:GetEffectiveScale(), sc:GetEffectiveScale()
+    local cx, cy = sc:GetCenter()
+    local dx = ((child:GetLeft() + glideX * child:GetWidth()) * ce) / se - cx
+    local dy = ((child:GetTop() - glideY * child:GetHeight()) * ce) / se - cy
+    if dx * dx + dy * dy < 0.25 then self:Hide() return end
+    local a = 1 - math.exp(-elapsed / TAU)
+    -- Scrolling right/down moves the content left/up.
+    sc:SetHorizontalScroll(h + dx * a)
+    sc:SetVerticalScroll(v - dy * a)
+    expH, expV = sc:GetHorizontalScroll(), sc:GetVerticalScroll()
+    -- Clamped at a map edge: the target is unreachable, stop.
+    if expH == h and expV == v then self:Hide() end
+end)
+
+--- Slide the map so the player's arrow ends up at the view's centre, zoom
+--- untouched. Does nothing when the player has no position on the map shown.
+function KeepCentered:CenterOnPlayer()
+    local mapID = WorldMapFrame:GetMapID()
+    local pos = mapID and C_Map.GetPlayerMapPosition(mapID, "player")
+    if not (pos and WorldMapFrame.ScrollContainer) then return end
+    glideX, glideY = pos:GetXY()
+    if not glideX then return end
+    glideMap, expH, expV = mapID, nil, nil
+    glide:Show()
+end

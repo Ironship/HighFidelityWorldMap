@@ -196,29 +196,35 @@ function Exploration:ShowPins()
     end
 end
 
-local levelHooked = {}
+local function UnderOverlay()
+    return Config:IsMixing() and Config.overlayActive and Config.overlayFrame
+end
+
+local function TuckUnderOverlay(pin)
+    pin:SetFrameLevel(math.max(Config.overlayFrame:GetFrameLevel() - 1, 0))
+end
+
+local levelDriver
 
 --- While the HD/SD blend is below 100% (Config:IsMixing()), put the
 --- exploration pins one frame level under the overlay, so Blizzard's
 --- explored art draws beneath the HD map's alpha instead of on top of it.
 --- Otherwise give them back Blizzard's own level. Blizzard re-asserts a
---- pin's level whenever it re-applies pin levels, so each pin gets a hook
---- that tucks it back down while mixing.
+--- pin's level whenever it re-applies pin levels, so while mixing a per-frame
+--- driver tucks them back down. (Not a hooksecurefunc on each pin's
+--- ApplyFrameLevel: on this client that left pins whose ApplyFrameLevel
+--- Blizzard's ApplyPinPosition then failed to call, "attempt to call a nil
+--- value".)
 function Exploration:ApplyLevels()
-    local function underOverlay()
-        return Config:IsMixing() and Config.overlayActive and Config.overlayFrame
+    if not levelDriver then
+        levelDriver = CreateFrame("Frame", nil, WorldMapFrame)  -- runs while the map is shown
+        levelDriver:SetScript("OnUpdate", function()
+            if UnderOverlay() then ForEachPin(TuckUnderOverlay) end
+        end)
     end
     ForEachPin(function(pin)
-        if pin.ApplyFrameLevel and not levelHooked[pin] then
-            levelHooked[pin] = true
-            hooksecurefunc(pin, "ApplyFrameLevel", function()
-                if underOverlay() then
-                    pin:SetFrameLevel(math.max(Config.overlayFrame:GetFrameLevel() - 1, 0))
-                end
-            end)
-        end
-        if underOverlay() then
-            pin:SetFrameLevel(math.max(Config.overlayFrame:GetFrameLevel() - 1, 0))
+        if UnderOverlay() then
+            TuckUnderOverlay(pin)
         elseif pin.ApplyFrameLevel then
             pin:ApplyFrameLevel()
         end
