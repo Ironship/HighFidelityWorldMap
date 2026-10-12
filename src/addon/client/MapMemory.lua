@@ -100,8 +100,11 @@ local firstShownAfterLogin = false
 -- the moment combat ends instead of leaving the map on the wrong view.
 local pendingRestore = false
 
+-- Off under the gamepad UI: restoring calls Blizzard's InstantPanAndZoom/
+-- SetMapID from addon code, which leaves the scroll container's scale and
+-- scroll fields tainted and breaks the map's own gamepad zoom/pan.
 local function Enabled()
-    return Config.db and Config.db.rememberMapZoomPan
+    return Config.db and Config.db.rememberMapZoomPan and not Config:IsGamepadUI()
 end
 
 local function SaveState()
@@ -194,6 +197,14 @@ end
 --- module here waits for.
 function MapMemory:Start()
     local sc = WorldMapFrame.ScrollContainer
+    hooksecurefunc("ToggleWorldMap", OnToggle)
+    hooksecurefunc("ToggleQuestLog", OnToggle)
+
+    -- Gamepad UI: don't replace Blizzard's OnHide/OnClick scripts below. A
+    -- replaced script runs Blizzard's original from addon code, tainting the
+    -- scroll container the gamepad zoom reads. (Decided at load; /reload
+    -- after switching input style.)
+    if Config:IsGamepadUI() then return end
 
     -- Pre-hook: capture whatever OnHide script is already there (Blizzard's
     -- own, or another addon's) and still run it, same as PersistentWorldMap
@@ -203,9 +214,6 @@ function MapMemory:Start()
         SaveState()
         if otherOnHide then otherOnHide(self, ...) end
     end)
-
-    hooksecurefunc("ToggleWorldMap", OnToggle)
-    hooksecurefunc("ToggleQuestLog", OnToggle)
 
     -- Guard against the quest-list side-panel toggle resetting the view;
     -- some client builds don't have this side panel at all, hence the nil

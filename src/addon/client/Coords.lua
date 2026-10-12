@@ -12,7 +12,7 @@
 -- holds every pin) for a parentKey or frame name that looks like
 -- "...Cords"/"...Coords", then call it the player readout if the name
 -- says "player" and the cursor readout if it says "cursor"/"mouse".
--- Hidden readouts are kept hidden by hooking their Show/SetShown, since the
+-- Hidden readouts are kept hidden by hooking their OnShow, since the
 -- client re-shows them as the map updates. While the addon is disabled
 -- nothing is touched. `/hfwm debug` lists what was found.
 -------------------------------------------------------------------------------
@@ -50,13 +50,15 @@ local function Register(obj, name)
     seen[obj] = true
     local entry = { obj = obj, kind = kind, name = name }
     found[#found + 1] = entry
-    -- Re-hide whenever the client shows it again while we want it gone.
-    for _, method in ipairs({ "Show", "SetShown" }) do
-        if obj[method] then
-            hooksecurefunc(obj, method, function(self)
-                if Hidden(kind) and self:IsShown() then self:Hide() end
-            end)
-        end
+    -- Re-hide whenever the client shows it again while we want it gone. An
+    -- OnShow hook (fires for Show and SetShown alike) rather than
+    -- hooksecurefunc on the frame's methods, which plants a wrapper in the
+    -- frame's table that Blizzard's own SetShown calls then trip over.
+    -- Regions have no scripts; Refresh() covers them.
+    if obj.HookScript then
+        obj:HookScript("OnShow", function(self)
+            if Hidden(kind) then self:Hide() end
+        end)
     end
 end
 

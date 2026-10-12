@@ -32,6 +32,11 @@ local Pool           = ns.Pool
 local MaskPool       = ns.MaskPool
 local P              = ns.P
 
+-- Key Bindings entry for the cave window toggle (Bindings.xml); the same
+-- action Alt+M is bound to below, so it can be moved to a gamepad button.
+BINDING_HEADER_HFWMFOREVER = "High Fidelity World Map"
+_G["BINDING_NAME_CLICK HFWMForeverCaveKeybind:LeftButton"] = "Toggle cave window"
+
 --- Fires once, right after SavedVariables load. Same timing ADDON_LOADED
 --- used to mark.
 function addon:OnInitialize()
@@ -51,10 +56,12 @@ function addon:OnEnable()
     Config.overlayFrame:SetAllPoints(canvas)
     Config.overlayFrame:SetFrameLevel(canvas:GetFrameLevel() + 500)
     Config.overlayFrame:EnableMouse(false)
+    Config:InitMapHost()
 
     -- The cave map window is built lazily by CaveRenderer the first time a
-    -- cave is entered, parented to WorldMapFrame rather than the canvas so
-    -- it doesn't pan or zoom with the map under it.
+    -- cave is entered, parented to Config:MapWidgetParent() (WorldMapFrame, or
+    -- the gamepad-UI host) rather than the canvas so it doesn't pan or zoom
+    -- with the map under it.
 
     hooksecurefunc(WorldMapFrame, "OnMapChanged", function()
         Config.lastMapID = nil
@@ -90,6 +97,11 @@ function addon:OnEnable()
     if GameMenuFrame then
         GameMenuFrame:HookScript("OnShow", function()
             if not CaveRenderer:IsShown() then return end
+            -- Gamepad UI: HideUIPanel from this (addon) hook runs Blizzard's
+            -- focus/binding code tainted, which blocks the protected
+            -- SetPreferredGamepadInteractTarget. The cave window has its own
+            -- gamepad close binding instead (see CaveRenderer).
+            if Config:IsGamepadUI() then return end
             HideUIPanel(GameMenuFrame)
             -- Just hide it: no suppression and no Remember State write, so
             -- reopening the map brings the window back as it was.
@@ -166,6 +178,10 @@ local preloaded = false
 function addon:PLAYER_ENTERING_WORLD()
     if preloaded then return end
     preloaded = true
+    -- Gamepad UI: skip. The rehearsal opens and closes the map from addon
+    -- code, so Blizzard's focus/binding stack runs tainted and later
+    -- blocks SetPreferredGamepadInteractTarget (ADDON_ACTION_FORBIDDEN).
+    if Config:IsGamepadUI() then return end
     C_Timer.After(2, function()
         if not (Config.db and Config.db.enabled)
            or InCombatLockdown() or WorldMapFrame:IsShown() then

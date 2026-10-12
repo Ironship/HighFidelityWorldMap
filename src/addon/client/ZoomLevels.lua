@@ -51,12 +51,11 @@ local function Enabled()
     return Config.db and Config.db.additionalZoomLevels
 end
 
---- Post-hook target for ScrollContainer:CreateZoomLevels(). Appends
---- EXTRA_STEPS further levels onto whatever ladder Blizzard just rebuilt,
---- each further zoomed in than the last, all pointing at the same layer
---- index Blizzard's own final level used.
----@param sc table the ScrollContainer instance (its own `self`)
-local function ExtendZoomLevels(sc)
+--- Blizzard's last zoom level and the step ratio to continue it with, or
+--- nil when extra levels don't apply to the map being shown.
+---@param sc table the ScrollContainer
+---@return table|nil lastLevel, number|nil ratio
+local function LadderTail(sc)
     if not Enabled() then return end
 
     -- Continent and world maps only have art worth zooming into when High
@@ -76,7 +75,27 @@ local function ExtendZoomLevels(sc)
         local r = lastLevel.scale / levels[lastIdx - 1].scale
         if r > 1 then ratio = r end
     end
+    return lastLevel, ratio
+end
 
+--- Post-hook target for ScrollContainer:CreateZoomLevels(). Appends
+--- EXTRA_STEPS further levels onto whatever ladder Blizzard just rebuilt,
+--- each further zoomed in than the last, all pointing at the same layer
+--- index Blizzard's own final level used.
+---@param sc table the ScrollContainer instance (its own `self`)
+local function ExtendZoomLevels(sc)
+    -- Off under the gamepad UI: any entry added to Blizzard's zoomLevels is
+    -- tainted, the map's own focus/binding flows then read it (via
+    -- GetScaleForMaxZoom) and run tainted, and the stick-zoom binding stops
+    -- firing. Overriding the view past Blizzard's last step with widget calls
+    -- instead avoids that taint but leaves Blizzard's cursor-to-map maths on
+    -- the old scale, so clicks land in the wrong place. The gamepad therefore
+    -- stops at Blizzard's own last step.
+    if Config:IsGamepadUI() then return end
+    local lastLevel, ratio = LadderTail(sc)
+    if not lastLevel then return end
+
+    local levels = sc.zoomLevels
     local scale = lastLevel.scale
     for _ = 1, EXTRA_STEPS do
         scale = scale * ratio
@@ -95,7 +114,7 @@ end
 --- shorter the view is left zoomed past the new maximum: snap it back.
 function ZoomLevels:Refresh()
     local sc = WorldMapFrame.ScrollContainer
-    if not (sc and sc.CreateZoomLevels) then return end
+    if not (sc and sc.CreateZoomLevels) or Config:IsGamepadUI() then return end
     pcall(sc.CreateZoomLevels, sc)
 
     local levels = sc.zoomLevels
