@@ -46,19 +46,6 @@ local function MapTypeBackgroundValues()
     return values
 end
 
---- Chat-command reference line shown at the bottom of the panel. Built
---- from the same background list as the dropdown, so it never advertises
---- one this install can't draw.
-local function ChatCommandHint()
-    local keys = {}
-    for _, bg in ipairs(Config:AvailableBackgrounds()) do
-        keys[#keys + 1] = bg.key
-    end
-    return "Also from chat: /hfwm bg " .. table.concat(keys, "|")
-        .. "  |  /hfwm cave on|off|autoopen|remember|indoors  |  /hfwm remember on|off"
-        .. "  |  /hfwm zoom on|off  |  /hfwm clarity on|off  |  /hfwm fog on|off"
-end
-
 --- Fog of War only works over Blizzard's own art, which only Hybrid leaves
 --- showing. Each map type's checkbox is disabled (not hidden) otherwise,
 --- with the reason appended to its tooltip.
@@ -482,11 +469,6 @@ local options = {
                     end,
                 },
             },
-        },
-        hint = {
-            order = 200,
-            type = "description",
-            name = function() return "\n" .. ChatCommandHint() end,
         },
     },
 }
