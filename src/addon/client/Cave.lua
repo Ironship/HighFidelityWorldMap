@@ -752,6 +752,9 @@ end
 ---@return boolean
 function Cave:ForceShow()
     self:Unsuppress()
+    -- Also drop an ESC hide (Core.lua): the player has asked for the window
+    -- back, so UpdateState must not keep holding it down.
+    Config.caveEscHidden = false
     Config.caveFloorPinned = false
     local inCave, playerMapID = self:IsPlayerInCave()
     if not inCave then return false end

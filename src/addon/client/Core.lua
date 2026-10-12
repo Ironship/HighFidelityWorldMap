@@ -93,6 +93,32 @@ function addon:OnEnable()
             CaveRenderer:HideCave()
         end)
     end
+    -- Alt+M: toggle the cave window. The client's own keybind machinery
+    -- (a hidden named button bound via SetBindingClick), so it fires from a
+    -- hardware event, works in combat, and the player can re-bind or clear
+    -- it in the standard keybindings UI. Re-asserted each login: character
+    -- keybindings are saved per character and a hardware event is required
+    -- to set one, which this is (PLAYER_LOGIN runs on one).
+    local keyBtn = CreateFrame("Button", "HFWMForeverCaveKeybind", UIParent,
+        "InsecureActionButtonTemplate")
+    keyBtn:RegisterForClicks("AnyDown")
+    keyBtn:SetScript("OnClick", function()
+        if not (Config.db and Config.db.enabled and Config.db.caveEnabled) then
+            return
+        end
+        if CaveRenderer:IsShown() then
+            -- X-button behaviour: a close, not a hide (contrast the ESC
+            -- hook above): suppress this cave, record it for Remember State,
+            -- and offer the reopen icon.
+            Cave:SuppressCurrent()
+            CaveRenderer:HideCave()
+            Cave:UpdateState()
+        else
+            Cave:ForceShow()
+        end
+    end)
+    keyBtn:Hide()
+    SetBindingClick("ALT-M", keyBtn:GetName(), "LeftButton")
     -- Character sheet and other side panels: the kept-open cave window
     -- moves aside rather than sit under them.
     hooksecurefunc("ShowUIPanel", function() CaveRenderer:Repin() end)
