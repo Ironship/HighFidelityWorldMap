@@ -89,6 +89,7 @@ jobs:
     needs: tag
     # tag is skipped on a pushed-tag release; that is fine. A failed tag job is not.
     if: ${{ !cancelled() && needs.tag.result != 'failure' }}
+    runs-on: ubuntu-latest
     # A cache miss runs the minutes-long --lowres-only pass, plus the zone
     # masks; a hit restores all three trees.
     timeout-minutes: 60
