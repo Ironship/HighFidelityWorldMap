@@ -1422,3 +1422,98 @@ function Renderer:ForceRefresh()
     Config.refreshPending = false
     self:Refresh(true)
 end
+
+-- Offscreen-ish 1px holder for Renderer:Preload; built on first use, reused.
+local preloadFrame
+local preloadTiles, preloadMasks = {}, {}
+local retried = false
+
+--- Warm the client's texture cache for the zone the player is standing in,
+--- so the first world-map open doesn't stream the tiles (and Fog of War
+--- mask files, which read opaque -- "blocky" -- until loaded) on demand.
+--- A texture only loads once something actually draws it, and the client
+--- frees one nothing references, so each file sits on a 1x1 near-invisible
+--- texture in a corner for as long as it stays the player's zone (the next
+--- Preload, on a zone change, repoints them). Covers that zone only.
+--- ponytail: drawn-pixel trick, swap for a preload API if the client gains one.
+function Renderer:Preload()
+    if not (Config.db and Config.db.enabled) then return end
+    local mapID = C_Map.GetBestMapForUnit("player")
+    if not mapID then
+        -- Not resolved yet right at the loading screen's end; try once more.
+        if not retried then C_Timer.After(1, function() retried = true; Renderer:Preload() end) end
+        return
+    end
+
+    local tiles, masks = {}, {}
+    local clientZone = Config:GetClientZone(mapID)
+    if clientZone then
+        for _, reg in ipairs(clientZone.regions) do
+            for _, fdid in ipairs(reg.f) do
+                if fdid ~= 0 then tiles[#tiles + 1] = fdid end
+            end
+        end
+    else
+        local zone = Config:GetNativeZone(mapID, Config:GetBackgroundForMap(mapID))
+        if zone then
+            for i = 1, zone.cols * zone.rows do
+                tiles[i] = Config.HD_BASE .. zone.path .. i
+            end
+        end
+    end
+    if Config:FogOfWarEnabled() then
+        local explored = C_MapExplorationInfo.GetExploredMapTextures(mapID)
+        for _, rect in ipairs(explored or {}) do
+            for _, fdid in ipairs(rect.fileDataIDs or {}) do
+                masks[#masks + 1] = fdid
+            end
+        end
+    end
+    if #tiles == 0 and #masks == 0 then return end
+
+    if not preloadFrame then
+        preloadFrame = CreateFrame("Frame", nil, UIParent)
+        preloadFrame:SetSize(1, 1)
+        preloadFrame:SetPoint("BOTTOMLEFT")
+        preloadFrame:SetFrameStrata("BACKGROUND")
+        preloadFrame:SetAlpha(0.05)
+    end
+
+    for i, src in ipairs(tiles) do
+        local tex = preloadTiles[i]
+        if not tex then
+            tex = preloadFrame:CreateTexture(nil, "BACKGROUND")
+            tex:SetSize(1, 1)
+            tex:SetPoint("BOTTOMLEFT")
+            preloadTiles[i] = tex
+        end
+        tex:SetTexture(src)
+        tex:Show()
+    end
+    for i = #tiles + 1, #preloadTiles do preloadTiles[i]:Hide() end
+
+    -- A mask only loads while applied to a drawn texture, and has to be
+    -- set up like the real ones (CLAMP) to be the same resource.
+    for i, fdid in ipairs(masks) do
+        local m = preloadMasks[i]
+        if not m then
+            m = { tex = preloadFrame:CreateTexture(nil, "BACKGROUND"),
+                  mask = preloadFrame:CreateMaskTexture() }
+            m.tex:SetSize(1, 1)
+            m.tex:SetPoint("BOTTOMLEFT")
+            m.tex:SetColorTexture(1, 1, 1, 1)
+            m.mask:SetAllPoints(m.tex)
+            m.tex:AddMaskTexture(m.mask)
+            preloadMasks[i] = m
+        end
+        m.mask:SetTexture(fdid, "CLAMP", "CLAMP")
+        m.tex:Show()
+    end
+    for i = #masks + 1, #preloadMasks do preloadMasks[i].tex:Hide() end
+
+    preloadFrame:Show()
+    if Config.tracing then
+        P(("preload: map %d, %d tile(s), %d mask(s)"):format(
+            mapID, #tiles, #masks))
+    end
+end
