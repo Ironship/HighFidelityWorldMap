@@ -112,14 +112,23 @@ local RESOLUTION_DROPDOWN = "HFWM-ResolutionDropdown"
 do
     local AceGUI = LibStub("AceGUI-3.0")
 
+    -- An open pullout and its items are moved to TOOLTIP strata (AceGUI
+    -- Dropdown-Pullout Open) at levels above the options window's, so a
+    -- tooltip left at its own level can draw underneath them. A tooltip of
+    -- our own (as AceConfigDialog has) is raised over the hovered item each
+    -- time without re-levelling or tainting the shared GameTooltip.
+    local tooltip = CreateFrame("GameTooltip", "HFWMArtTooltip", UIParent, "GameTooltipTemplate")
+    tooltip:SetFrameStrata("TOOLTIP")
+
     local function ShowArtTooltip(item)
-        GameTooltip:SetOwner(item.frame, "ANCHOR_RIGHT")
-        GameTooltip:SetText("High Resolution unavailable", 1, 1, 1)
-        GameTooltip:AddLine(ART_NOTE, 1, 0.53, 0, true)
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Click to show the CurseForge link for the Art addon.",
+        tooltip:SetOwner(item.frame, "ANCHOR_RIGHT")
+        tooltip:SetFrameLevel(item.frame:GetFrameLevel() + 10)
+        tooltip:SetText("High Resolution unavailable", 1, 1, 1)
+        tooltip:AddLine(ART_NOTE, 1, 0.53, 0, true)
+        tooltip:AddLine(" ")
+        tooltip:AddLine("Click to show the CurseForge link for the Art addon.",
             0, 1, 1, true)
-        GameTooltip:Show()
+        tooltip:Show()
     end
 
     AceGUI:RegisterWidgetType(RESOLUTION_DROPDOWN, function()
@@ -133,7 +142,7 @@ do
                 if item.userdata.value == "high" then
                     item:SetDisabled(true)
                     item:SetCallback("OnEnter", ShowArtTooltip)
-                    item:SetCallback("OnLeave", function() GameTooltip:Hide() end)
+                    item:SetCallback("OnLeave", function() tooltip:Hide() end)
                     item.hfwmArt = true
                     -- A disabled item's own OnClick is skipped by AceGUI, so
                     -- hook the frame; hfwmArt/disabled stop pooled items
@@ -143,7 +152,7 @@ do
                         item.frame:HookScript("OnClick", function(frame)
                             local it = frame.obj
                             if it.hfwmArt and it.disabled then
-                                GameTooltip:Hide()
+                                tooltip:Hide()
                                 it.pullout:Close()
                                 StaticPopup_Show("HFWM_ART_URL")
                             end
