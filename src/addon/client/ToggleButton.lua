@@ -220,7 +220,72 @@ local function Toggle()
     if syncPopup and popup and popup:IsShown() then syncPopup() end
 end
 
+--- Where the button sits when not moved: the map pane's top-right corner.
+local function PlaceDefault()
+    button:ClearAllPoints()
+    button:SetPoint("TOPRIGHT", WorldMapFrame.ScrollContainer or WorldMapFrame, "TOPRIGHT", -2, 2)
+end
+
+--- Clamp a TOPRIGHT offset (button-scale units) so every edge of the button
+--- stays inside the map pane.
+local function ClampOffset(x, y)
+    local pane = WorldMapFrame.ScrollContainer or WorldMapFrame
+    local w, h = pane:GetWidth(), pane:GetHeight()
+    if w <= 0 or h <= 0 then return x, y end
+    local k = pane:GetEffectiveScale() / button:GetEffectiveScale()
+    local minX = math.min(0, -(w * k - button:GetWidth()))
+    local minY = math.min(0, -(h * k - button:GetHeight()))
+    return math.max(minX, math.min(0, x)), math.max(minY, math.min(0, y))
+end
+
+--- Put the button where the profile remembers it (Config.db.toggleButtonPoint,
+--- { x, y } from the pane's TOPRIGHT; absent = default spot). Applies even
+--- with "Moveable toggle" off: that only gates dragging.
+local function ApplyPosition()
+    if not button then return end
+    local p = Config.db and Config.db.toggleButtonPoint
+    if type(p) ~= "table" or type(p[1]) ~= "number" or type(p[2]) ~= "number" then
+        return PlaceDefault()
+    end
+    local x, y = ClampOffset(p[1], p[2])
+    button:ClearAllPoints()
+    button:SetPoint("TOPRIGHT", WorldMapFrame.ScrollContainer or WorldMapFrame, "TOPRIGHT", x, y)
+end
+
+local dragging, dragEnd
+
+local function OnDragStart()
+    if not (Config.db and Config.db.toggleButtonMovable) then return end
+    local pane = WorldMapFrame.ScrollContainer or WorldMapFrame
+    local ps = pane:GetEffectiveScale()
+    local cx, cy = GetCursorPosition()
+    -- Cursor's grab point on the button, in pixels from its top-right corner.
+    local grabX = button:GetRight() * button:GetEffectiveScale() - cx
+    local grabY = button:GetTop() * button:GetEffectiveScale() - cy
+    dragging = true
+    if popup and popup:IsShown() and not pinned then popup:Hide() end
+    button:SetScript("OnUpdate", function()
+        local mx, my = GetCursorPosition()
+        local k = 1 / button:GetEffectiveScale()
+        local x, y = ClampOffset(
+            (mx + grabX - pane:GetRight() * ps) * k,
+            (my + grabY - pane:GetTop() * ps) * k)
+        Config.db.toggleButtonPoint = { x, y }
+        ApplyPosition()
+        SetCursor("Interface\\CURSOR\\UI-Cursor-Move")
+    end)
+end
+
+local function OnDragStop()
+    if not dragging then return end
+    dragging, dragEnd = false, GetTime()
+    button:SetScript("OnUpdate", nil)
+    SetCursor(nil)
+end
+
 local function OnClick(_, mouseButton)
+    -- A drag release is not a click.
+    if dragging or dragEnd == GetTime() then return end
     if mouseButton == "RightButton" then
         -- A pinned popup is closed with its X, not toggled from here.
         if pinned then return end
@@ -331,7 +396,8 @@ local function CreateButton()
     -- extra width. Fall back to WorldMapFrame on clients that lack the
     -- ScrollContainer field for some reason.
     local mapPane = WorldMapFrame.ScrollContainer or WorldMapFrame
-    button:SetPoint("TOPRIGHT", mapPane, "TOPRIGHT", -2, 2)
+    -- Re-fit a remembered position if the pane is resized (maximize/minimize).
+    mapPane:HookScript("OnSizeChanged", ApplyPosition)
 
     -- Small gold dot (the stock yellow status indicator) centred on the
     -- button's top-left corner while the blend is strictly between 0% and
@@ -350,6 +416,9 @@ local function CreateButton()
 
     button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     button:SetScript("OnClick", OnClick)
+    button:RegisterForDrag("LeftButton")
+    button:SetScript("OnDragStart", OnDragStart)
+    button:SetScript("OnDragStop", OnDragStop)
     UpdateLabel()
 
     return button
@@ -405,7 +474,10 @@ function ToggleButton:Refresh()
     local wantShown = Config.db and Config.db.enabled and Config.db.toggleButtonEnabled
     if wantShown then
         CreateButton()
-        if button then button:Show() end
+        if button then
+            ApplyPosition()
+            button:Show()
+        end
     elseif button then
         if pinned then unpinPopup() end
         button:Hide()

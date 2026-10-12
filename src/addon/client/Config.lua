@@ -115,6 +115,9 @@ Config.DEFAULTS = {
     -- between all-SD and all-HD, without touching `enabled` above. On by
     -- default; turn off here for a cleaner map with one less button.
     toggleButtonEnabled = true,
+    -- "Moveable toggle": lets the button be dragged within the map pane. Its
+    -- position (db.toggleButtonPoint, below) is kept either way.
+    toggleButtonMovable = false,
 
     -- The client's own Player and Cursor coordinate readouts on the world
     -- map (Coords.lua), each toggled from Options. On by default, as the
@@ -127,6 +130,9 @@ Config.DEFAULTS = {
 -- dragged under cavePlacement = "remember". Deliberately not in DEFAULTS:
 -- absent means "wherever the window opens by default".
 -- /hfwm cave reset clears it.
+-- Likewise `toggleButtonPoint` -- { x, y } offset of the HD/SD button from
+-- the map pane's TOPRIGHT, written when it's dragged. Absent = default spot,
+-- which is what a profile reset gives back.
 
 --- Cave map backdrop opacity (the dark fill behind the art, not the window
 --- chrome), 0 (fully see-through) to 1.
@@ -787,6 +793,7 @@ function Config:RefreshProfile()
     self.db = self.dbObj.profile
     MigrateBackgroundKeys(self.db)
     ns.Renderer:ForceRefresh()
+    ns.ToggleButton:Refresh()
     ns.ZoomLevels:Refresh()
     ns.Cave:UpdateState()
     ns.Options:Refresh()

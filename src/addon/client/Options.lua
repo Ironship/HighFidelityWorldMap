@@ -314,6 +314,21 @@ local options = {
                 ns.ToggleButton:Refresh()
             end,
         },
+        toggleButtonMovable = {
+            order = 73,
+            type = "toggle",
+            name = "Moveable toggle",
+            desc = "Lets you click and drag the HD/SD button to another "
+                .. "spot on the world map, for when another addon uses "
+                .. "the same corner. It stays inside the map, and its "
+                .. "position is remembered even if this is turned off. "
+                .. "Reset to defaults puts it back.",
+            disabled = function() return not Config.db.toggleButtonEnabled end,
+            get = function() return Config.db.toggleButtonMovable end,
+            set = function(_, value)
+                Config.db.toggleButtonMovable = value
+            end,
+        },
         mapBackground = {
             order = 75,
             type = "group",
