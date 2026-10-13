@@ -137,8 +137,10 @@ function addon:OnEnable()
     SetBindingClick("ALT-M", keyBtn:GetName(), "LeftButton")
     -- Character sheet and other side panels: the kept-open cave window
     -- moves aside rather than sit under them.
-    hooksecurefunc("ShowUIPanel", function() CaveRenderer:Repin() end)
-    hooksecurefunc("HideUIPanel", function() CaveRenderer:Repin() end)
+    -- Deferred: addon code run synchronously in Blizzard's panel show/hide
+    -- chain taints it (same gamepad block as the GameMenuFrame hook above).
+    hooksecurefunc("ShowUIPanel", function() C_Timer.After(0, function() CaveRenderer:Repin() end) end)
+    hooksecurefunc("HideUIPanel", function() C_Timer.After(0, function() CaveRenderer:Repin() end) end)
 
     Config.overlayFrame:SetScript("OnSizeChanged", function()
         Renderer:ScheduleRefresh()

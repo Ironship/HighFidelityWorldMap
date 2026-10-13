@@ -717,8 +717,10 @@ local function RegisterClientPanel(AceConfigDialog)
         AceConfigDialog:Open(addonName, widget)
     end)
     group:SetCallback("OnHide", function(widget)
-        AceConfigDialog:Close(addonName)  -- the standalone window, as upstream does
+        -- Deferred: this runs inside Blizzard's Settings close chain, and addon
+        -- code there taints it (blocks SetPreferredGamepadInteractTarget).
         C_Timer.After(0, function()
+            AceConfigDialog:Close(addonName)  -- the standalone window, as upstream does
             if not widget.frame:IsVisible() then widget:ReleaseChildren() end
         end)
     end)

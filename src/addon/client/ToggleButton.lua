@@ -67,6 +67,9 @@ local function UpdateLabel()
     end
     local alpha = Config:GetAlpha()
     button.blendLine:SetShown(alpha > 0.005 and alpha < 0.995)
+    -- Gamepad UI in combat: the R3 binding can't be (re)applied, so show the
+    -- button dimmed. Alpha only, not Disable(): a mouse click still works.
+    button:SetAlpha(Config:IsGamepadUI() and InCombatLockdown() and 0.4 or 1)
 end
 
 local syncPopup  -- set by CreatePopup: reload the slider from Config:GetAlpha()
@@ -446,6 +449,12 @@ function ToggleButton:Start()
     poll:SetScript("OnUpdate", function()
         if PadWanted() ~= padApplied then SyncPad() end
     end)
+
+    -- Dim/undim the button as combat starts and ends.
+    local combat = CreateFrame("Frame")
+    combat:RegisterEvent("PLAYER_REGEN_DISABLED")
+    combat:RegisterEvent("PLAYER_REGEN_ENABLED")
+    combat:SetScript("OnEvent", UpdateLabel)
 
     -- Keep the label (and, if the Options toggle changed while the map was
     -- closed, the button's very existence) in sync on every reopen, not
