@@ -36,6 +36,7 @@ ignore:
   - CONTRIBUTING.md
   - CurseForgeDescription.md
   - README.md
+  - SECURITY.md
   - HighFidelityWorldMap.code-workspace
   - assets
   - docs
