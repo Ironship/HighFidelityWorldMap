@@ -27,6 +27,7 @@ body:
     attributes:
       label: Map view affected
       options:
+        - All Maps
         - World
         - Continent
         - Zone
@@ -34,17 +35,6 @@ body:
         - Other indoors
         - Not map-related (UI, options, commands)
         - Other
-    validations:
-      required: true
-
-  - type: dropdown
-    id: art-addon
-    attributes:
-      label: Is the Art addon installed?
-      description: The High Resolution option needs it. Without it, only low-resolution art is used.
-      options:
-        - "Yes"
-        - "No"
     validations:
       required: true
 

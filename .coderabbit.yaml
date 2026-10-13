@@ -2,13 +2,13 @@
 language: en-US
 early_access: false
 reviews:
-  profile: chill              # "assertive" for more nitpicks
+  profile: chill # "assertive" for more nitpicks
   request_changes_workflow: true
   high_level_summary: true
   poem: false
   review_status: true
   collapse_walkthrough: true
-  sequence_diagrams: false    # noisy for this repo
+  sequence_diagrams: false # noisy for this repo
   estimate_code_review_effort: false
   auto_review:
     enabled: true
@@ -21,10 +21,10 @@ reviews:
     - "!**/*.png"
     - "!**/*.blp"
     - "!**/*.tga"
-    - "!src/addon/client/Libs/**"        # vendored libraries
+    - "!src/addon/client/Libs/**" # vendored libraries
     - "!src/addon/client/WorldMap/**"
     - "!src/addon/client/ZoneMasks/**"
-    - "!src/addon/client/data/**"        # generated Lua tables
+    - "!src/addon/client/data/**" # generated Lua tables
   path_instructions:
     - path: ".github/{workflows,actions}/**"
       instructions: "Enforce .github/workflows/rules.md: no inline scripts in YAML; code lives in .github/scripts/."
@@ -47,3 +47,16 @@ reviews:
       enabled: true
 chat:
   auto_reply: true
+issue_enrichment:
+  auto_enrich:
+    enabled: false # cannot be label-filtered, so off; planning below is label-gated
+  planning:
+    enabled: true
+    auto_planning:
+      enabled: true # plans only issues carrying this label
+      labels: ["Roadmap Item"]
+  labeling:
+    auto_apply_labels: false # suggest labels only
+knowledge_base:
+  issues:
+    scope: local # use this repo's issues as review context
