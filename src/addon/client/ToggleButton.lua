@@ -31,6 +31,7 @@ local addonName, ns = ...
 local Config       = ns.Config
 local Renderer     = ns.Renderer
 local ToggleButton = ns.ToggleButton
+local Integrations = ns.Integrations
 
 local WorldMapFrame = _G.WorldMapFrame
 
@@ -240,16 +241,19 @@ end
 
 --- Put the button where the profile remembers it (Config.db.toggleButtonPoint,
 --- { x, y } from the pane's TOPRIGHT; absent = default spot). Applies even
---- with "Moveable toggle" off: that only gates dragging.
+--- with "Moveable toggle" off: that only gates dragging. Then lets other
+--- addons' map buttons make room for it (Integrations).
 local function ApplyPosition()
     if not button then return end
     local p = Config.db and Config.db.toggleButtonPoint
     if type(p) ~= "table" or type(p[1]) ~= "number" or type(p[2]) ~= "number" then
-        return PlaceDefault()
+        PlaceDefault()
+    else
+        local x, y = ClampOffset(p[1], p[2])
+        button:ClearAllPoints()
+        button:SetPoint("TOPRIGHT", WorldMapFrame.ScrollContainer or WorldMapFrame, "TOPRIGHT", x, y)
     end
-    local x, y = ClampOffset(p[1], p[2])
-    button:ClearAllPoints()
-    button:SetPoint("TOPRIGHT", WorldMapFrame.ScrollContainer or WorldMapFrame, "TOPRIGHT", x, y)
+    Integrations:FitAroundToggle(button)
 end
 
 local dragging, dragEnd
@@ -475,12 +479,13 @@ function ToggleButton:Refresh()
     if wantShown then
         CreateButton()
         if button then
-            ApplyPosition()
             button:Show()
+            ApplyPosition()
         end
     elseif button then
         if pinned then unpinPopup() end
         button:Hide()
+        Integrations:FitAroundToggle(button)
     end
     UpdateLabel()
     SyncPad()

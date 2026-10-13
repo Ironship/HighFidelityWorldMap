@@ -13,6 +13,11 @@ local Exploration = ns.Exploration
 local Watchdog    = ns.Watchdog
 local P           = ns.P
 
+-- UiMapID -> overlay count (ZoneOverlays.lua). Maps missing from it have no
+-- exploration overlays at all (cities, battlegrounds, Darkspear Islands), so
+-- Blizzard never fogs them and neither does Fog of War.
+local ZONE_OVERLAYS = HFWMF_ZONE_OVERLAYS or {}
+
 -------------------------------------------------------------------------------
 -- Backdrop
 --
@@ -958,6 +963,7 @@ local function DoRefresh(force)
     local mapType = Config:ClassifyMapID(mapID)
     local fogOfWar = Config:FogOfWarEnabled() and background.key == "hybrid"
         and mapType ~= "world" and mapType ~= "continent"
+        and ZONE_OVERLAYS[mapID] ~= nil
 
     -- World/Continent Fog of War (Options' checkbox beside World Map): the
     -- zones fully explored, each { zone, u0, v0, u1, v1 } (the box its mask

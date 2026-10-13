@@ -29,6 +29,7 @@ ns.ZoomLevels  = {}
 ns.ResetView   = {}
 ns.KeepCentered = {}
 ns.ToggleButton = {}
+ns.Integrations = {}
 ns.Coords      = {}
 ns.ZoneFog = {}
 
