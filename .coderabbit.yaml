@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+early_access: false
+reviews:
+  profile: chill              # "assertive" for more nitpicks
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  sequence_diagrams: false    # noisy for this repo
+  estimate_code_review_effort: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches: [".*"]
+    ignore_title_keywords: ["WIP", "DO NOT REVIEW", "DRAFT"]
+  path_filters:
+    - "!assets/**"
+    - "!src/addon/art/**"
+    - "!**/*.png"
+    - "!**/*.blp"
+    - "!**/*.tga"
+    - "!src/addon/client/Libs/**"        # vendored libraries
+    - "!src/addon/client/WorldMap/**"
+    - "!src/addon/client/ZoneMasks/**"
+    - "!src/addon/client/data/**"        # generated Lua tables
+  path_instructions:
+    - path: ".github/{workflows,actions}/**"
+      instructions: "Enforce .github/workflows/rules.md: no inline scripts in YAML; code lives in .github/scripts/."
+    - path: "src/addon/client/**/*.lua"
+      instructions: "WoW addon (Lua 5.1). Check for accidental globals, use of the shared addon namespace, taint-safe handling of protected frames, and per-frame allocations in OnUpdate handlers."
+    - path: "src/generator/**/*.py"
+      instructions: "Map asset generator. Check for reproducible output, memory use on large images, and that generated Lua stays in sync with the emit_* scripts."
+    - path: "docs/**"
+      instructions: "Check docs match current behaviour and CLI options."
+  tools:
+    luacheck:
+      enabled: true
+    ruff:
+      enabled: true
+    actionlint:
+      enabled: true
+    markdownlint:
+      enabled: true
+    gitleaks:
+      enabled: true
+chat:
+  auto_reply: true
