@@ -243,8 +243,11 @@ function Exploration:SetVisible(visible)
             RestoreMouse(pin)
             pin:Show()
             for _, region in ipairs({pin:GetRegions()}) do
+                -- Alpha only, never Show(): a hidden region is one its owner
+                -- cleared on purpose (Blizzard's released overlay textures,
+                -- MapUtils' ClearPin), holding last map's art and anchors.
+                -- Showing it paints that zone over the continent/world map.
                 region:SetAlpha(1)
-                region:Show()
             end
         end, true)
         if WorldMapFrame.dataProviders then
