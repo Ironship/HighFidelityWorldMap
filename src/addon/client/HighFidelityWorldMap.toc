@@ -44,6 +44,7 @@ TexturePool.lua
 ZoneFog.lua
 BaseArt.lua
 MapFrameBg.lua
+PinTaint.lua
 Exploration.lua
 Watchdog.lua
 Renderer.lua

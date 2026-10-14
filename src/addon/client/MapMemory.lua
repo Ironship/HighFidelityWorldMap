@@ -40,11 +40,11 @@
 -- recenter button and its taint-prevention module (taintPrevent.lua), which
 -- exists because PersistentWorldMap permanently taints WorldMapFrame.mapID
 -- and then has to patch every map pin so combat doesn't throw
--- ADDON_ACTION_BLOCKED. This module makes the same tainting write but
--- sidesteps the fallout more cheaply: skip the restore entirely while
--- InCombatLockdown() and retry once combat ends. The cost is a reopen
--- during combat briefly shows the client's own default view until
--- PLAYER_REGEN_ENABLED fires.
+-- ADDON_ACTION_BLOCKED (that patching lives in PinTaint.lua here). This
+-- module makes the same tainting write and additionally skips the restore
+-- entirely while InCombatLockdown(), retrying once combat ends: the cost
+-- is a reopen during combat briefly shows the client's own default view
+-- until PLAYER_REGEN_ENABLED fires.
 -------------------------------------------------------------------------------
 local addonName, ns = ...
 local Config    = ns.Config

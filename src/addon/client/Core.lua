@@ -26,6 +26,7 @@ local MapMemory     = ns.MapMemory
 local ZoomLevels    = ns.ZoomLevels
 local ResetView     = ns.ResetView
 local KeepCentered  = ns.KeepCentered
+local PinTaint      = ns.PinTaint
 local ToggleButton  = ns.ToggleButton
 local Coords       = ns.Coords
 local Pool           = ns.Pool
@@ -151,6 +152,10 @@ function addon:OnEnable()
     WorldMapFrame:HookScript("OnSizeChanged", function()
         CaveRenderer:Relayout()
     end)
+
+    -- First: pins must be guarded before anything can acquire them, the
+    -- preload rehearsal below included.
+    PinTaint:Start()
 
     Cave:Start()
     MapMemory:Start()

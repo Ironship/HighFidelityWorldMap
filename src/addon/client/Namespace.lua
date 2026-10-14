@@ -16,6 +16,7 @@ ns.Pool        = {}
 ns.MaskPool    = {}
 ns.BaseArt     = {}
 ns.MapFrameBg  = {}
+ns.PinTaint    = {}
 ns.Exploration = {}
 ns.Watchdog    = {}
 ns.Renderer    = {}
